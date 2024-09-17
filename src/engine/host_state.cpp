@@ -187,7 +187,7 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 	else
 	{
 #ifndef CLIENT_DLL
-		*g_bAbortServerSet = true;
+		* g_bAbortServerSet = true;
 #endif // !CLIENT_DLL
 		while (true)
 		{
@@ -309,7 +309,7 @@ void CHostState::Init(void)
 //-----------------------------------------------------------------------------
 // Purpose: state machine setup
 //-----------------------------------------------------------------------------
-void CHostState::Setup(void) 
+void CHostState::Setup(void)
 {
 	g_pHostState->LoadConfig();
 #ifndef CLIENT_DLL

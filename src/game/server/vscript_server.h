@@ -16,6 +16,7 @@ namespace VScriptCode
 		SQRESULT BanPlayerByName(HSQUIRRELVM v);
 		SQRESULT BanPlayerById(HSQUIRRELVM v);
 		SQRESULT UnbanPlayer(HSQUIRRELVM v);
+		SQRESULT AddBanByID(HSQUIRRELVM v);
 
 		SQRESULT GetNumHumanPlayers(HSQUIRRELVM v);
 		SQRESULT GetNumFakeClients(HSQUIRRELVM v);
@@ -24,6 +25,41 @@ namespace VScriptCode
 
 		SQRESULT IsServerActive(HSQUIRRELVM v);
 		SQRESULT IsDedicated(HSQUIRRELVM v);
+
+		SQRESULT InitializeLogThread__internal(HSQUIRRELVM v);
+		SQRESULT LogEvent__internal(HSQUIRRELVM v);
+		SQRESULT SQMatchID__internal(HSQUIRRELVM v);
+		SQRESULT stopLogging__internal(HSQUIRRELVM v);
+		SQRESULT isLogging__internal(HSQUIRRELVM v);
+		SQRESULT SQ_GetLogState__internal(HSQUIRRELVM v);
+		SQRESULT CleanupLogs__internal(HSQUIRRELVM v);
+		SQRESULT SQ_ReloadConfig__internal(HSQUIRRELVM v);
+
+		SQRESULT sqprint(HSQUIRRELVM v);
+		SQRESULT sqerror(HSQUIRRELVM v);
+
+		SQRESULT EA_Verify__internal(HSQUIRRELVM v); //select servers only
+		SQRESULT FetchGlobalSettingsFromR5RDEV__internal(HSQUIRRELVM v);
+		SQRESULT _STATSHOOK_UpdatePlayerCount__internal(HSQUIRRELVM v);
+		SQRESULT _STATSHOOK_EndOfMatch__internal(HSQUIRRELVM v);
+
+		SQRESULT SQ_UpdateLiveStats__internal(HSQUIRRELVM v);
+		SQRESULT SQ_ResetStats__internal(HSQUIRRELVM v);
+
+		SQRESULT LoadBatchSyncData__internal(HSQUIRRELVM v);
+		SQRESULT LoadSyncData__internal(HSQUIRRELVM v);
+		SQRESULT SQ_GetSetting__internal(HSQUIRRELVM v);
+		SQRESULT GetPlayerStats__internal(HSQUIRRELVM v); //NEW
+
+		SQRESULT SQ_ServerMsg__internal(HSQUIRRELVM v);
+		SQRESULT SQ_CreateServerBot__internal(HSQUIRRELVM v);
+
+		//SQRESULT PrintStack(HSQUIRRELVM v);
+
+		//Declare to be used with logger
+		int64_t getMatchID();
+		void setMatchID(int64_t newID);
+
 	}
 }
 
