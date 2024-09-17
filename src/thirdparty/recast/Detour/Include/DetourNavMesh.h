@@ -62,6 +62,16 @@ typedef uint64_t dtTileRef;
 typedef unsigned int dtTileRef;
 #endif
 
+/// A value that indicates that this tile doesn't contain any polygons with valid links
+/// to the rest of the reachable area's of the navigation mesh, this tile will not be
+/// added to the position lookup table.
+/// @ingroup detour
+static const int DT_FULL_UNLINKED_TILE_USER_ID = 1;
+
+/// A value that indicates that this tile contains at least 1 polygon that doesn't link
+/// to anything (tagged as #DT_UNLINKED_POLY_GROUP), and 1 that does link to something.
+static const int DT_SEMI_UNLINKED_TILE_USER_ID = 2;
+
 /// The maximum number of vertices per navigation polygon.
 /// @ingroup detour
 static const int DT_VERTS_PER_POLYGON = 6;
@@ -84,9 +94,6 @@ static const unsigned short DT_FIRST_USABLE_POLY_GROUP = 2;
 /// involved then code can use the static patching logic to quickly query if we 
 /// are even on the same (or connected) poly island before trying to compute a path).
 static const int DT_MIN_POLY_GROUP_COUNT = 3;
-
-/// The cached poly surface area quantization factor.
-static const float DT_POLY_AREA_QUANT_FACTOR = 0.01f;
 
 /// The maximum number of traversal tables per navmesh that will be used for static pathing.
 static const int DT_MAX_TRAVERSE_TABLES = 5;
@@ -193,11 +200,6 @@ enum dtRaycastOptions
 	DT_RAYCAST_USE_COSTS = 0x01,		///< Raycast should calculate movement cost along the ray and fill RaycastHit::cost
 };
 
-enum dtDetailTriEdgeFlags
-{
-	DT_DETAIL_EDGE_BOUNDARY = 0x01,		///< Detail triangle edge is part of the poly boundary
-};
-
 
 /// Limit raycasting during any angle pahfinding
 /// The limit is given as a multiple of the character radius
@@ -283,11 +285,23 @@ struct dtPolyDetail
 	unsigned char triCount;			///< The number of triangles in the sub-mesh.
 };
 
+/// Get flags for edge in detail triangle.
+/// @param	triFlags[in]		The flags for the triangle (last component of detail vertices above).
+/// @param	edgeIndex[in]		The index of the first vertex of the edge. For instance, if 0.
+///								returns flags for edge AB.
+inline int dtGetDetailTriEdgeFlags(unsigned char triFlags, int edgeIndex)
+{
+	return (triFlags >> (edgeIndex * 2)) & 0x3;
+}
+
 /// Defines a link between polygons.
 /// @note This structure is rarely if ever used by the end user.
 /// @see dtMeshTile
 struct dtLink
 {
+	inline bool hasTraverseType() const { return traverseType != DT_NULL_TRAVERSE_TYPE; }
+	inline unsigned char getTraverseType() const {return traverseType & (DT_MAX_TRAVERSE_TYPES-1); }
+
 	dtPolyRef ref;					///< Neighbour reference. (The neighbor that is linked to.)
 	unsigned int next;				///< Index of the next link.
 	unsigned char edge;				///< Index of the polygon edge that owns this link.
@@ -307,6 +321,8 @@ unsigned char dtQuantLinkDistance(const float distance);
 /// @see dtMeshTile
 struct dtCell
 {
+	inline void setOccupied() { *(int*)((uintptr_t)&occupyState & ~0x3) = -1; }
+
 	float pos[3];					///< The position of the cell.
 	unsigned int polyIndex;			///< The index of the poly this cell is on.
 	unsigned char pad;				
@@ -475,14 +491,58 @@ private:
 	dtMeshTile& operator=(const dtMeshTile&);
 };
 
-/// Get flags for edge in detail triangle.
-/// @param	triFlags[in]		The flags for the triangle (last component of detail vertices above).
-/// @param	edgeIndex[in]		The index of the first vertex of the edge. For instance, if 0.
-///								returns flags for edge AB.
-inline int dtGetDetailTriEdgeFlags(unsigned char triFlags, int edgeIndex)
+/// Configuration parameters used to create traverse links between polygon edges.
+/// @ingroup detour
+struct dtTraverseLinkConnectParams
 {
-	return (triFlags >> (edgeIndex * 2)) & 0x3;
-}
+	/// User defined callback that returns the desired traverse type based on
+	/// the provided spatial and logical characteristics of this potential link.
+	///  @param[in]		userData		Pointer to user defined data.
+	///  @param[in]		traverseDist	The total distance in length of the traverse link. [Unit: wu]
+	///  @param[in]		elevation		The elevation difference between base and land position. [Unit: wu]
+	///  @param[in]		slopeAngle		The slope angle from base to land position. [Unit: Degrees]
+	///  @param[in]		baseOverlaps	Whether the projection of the base edge overlaps with the land edge.
+	///  @param[in]		landOverlaps	Whether the projection of the land edge overlaps with the base edge.
+	/// @return The desired traverse type for provided spatial and logical characteristics.
+	unsigned char(*getTraverseType)(void* userData, const float traverseDist, const float elevation,
+		const float slopeAngle, const bool baseOverlaps, const bool landOverlaps);
+
+	/// User defined callback that returns whether a traverse link based on
+	/// provided spatial characteristics is clear in terms of line-of-sight.
+	///  @param[in]		userData		Pointer to user defined data.
+	///  @param[in]		lowerEdgeMid	The mid point of the lower edge from which the link starts. [(x, y, z)] [Unit: wu]
+	///  @param[in]		higherEdgeMid	The mid point of the higher edge to which the link ends. [(x, y, z)] [Unit: wu]
+	///  @param[in]		lowerEdgeDir	The vector direction of the lower edge. [(x, y, z)] [Unit: wu]
+	///  @param[in]		higherEdgeDir	The vector direction of the higher edge. [(x, y, z)] [Unit: wu]
+	///  @param[in]		walkableRadius	The walkable radius defined by the tile hosting the link. [Unit: wu]
+	///  @param[in]		slopeAngle		The slope angle from lower to higher edge mid points. [Unit: Degrees]
+	/// @return True if the link between the lower and higher edge mid points don't collide with anything.
+	bool(*traverseLinkInLOS)(void* userData, const float* lowerEdgeMid, const float* higherEdgeMid,
+		const float* lowerEdgeDir, const float* higherEdgeDir, const float walkableRadius, const float slopeAngle);
+
+	/// User defined callback that looks if a link between these 2 polygons
+	/// have already been established. A traverse type can only be used once
+	/// between 2 polygons, but the 2 polygons can have more than one link.
+	///  @param[in]		userData		Pointer to user defined data.
+	///  @param[in]		basePolyRef		The reference of the polygon on the base tile.
+	///  @param[in]		landPolyRef		The reference of the polygon on the land tile.
+	/// @return Pointer to the bit cell, null if no link was found.
+	unsigned int*(*findPolyLink)(void* userData, const dtPolyRef basePolyRef, const dtPolyRef landPolyRef);
+
+	/// User defined callback that adds a new polygon pair to the list. On
+	/// subsequent lookups, the bit cell of this pair should be returned and
+	/// used instead, see #findPolyLink.
+	///  @param[in]		userData		Pointer to user defined data.
+	///  @param[in]		basePolyRef		The reference of the polygon on the base tile.
+	///  @param[in]		landPolyRef		The reference of the polygon on the land tile.
+	///  @param[in]		traverseTypeBit	The traverse type bit index to be stored initially in the bit cell.
+	/// @return -1 if out-of-memory, 1 if link was already present, 0 on success.
+	int(*addPolyLink)(void* userData, const dtPolyRef basePolyRef, const dtPolyRef landPolyRef, const unsigned int traverseTypeBit);
+
+	void* userData;					///< The user defined data that will be provided to all callbacks, for example: your editor's class instance.
+	float minEdgeOverlap;			///< The minimum amount of projection overlap required between the 2 edges before they are considered overlapping.
+	bool linkToNeighbor;			///< Whether to link to polygons in neighboring tiles. Limits linkage to internal polygons if false.
+};
 
 /// Configuration parameters used to define multi-tile navigation meshes.
 /// The values are used to allocate space during the initialization of a navigation mesh.
@@ -716,7 +776,7 @@ public:
 
 	/// Sets the polygon group count.
 	///  @param[in]		count		The polygon group count.
-	void setPolyGroupcount(const int count) { m_params.polyGroupCount = count; }
+	void setPolyGroupCount(const int count) { m_params.polyGroupCount = count; }
 
 	/// Gets the size of the buffer required by #storeTileState to store the specified tile's state.
 	///  @param[in]	tile	The tile.
@@ -847,6 +907,8 @@ public:
 		dtMeshTile** tiles, const int maxTiles) const;
 
 	/// Builds external polygon links for a tile.
+	dtStatus connectTraverseLinks(const dtTileRef tileRef, const dtTraverseLinkConnectParams& params);
+	/// Builds external polygon links for a tile.
 	dtStatus connectExtOffMeshLinks(const dtTileRef tileRef);
 	/// Builds internal polygons links for a tile.
 	dtStatus baseOffMeshLinks(const dtTileRef tileRef);
@@ -891,9 +953,8 @@ private:
 	///< See note at dtNavMeshParams::magicDataCount for buffer allocation.
 	void* m_someMagicData;
 
-	char m_meshFlags;	// Maybe.
-	char m_tileFlags;	// Maybe.
-	int m_unk1;			// FIXME:
+	int m_unused0;
+	int m_unused1;
 
 	dtNavMeshParams m_params;			///< Current initialization params. TODO: do not store this info twice.
 	float m_orig[3];					///< Origin of the tile (0,0)

@@ -43,10 +43,14 @@ extern const hulldef hulls[5];
 
 struct TraverseType_s
 {
-	float minElev;
-	float maxElev;
 	float minDist;
 	float maxDist;
+	float minElev;
+	float maxElev;
+	float minSlope;
+	float maxSlope;
+	float ovlpTrig;
+	bool ovlpExcl;
 };
 
 enum TraverseType_e // todo(amos): move elsewhere
@@ -165,12 +169,16 @@ enum EditorPolyAreas
 //	EDITOR_POLYFLAGS_ALL		= 0xffff	// All abilities.
 //};
 
+// Polygon surface area's that aren't larger than this amount will be flagged
+// as 'EDITOR_POLYFLAGS_TOO_SMALL'.
+static const unsigned short NAVMESH_SMALL_POLYGON_THRESHOLD = 120;
+
 enum EditorPolyFlags
 {
 	// Most common polygon flags.
 	EDITOR_POLYFLAGS_WALK				= 1<<0,		// Ability to walk (ground, grass, road).
-	EDITOR_POLYFLAGS_SKIP				= 1<<1,     // Skipped during AIN script nodes generation, NavMesh_RandomPositions, dtNavMeshQuery::findLocalNeighbourhood, etc.
-	EDITOR_POLYFLAGS_UNK0				= 1<<2,     // Unknown, most polygon have this flag.
+	EDITOR_POLYFLAGS_TOO_SMALL			= 1<<1,     // This polygon's surface area is too small; it will be ignored during AIN script nodes generation, NavMesh_RandomPositions, dtNavMeshQuery::findLocalNeighbourhood, etc.
+	EDITOR_POLYFLAGS_HAS_NEIGHBOUR		= 1<<2,     // This polygon is connected to a polygon on a neighbouring tile.
 
 	// Off-mesh connection flags
 	EDITOR_POLYFLAGS_JUMP				= 1<<3,		// Ability to jump (exclusively used on off-mesh connection polygons).
@@ -190,6 +198,27 @@ enum EditorPolyFlags
 	EDITOR_POLYFLAGS_DOOR_BREACHABLE	= 1<<13,	// Used for doors that need to be breached, such as the Explosive Holds doors.
 
 	EDITOR_POLYFLAGS_ALL				= 0xffff	// All abilities.
+};
+
+inline static const char* const g_navMeshPolyFlagNames[] =
+{
+	"walk",
+	"too_small",
+	"has_neighbour",
+	"jump",
+	"jump_linked",
+	"unused_8",
+	"obstacle",
+	"unused_128",
+	"disabled",
+	"hazard",
+	"door",
+	"unused_2048",
+	"unused_4096",
+	"door_breachable",
+	"unused_16384",
+	"unused_32768",
+	"all"
 };
 
 struct TraverseLinkPolyPair
@@ -278,6 +307,7 @@ protected:
 	float m_agentMaxClimb;
 	float m_agentMaxSlope;
 	float m_traverseRayExtraOffset;
+	float m_traverseEdgeMinOverlap;
 	int m_regionMinSize;
 	int m_regionMergeSize;
 	int m_edgeMaxLen;
@@ -349,6 +379,8 @@ public:
 	virtual float getAgentRadius() { return m_agentRadius; }
 	virtual float getAgentHeight() { return m_agentHeight; }
 	virtual float getAgentClimb() { return m_agentMaxClimb; }
+
+	inline float getCellHeight() const { return m_cellHeight; }
 	
 	inline unsigned int getNavMeshDrawFlags() const { return m_navMeshDrawFlags; }
 	inline void setNavMeshDrawFlags(unsigned int flags) { m_navMeshDrawFlags = flags; }
@@ -357,6 +389,11 @@ public:
 
 	inline NavMeshType_e getSelectedNavMeshType() const { return m_selectedNavMeshType; }
 	inline NavMeshType_e getLoadedNavMeshType() const { return m_loadedNavMeshType; }
+
+	inline bool useDynamicTraverseRayOffset() const { return m_traverseRayDynamicOffset; }
+	inline float getTraverseRayExtraOffset() const { return m_traverseRayExtraOffset; }
+
+	inline std::map<TraverseLinkPolyPair, unsigned int>& getTraverseLinkPolyMap() { return m_traverseLinkPolyMap; }
 
 	inline const char* getModelName() const { return m_modelName.c_str(); }
 
@@ -368,6 +405,7 @@ public:
 
 	void renderMeshOffsetOptions();
 	void renderDetourDebugMenu();
+	void renderTraverseTableFineTuners();
 	void renderIntermediateTileMeshOptions();
 
 	void selectNavMeshType(const NavMeshType_e navMeshType);
@@ -377,6 +415,8 @@ public:
 
 	void connectTileTraverseLinks(dtMeshTile* const baseTile, const bool linkToNeighbor); // Make private.
 	bool createTraverseLinks();
+
+	void createTraverseLinkParams(dtTraverseLinkConnectParams& params);
 
 	void createTraverseTableParams(dtTraverseTableCreateParams* params);
 

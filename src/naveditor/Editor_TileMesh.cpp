@@ -35,6 +35,7 @@
 
 #include "game/server/ai_navmesh.h"
 #include "game/server/ai_hull.h"
+#include "coordsize.h"
 
 
 #ifdef DT_POLYREF64
@@ -185,6 +186,10 @@ public:
 			ImGui::PopItemWidth();
 		}
 
+		ImGui::PushItemWidth(180);
+		ImGui::SliderFloat3("Cursor", m_hitPos, MIN_COORD_FLOAT, MAX_COORD_FLOAT);
+		ImGui::PopItemWidth();
+
 		if (hasMarker && ImGui::Button("Clear Markers"))
 		{
 			m_markedTileRef = 0;
@@ -244,7 +249,7 @@ public:
 				else
 					m_editor->buildTile(m_hitPos);
 			}
-			else if (m_cursorMode == TT_CURSOR_MODE_DEBUG)
+			else if (m_cursorMode == TT_CURSOR_MODE_DEBUG && m_navMesh)
 			{
 				const float halfExtents[3] = { 2, 2, 4 };
 				dtQueryFilter filter;
@@ -304,16 +309,20 @@ public:
 
 				const int side = (m_selectedSide != -1) 
 					? m_selectedSide
-					: rdClassifyPointInsideBounds(m_hitPos, tile->header->bmin, tile->header->bmax);
+					: rdClassifyPointOutsideBounds(m_hitPos, tile->header->bmin, tile->header->bmax);
 
-				const int MAX_NEIS = 32; // Max neighbors
-				dtMeshTile* neis[MAX_NEIS];
-
-				const int nneis = m_navMesh->getNeighbourTilesAt(tile->header->x, tile->header->y, side, neis, MAX_NEIS);
-
-				for (int i = 0; i < nneis; i++)
+				if (side != 0xff)
 				{
-					duDebugDrawMeshTile(&m_editor->getDebugDraw(), *m_navMesh, 0, neis[i], debugDrawOffset, m_editor->getNavMeshDrawFlags(), params);
+					const int MAX_NEIS = 32; // Max neighbors
+					dtMeshTile* neis[MAX_NEIS];
+
+					const int nneis = m_navMesh->getNeighbourTilesAt(tile->header->x, tile->header->y, side, neis, MAX_NEIS);
+
+					for (int i = 0; i < nneis; i++)
+					{
+						const dtMeshTile* neiTile = neis[i];
+						duDebugDrawMeshTile(&m_editor->getDebugDraw(), *m_navMesh, 0, neiTile, debugDrawOffset, m_editor->getNavMeshDrawFlags(), params);
+					}
 				}
 			}
 		}
@@ -726,17 +735,16 @@ void Editor_TileMesh::buildTile(const float* pos)
 				}
 			}
 
-			dtMeshTile* tile = (dtMeshTile*)m_navMesh->getTileByRef(tileRef);
-
 			// Reconnect the traverse links.
-			connectTileTraverseLinks(tile, true);
-			connectTileTraverseLinks(tile, false);
+			dtTraverseLinkConnectParams params;
+			createTraverseLinkParams(params);
 
-			dtTraverseTableCreateParams params;
-			createTraverseTableParams(&params);
+			params.linkToNeighbor = false;
+			m_navMesh->connectTraverseLinks(tileRef, params);
+			params.linkToNeighbor = true;
+			m_navMesh->connectTraverseLinks(tileRef, params);
 
-			dtCreateDisjointPolyGroups(&params);
-			updateStaticPathingData(&params);
+			buildStaticPathingData();
 		}
 	}
 	
@@ -800,11 +808,7 @@ void Editor_TileMesh::removeTile(const float* pos)
 			++it;
 		}
 
-		dtTraverseTableCreateParams params;
-		createTraverseTableParams(&params);
-
-		dtCreateDisjointPolyGroups(&params);
-		updateStaticPathingData(&params);
+		buildStaticPathingData();
 	}
 }
 
@@ -849,6 +853,8 @@ void Editor_TileMesh::buildAllTiles()
 	}
 
 	connectOffMeshLinks();
+	createTraverseLinks();
+
 	buildStaticPathingData();
 	
 	// Start the build process.	
@@ -876,6 +882,7 @@ void Editor_TileMesh::removeAllTiles()
 			m_navMesh->removeTile(m_navMesh->getTileRefAt(x,y,0),0,0);
 
 	m_traverseLinkPolyMap.clear();
+	buildStaticPathingData();
 }
 
 void Editor_TileMesh::buildAllHulls()
@@ -1101,7 +1108,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	// (Optional) Mark areas.
 	const ConvexVolume* vols = m_geom->getConvexVolumes();
 	for (int i  = 0; i < m_geom->getConvexVolumeCount(); ++i)
-		rcMarkConvexPolyArea(m_ctx, vols[i].verts, vols[i].nverts, vols[i].hmin, vols[i].hmax, (unsigned char)vols[i].area, *m_chf);
+		rcMarkConvexPolyArea(m_ctx, vols[i].verts, vols[i].nverts, vols[i].hmin, vols[i].hmax, (unsigned short)vols[i].flags, (unsigned char)vols[i].area, *m_chf);
 	
 	
 	// Partition the heightfield so that we can use simple algorithm later to triangulate the walkable areas.
@@ -1246,7 +1253,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 				//m_pmesh->areas[i] == EDITOR_POLYAREA_ROAD
 				)
 			{
-				m_pmesh->flags[i] = EDITOR_POLYFLAGS_WALK;
+				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_WALK;
 			}
 			//else if (m_pmesh->areas[i] == EDITOR_POLYAREA_WATER)
 			//{
@@ -1254,7 +1261,26 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 			//}
 			else if (m_pmesh->areas[i] == EDITOR_POLYAREA_TRIGGER)
 			{
-				m_pmesh->flags[i] = EDITOR_POLYFLAGS_WALK /*| EDITOR_POLYFLAGS_DOOR*/;
+				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_WALK /*| EDITOR_POLYFLAGS_DOOR*/;
+			}
+
+			if (m_pmesh->surfa[i] <= NAVMESH_SMALL_POLYGON_THRESHOLD)
+				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_TOO_SMALL;
+
+			const int nvp = m_pmesh->nvp;
+			const unsigned short* p = &m_pmesh->polys[i*nvp*2];
+
+			// If polygon connects to a polygon on a neighbouring tile, flag it.
+			for (int j = 0; j < nvp; ++j)
+			{
+				if (p[j] == RD_MESH_NULL_IDX)
+					break;
+				if ((p[nvp+j] & 0x8000) == 0)
+					continue;
+				if ((p[nvp+j] & 0xf) == 0xf)
+					continue;
+
+				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_HAS_NEIGHBOUR;
 			}
 		}
 		
@@ -1263,8 +1289,9 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		params.verts = m_pmesh->verts;
 		params.vertCount = m_pmesh->nverts;
 		params.polys = m_pmesh->polys;
-		params.polyAreas = m_pmesh->areas;
 		params.polyFlags = m_pmesh->flags;
+		params.polyAreas = m_pmesh->areas;
+		params.surfAreas = m_pmesh->surfa;
 		params.polyCount = m_pmesh->npolys;
 		params.nvp = m_pmesh->nvp;
 		params.cellResolution = m_polyCellRes;
@@ -1274,15 +1301,15 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		params.detailTris = m_dmesh->tris;
 		params.detailTriCount = m_dmesh->ntris;
 		params.offMeshConVerts = m_geom->getOffMeshConnectionVerts();
+		params.offMeshConRefPos = m_geom->getOffMeshConnectionRefPos();
 		params.offMeshConRad = m_geom->getOffMeshConnectionRads();
+		params.offMeshConRefYaw = m_geom->getOffMeshConnectionRefYaws();
 		params.offMeshConDir = m_geom->getOffMeshConnectionDirs();
 		params.offMeshConJumps = m_geom->getOffMeshConnectionJumps();
 		params.offMeshConOrders = m_geom->getOffMeshConnectionOrders();
 		params.offMeshConAreas = m_geom->getOffMeshConnectionAreas();
 		params.offMeshConFlags = m_geom->getOffMeshConnectionFlags();
 		params.offMeshConUserID = m_geom->getOffMeshConnectionId();
-		params.offMeshConRefPos = m_geom->getOffMeshConnectionRefPos();
-		params.offMeshConRefYaw = m_geom->getOffMeshConnectionRefYaws();
 		params.offMeshConCount = m_geom->getOffMeshConnectionCount();
 		params.walkableHeight = m_agentHeight;
 		params.walkableRadius = m_agentRadius;

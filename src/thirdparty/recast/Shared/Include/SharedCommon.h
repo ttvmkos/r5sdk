@@ -19,10 +19,9 @@
 #ifndef RECASTDETOURCOMMON_H
 #define RECASTDETOURCOMMON_H
 
+#include "Shared/Include/SharedConst.h"
+#include "Shared/Include/SharedDefs.h"
 #include "Shared/Include/SharedMath.h"
-
-/// The total number of bits in an bit cell integer.
-static const int RD_BITS_PER_BIT_CELL = 32;
 
 /**
 @defgroup shared Shared
@@ -41,11 +40,6 @@ feature to find minor members.
 /// and this silences the warning.
 ///  @param [in] _ Unused parameter
 template<class T> void rdIgnoreUnused(const T&) { }
-
-/// Tests a specific bit in a bit cell
-///  @param[in]	i	The bit number
-///  @return The offset mask for the bit.
-inline int rdBitCellBit(const int i) { return (1 << ((i) & (RD_BITS_PER_BIT_CELL-1))); }
 
 /// Swaps the values of the two parameters.
 ///  @param[in,out]	a	Value A
@@ -80,6 +74,21 @@ template<class T> inline T rdAbs(T a) { return a < 0 ? -a : a; }
 ///  @param[in]		a	The value.
 ///  @return The square of the value.
 template<class T> inline T rdSqr(T a) { return a * a; }
+
+/// Converts value from Degrees to Radians.
+///  @param[in]		x	The value to convert.
+///  @return The input value as Radians.
+inline float rdDegToRad(const float x) { return x * (RD_PI/180.0f); }
+
+/// Converts value from Radians to Degrees.
+///  @param[in]		x	The value to convert.
+///  @return The input value as Degrees.
+inline float rdRadToDeg(const float x) { return x * (180.0f/RD_PI); }
+
+/// Tests a specific bit in a bit cell
+///  @param[in]		i	The bit number
+///  @return The offset mask for the bit.
+inline int rdBitCellBit(const int i) { return (1 << ((i) & (RD_BITS_PER_BIT_CELL-1))); }
 
 /// @}
 /// @name Vector helper functions.
@@ -319,6 +328,40 @@ inline void rdVnormalize2D(float* v)
 	v[1] *= d;
 }
 
+/// Derives the magnitude of the vector.
+///  @param[in]		v	A vector. [(x, y, z)]
+/// @return The magnitude of the vector.
+inline float rdVmag(const float* v)
+{
+	return rdMathSqrtf(rdVdot(v, v));
+}
+
+/// Derives the magnitude of the vector on the xy-plane.
+///  @param[in]		v	A vector. [(x, y, z)]
+/// @return The magnitude of the vector on the xy-plane.
+inline float rdVmag2D(const float* v)
+{
+	return rdMathSqrtf(rdVdot2D(v, v));
+}
+
+/// Derives the scalar projection of the specified point into the vector.
+///  @param[in]		p	A point. [(x, y, z)]
+///  @param[in]		v	A vector. [(x, y, z)]
+/// @return The scalar projection of the specified point into the vector.
+inline float rdVproj(const float* p, const float* v)
+{
+	return rdVdot(p, v) / rdVmag(v);
+}
+
+/// Derives the scalar projection of the specified point into the vector on the xy-plane.
+///  @param[in]		p	A point. [(x, y, z)]
+///  @param[in]		v	A vector. [(x, y, z)]
+/// @return The scalar projection of the specified point into the vector on the xy-plane.
+inline float rdVproj2D(const float* p, const float* v)
+{
+	return rdVdot2D(p, v) / rdVmag2D(v);
+}
+
 /// Performs a 'sloppy' collocation check of the specified points.
 ///  @param[in]		p0	A point. [(x, y, z)]
 ///  @param[in]		p1	A point. [(x, y, z)]
@@ -439,20 +482,39 @@ bool rdIntersectSegSeg2D(const float* ap, const float* aq,
 						 const float* bp, const float* bq,
 						 float& s, float& t);
 
-float rdDistancePtLine2d(const float* pt, const float* p, const float* q);
+float rdDistancePtLine2D(const float* pt, const float* p, const float* q);
 
 /// Derives the normal of an edge
 ///  @param[in]		dir		The direction of the edge. [(x, y, z)]
-///  @param[in]		invert	Whether to invert the results.
 ///  @param[out]	out		The resulting normal. [(x, y)]
-void rdCalcEdgeNormal2D(const float* dir, const bool inner, float* out);
+void rdCalcEdgeNormal2D(const float* dir, float* out);
 
 /// Derives the normal of an edge
 ///  @param[in]		v1		First vert of the polygon edge. [(x, y, z)]
 ///  @param[in]		v2		Second vert of the polygon edge. [(x, y, z)]
-///  @param[in]		invert	Whether to invert the results.
 ///  @param[out]	out		The resulting normal. [(x, y)]
-void rdCalcEdgeNormalPt2D(const float* v1, const float* v2, const bool inner, float* out);
+void rdCalcEdgeNormalPt2D(const float* v1, const float* v2, float* out);
+
+/// Derives the sub-edge area of an edge.
+///  @param[in]		edgeStart		First vert of the polygon edge. [(x, y, z)]
+///  @param[in]		edgeEnd			Second vert of the polygon edge. [(x, y, z)]
+///  @param[in]		subEdgeStart	First vert of the detail edge. [(x, y, z)]
+///  @param[in]		subEdgeEnd		Second vert of the detail edge. [(x, y, z)]
+///  @param[out]	tmin			The normalized distance ratio from polygon edge start to detail edge start.
+///  @param[out]	tmax			The normalized distance ratio from polygon edge start to detail edge end.
+/// @return False if tmin and tmax don't correspond to the winding order of the edge.
+bool rdCalcSubEdgeArea2D(const float* edgeStart, const float* edgeEnd, const float* subEdgeStart,
+	const float* subEdgeEnd, float& tmin, float& tmax);
+
+/// Derives the overlap between 2 edges.
+///  @param[in]		edge1Start		Start vert of the first edge. [(x, y, z)]
+///  @param[in]		edge1End		End vert of the first edge. [(x, y, z)]
+///  @param[in]		edge2Start		Start vert of the second edge. [(x, y, z)]
+///  @param[in]		edge2End		End vert of the second edge. [(x, y, z)]
+///  @param[in]		targetEdgeVec	The projection direction. [(x, y, z)]
+/// @return The length of the overlap.
+float rdCalcEdgeOverlap2D(const float* edge1Start, const float* edge1End,
+	const float* edge2Start, const float* edge2End, const float* targetEdgeVec);
 
 /// Derives the maximum angle in which an object on an elevated surface can be seen from below.
 ///  @param[in]		ledgeSpan		The distance between the edge of the object and the edge of the ledge.
@@ -469,6 +531,7 @@ float rdCalcLedgeSpanOffsetAmount(const float ledgeSpan, const float slopeAngle,
 
 unsigned char rdClassifyPointOutsideBounds(const float* pt, const float* bmin, const float* bmax);
 unsigned char rdClassifyPointInsideBounds(const float* pt, const float* bmin, const float* bmax);
+unsigned char rdClassifyDirection(const float* dir, const float* bmin, const float* bmax);
 
 /// Determines if the specified point is inside the convex polygon on the xy-plane.
 ///  @param[in]		pt		The point to check. [(x, y, z)]
@@ -570,8 +633,20 @@ inline void rdSwapEndian(float* v)
 void rdRandomPointInConvexPoly(const float* pts, const int npts, float* areas,
 							   const float s, const float t, float* out);
 
+/// Counts the number of vertices in the polygon.
+///  @param[in]		p	The polygon.
+///  @param[in]		nvp	The total number of verts per polygon.
+/// @return The number of vertices in the polygon.
+inline int rdCountPolyVerts(const unsigned short* p, const int nvp)
+{
+	for (int i = 0; i < nvp; ++i)
+		if (p[i] == RD_MESH_NULL_IDX)
+			return i;
+	return nvp;
+}
+
 template<typename TypeToRetrieveAs>
-TypeToRetrieveAs* rdGetThenAdvanceBufferPointer(const unsigned char*& buffer, const size_t distanceToAdvance)
+TypeToRetrieveAs* rdGetThenAdvanceBufferPointer(const unsigned char*& buffer, const rdSizeType distanceToAdvance)
 {
 	TypeToRetrieveAs* returnPointer = reinterpret_cast<TypeToRetrieveAs*>(buffer);
 	buffer += distanceToAdvance;
@@ -579,7 +654,7 @@ TypeToRetrieveAs* rdGetThenAdvanceBufferPointer(const unsigned char*& buffer, co
 }
 
 template<typename TypeToRetrieveAs>
-TypeToRetrieveAs* rdGetThenAdvanceBufferPointer(unsigned char*& buffer, const size_t distanceToAdvance)
+TypeToRetrieveAs* rdGetThenAdvanceBufferPointer(unsigned char*& buffer, const rdSizeType distanceToAdvance)
 {
 	TypeToRetrieveAs* returnPointer = reinterpret_cast<TypeToRetrieveAs*>(buffer);
 	buffer += distanceToAdvance;

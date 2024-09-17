@@ -28,7 +28,8 @@ struct ConvexVolume
 	float verts[MAX_CONVEXVOL_PTS*3];
 	float hmin, hmax;
 	int nverts;
-	int area;
+	unsigned short flags;
+	unsigned char area;
 };
 
 struct BuildSettings
@@ -85,17 +86,17 @@ class InputGeom
 	
 	/// @name Off-Mesh connections.
 	///@{
-	static const int MAX_OFFMESH_CONNECTIONS = 256;
+	static const int MAX_OFFMESH_CONNECTIONS = 1024;
 	float m_offMeshConVerts[MAX_OFFMESH_CONNECTIONS*3*2];
+	float m_offMeshConRefPos[MAX_OFFMESH_CONNECTIONS*3];
 	float m_offMeshConRads[MAX_OFFMESH_CONNECTIONS];
+	float m_offMeshConRefYaws[MAX_OFFMESH_CONNECTIONS];
 	unsigned char m_offMeshConDirs[MAX_OFFMESH_CONNECTIONS];
 	unsigned char m_offMeshConJumps[MAX_OFFMESH_CONNECTIONS];
 	unsigned char m_offMeshConOrders[MAX_OFFMESH_CONNECTIONS];
 	unsigned char m_offMeshConAreas[MAX_OFFMESH_CONNECTIONS];
 	unsigned short m_offMeshConFlags[MAX_OFFMESH_CONNECTIONS];
 	unsigned short m_offMeshConId[MAX_OFFMESH_CONNECTIONS];
-	float m_offMeshConRefPos[MAX_OFFMESH_CONNECTIONS*3];
-	float m_offMeshConRefYaws[MAX_OFFMESH_CONNECTIONS];
 	short m_offMeshConCount;
 	///@}
 
@@ -160,7 +161,7 @@ public:
 	int getConvexVolumeCount() const { return m_volumeCount; }
 	const ConvexVolume* getConvexVolumes() const { return m_volumes; }
 	void addConvexVolume(const float* verts, const int nverts,
-						 const float minh, const float maxh, unsigned char area);
+						 const float minh, const float maxh, unsigned short flags, unsigned char area);
 	void deleteConvexVolume(int i);
 	void drawConvexVolumes(struct duDebugDraw* dd, const float* offset, bool hilight = false);
 	///@}

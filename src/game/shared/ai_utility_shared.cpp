@@ -82,15 +82,15 @@ void CAI_Utility::RunRenderFrame(void)
     const bool bUseDepthBuffer = r_debug_draw_depth_test.GetBool();
 
     if (iScriptNodeIndex > -1)
-        g_pAIUtility->DrawAIScriptNetwork(*g_pAINetwork, vCamera, iScriptNodeIndex, flCameraRange, bUseDepthBuffer);
+        g_AIUtility.DrawAIScriptNetwork(*g_pAINetwork, vCamera, iScriptNodeIndex, flCameraRange, bUseDepthBuffer);
     if (iNavMeshBVTreeIndex > -1)
-        g_pAIUtility->DrawNavMeshBVTree(nullptr, vCamera, vCullPlane, iNavMeshBVTreeIndex, flCameraRange, nTileRange, bUseDepthBuffer);
+        g_AIUtility.DrawNavMeshBVTree(nullptr, vCamera, vCullPlane, iNavMeshBVTreeIndex, flCameraRange, nTileRange, bUseDepthBuffer);
     if (iNavMeshPortalIndex > -1)
-        g_pAIUtility->DrawNavMeshPortals(nullptr, vCamera, vCullPlane, iNavMeshPortalIndex, flCameraRange, nTileRange, bUseDepthBuffer);
+        g_AIUtility.DrawNavMeshPortals(nullptr, vCamera, vCullPlane, iNavMeshPortalIndex, flCameraRange, nTileRange, bUseDepthBuffer);
     if (iNavMeshPolyIndex > -1)
-        g_pAIUtility->DrawNavMeshPolys(nullptr, vCamera, vCullPlane, iNavMeshPolyIndex, flCameraRange, nTileRange, bUseDepthBuffer);
+        g_AIUtility.DrawNavMeshPolys(nullptr, vCamera, vCullPlane, iNavMeshPolyIndex, flCameraRange, nTileRange, bUseDepthBuffer);
     if (iNavMeshPolyBoundIndex > -1)
-        g_pAIUtility->DrawNavMeshPolyBoundaries(nullptr, vCamera, vCullPlane, iNavMeshPolyBoundIndex, flCameraRange, nTileRange, bUseDepthBuffer);
+        g_AIUtility.DrawNavMeshPolyBoundaries(nullptr, vCamera, vCullPlane, iNavMeshPolyBoundIndex, flCameraRange, nTileRange, bUseDepthBuffer);
 }
 
 //------------------------------------------------------------------------------
@@ -540,11 +540,11 @@ void CAI_Utility::DrawNavMeshPolyBoundaries(const dtNavMesh* pMesh,
                     }
                     for (int m = 0, n = 2; m < 3; n = m++)
                     {
-                        if ((dtGetDetailTriEdgeFlags(t[3], n) & DT_DETAIL_EDGE_BOUNDARY) == 0)
+                        if ((dtGetDetailTriEdgeFlags(t[3], n) & RD_DETAIL_EDGE_BOUNDARY) == 0)
                             continue;
 
-                        if (rdDistancePtLine2d(tv[n], v0, v1) < thr &&
-                            rdDistancePtLine2d(tv[m], v0, v1) < thr)
+                        if (rdDistancePtLine2D(tv[n], v0, v1) < thr &&
+                            rdDistancePtLine2D(tv[m], v0, v1) < thr)
                         {
                             v_RenderLine(Vector3D(tv[n][0], tv[n][1], tv[n][2]), Vector3D(tv[m][0], tv[m][1], tv[m][2]), col, bDepthBuffer);
                         }
@@ -720,4 +720,4 @@ int CAI_Utility::GetNearestNodeToPos(const CAI_Network* pAINetwork, const Vector
     return result;
 }
 
-CAI_Utility* g_pAIUtility = new (CAI_Utility);
+CAI_Utility g_AIUtility;
