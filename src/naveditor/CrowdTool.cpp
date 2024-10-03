@@ -27,43 +27,6 @@
 #include "NavEditor/Include/EditorInterfaces.h"
 #include "DetourCrowd/Include/DetourCrowdInternal.h"
 
-static bool isectSegAABB(const float* sp, const float* sq,
-						 const float* amin, const float* amax,
-						 float& tmin, float& tmax)
-{
-	float d[3];
-	rdVsub(d, sq, sp);
-	tmin = 0;  // set to -FLT_MAX to get first hit on line
-	tmax = FLT_MAX;		// set to max distance ray can travel (for segment)
-	
-	// For all three slabs
-	for (int i = 0; i < 3; i++)
-	{
-		if (fabsf(d[i]) < RD_EPS)
-		{
-			// Ray is parallel to slab. No hit if origin not within slab
-			if (sp[i] < amin[i] || sp[i] > amax[i])
-				return false;
-		}
-		else
-		{
-			// Compute intersection t value of ray with near and far plane of slab
-			const float ood = 1.0f / d[i];
-			float t1 = (amin[i] - sp[i]) * ood;
-			float t2 = (amax[i] - sp[i]) * ood;
-			// Make t1 be intersection with near plane, t2 with far plane
-			if (t1 > t2) rdSwap(t1, t2);
-			// Compute the intersection of slab intersections intervals
-			if (t1 > tmin) tmin = t1;
-			if (t2 < tmax) tmax = t2;
-			// Exit with no collision as soon as slab intersection becomes empty
-			if (tmin > tmax) return false;
-		}
-	}
-	
-	return true;
-}
-
 static void getAgentBounds(const dtCrowdAgent* ag, float* bmin, float* bmax)
 {
 	const float* p = ag->npos;
@@ -142,7 +105,7 @@ void CrowdToolState::init(class Editor* editor)
 		crowd->init(MAX_AGENTS, m_editor->getAgentRadius(), nav);
 		
 		// Make polygons with 'disabled' flag invalid.
-		crowd->getEditableFilter(0)->setExcludeFlags(EDITOR_POLYFLAGS_DISABLED);
+		crowd->getEditableFilter(0)->setExcludeFlags(DT_POLYFLAGS_DISABLED);
 		
 		// Setup local avoidance params to different qualities.
 		dtObstacleAvoidanceParams params;
@@ -795,7 +758,7 @@ int CrowdToolState::hitTestAgents(const float* s, const float* p)
 	dtCrowd* crowd = m_editor->getCrowd();
 	
 	int isel = -1;
-	float tsel = FLT_MAX;
+	float tsel = 1;
 
 	for (int i = 0; i < crowd->getAgentCount(); ++i)
 	{
@@ -804,7 +767,7 @@ int CrowdToolState::hitTestAgents(const float* s, const float* p)
 		float bmin[3], bmax[3];
 		getAgentBounds(ag, bmin, bmax);
 		float tmin, tmax;
-		if (isectSegAABB(s, p, bmin,bmax, tmin, tmax))
+		if (rdIntersectSegmentAABB(s, p, bmin,bmax, tmin, tmax))
 		{
 			if (tmin > 0 && tmin < tsel)
 			{
@@ -966,7 +929,7 @@ void CrowdTool::handleMenu()
 		if (ImGui::Checkbox("Obstacle Avoidance", &params->m_obstacleAvoidance))
 			m_state->updateAgentParams();
 
-		ImGui::PushItemWidth(90.f);
+		ImGui::PushItemWidth(120.f);
 		if (ImGui::SliderInt("Avoidance Quality", &params->m_obstacleAvoidanceType, 0, 3))
 		{
 			m_state->updateAgentParams();
@@ -1035,7 +998,7 @@ void CrowdTool::handleMenu()
 	}
 }
 
-void CrowdTool::handleClick(const float* s, const float* p, bool shift)
+void CrowdTool::handleClick(const float* s, const float* p, const int /*v*/, bool shift)
 {
 	if (!m_editor) return;
 	if (!m_state) return;
@@ -1085,7 +1048,7 @@ void CrowdTool::handleClick(const float* s, const float* p, bool shift)
 				unsigned short flags = 0;
 				if (dtStatusSucceed(nav->getPolyFlags(ref, &flags)))
 				{
-					flags ^= EDITOR_POLYFLAGS_DISABLED;
+					flags ^= DT_POLYFLAGS_DISABLED;
 					nav->setPolyFlags(ref, flags);
 				}
 			}
@@ -1130,36 +1093,36 @@ void CrowdTool::handleRenderOverlay(double* proj, double* model, int* view)
 	if (m_mode == TOOLMODE_CREATE)
 	{
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-			ImVec2(280, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: add agent.  Shift+LMB: remove agent.");
+			ImVec2(300, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: add agent.  Shift+LMB: remove agent.");
 	}
 	else if (m_mode == TOOLMODE_MOVE_TARGET)
 	{
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-			ImVec2(280, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: set move target.  Shift+LMB: adjust set velocity.");
+			ImVec2(300, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: set move target.  Shift+LMB: adjust set velocity.");
 
 		ty += 20;
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-			ImVec2(280, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "Setting velocity will move the agents without pathfinder.");
+			ImVec2(300, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "Setting velocity will move the agents without pathfinder.");
 	}
 	else if (m_mode == TOOLMODE_SELECT)
 	{
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-			ImVec2(280, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: select agent.");
+			ImVec2(300, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: select agent.");
 	}
 
 	ty += 20.f;
 	ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-		ImVec2(280, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "SPACE: Run/Pause simulation.  1: Step simulation.");
+		ImVec2(300, ty), ImVec4(1.0f,1.0f,1.0f,0.75f), "SPACE: Run/Pause simulation.  1: Step simulation.");
 
 	ty += 20.f;
 	if (m_state && m_state->isRunning())
 	{
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-			ImVec2(280, ty), ImVec4(0.15f,1.0f,0.05f,0.8f), "- RUNNING -");
+			ImVec2(300, ty), ImVec4(0.15f,1.0f,0.05f,0.8f), "- RUNNING -");
 	}
 	else
 	{
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-			ImVec2(280, ty), ImVec4(1.0f,0.15f,0.05f,0.8f), "- PAUSED -");
+			ImVec2(300, ty), ImVec4(1.0f,0.15f,0.05f,0.8f), "- PAUSED -");
 	}
 }

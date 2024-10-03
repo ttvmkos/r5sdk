@@ -278,7 +278,7 @@ bool InputGeom::loadGeomSet(rcContext* ctx, const std::string& filepath)
 				}
 			}
 		}
-		else if (row[0] == 'c')
+		else if (row[0] == 'o')
 		{
 			// Off-mesh connection
 			if (m_offMeshConCount < MAX_OFFMESH_CONNECTIONS)
@@ -306,12 +306,46 @@ bool InputGeom::loadGeomSet(rcContext* ctx, const std::string& filepath)
 				m_offMeshConCount++;
 			}
 		}
-		else if (row[0] == 'v')
+		else if (row[0] == 'b')
 		{
-			// Convex volumes
+			// Box volumes
 			if (m_volumeCount < MAX_VOLUMES)
 			{
-				ConvexVolume* vol = &m_volumes[m_volumeCount++];
+				ShapeVolume* vol = &m_volumes[m_volumeCount++];
+
+				sscanf(row+1, "%hu %hhu %f %f %f %f %f %f", &vol->flags, &vol->area, 
+					&vol->verts[0], &vol->verts[1], &vol->verts[2],
+					&vol->verts[3], &vol->verts[4], &vol->verts[5]);
+
+				vol->hmin = 0.0f;
+				vol->hmax = 0.0f;
+				vol->nverts = 6;
+				vol->type = VOLUME_BOX;
+			}
+		}
+		else if (row[0] == 'c')
+		{
+			// Cylinder volumes
+			if (m_volumeCount < MAX_VOLUMES)
+			{
+				ShapeVolume* vol = &m_volumes[m_volumeCount++];
+
+				sscanf(row + 1, "%hu %hhu %f %f %f %f %f", &vol->flags, &vol->area,
+					&vol->verts[0], &vol->verts[1], &vol->verts[2],
+					&vol->verts[3], &vol->verts[4]);
+
+				vol->hmin = 0.0f;
+				vol->hmax = 0.0f;
+				vol->nverts = 5;
+				vol->type = VOLUME_CYLINDER;
+			}
+		}
+		else if (row[0] == 'p')
+		{
+			// Convex polygon volumes
+			if (m_volumeCount < MAX_VOLUMES)
+			{
+				ShapeVolume* vol = &m_volumes[m_volumeCount++];
 				sscanf(row+1, "%d %hu %hhu %f %f", &vol->nverts, &vol->flags, &vol->area, &vol->hmin, &vol->hmax);
 				for (int i = 0; i < vol->nverts; ++i)
 				{
@@ -319,6 +353,8 @@ bool InputGeom::loadGeomSet(rcContext* ctx, const std::string& filepath)
 					src = parseRow(src, srcEnd, row, sizeof(row)/sizeof(char));
 					sscanf(row, "%f %f %f", &vol->verts[i*3+0], &vol->verts[i*3+1], &vol->verts[i*3+2]);
 				}
+
+				vol->type = VOLUME_CONVEX;
 			}
 		}
 		else if (row[0] == 's')
@@ -440,7 +476,7 @@ bool InputGeom::saveGeomSet(const BuildSettings* settings)
 		const int order = m_offMeshConOrders[i];
 		const int area = m_offMeshConAreas[i];
 		const int flags = m_offMeshConFlags[i];
-		fprintf(fp, "c %f %f %f %f %f %f %f %f %f %f %f %d %d %d %d %d\n",
+		fprintf(fp, "o %f %f %f %f %f %f %f %f %f %f %f %d %d %d %d %d\n",
 				verts[0], verts[1], verts[2],
 				verts[3], verts[4], verts[5],
 				refs[0], refs[1], refs[2],
@@ -452,10 +488,25 @@ bool InputGeom::saveGeomSet(const BuildSettings* settings)
 	// Convex volumes
 	for (int i = 0; i < m_volumeCount; ++i)
 	{
-		ConvexVolume* vol = &m_volumes[i];
-		fprintf(fp, "v %d %hu %hhu %f %f\n", vol->nverts, vol->flags, vol->area, vol->hmin, vol->hmax);
-		for (int j = 0; j < vol->nverts; ++j)
-			fprintf(fp, "%f %f %f\n", vol->verts[j*3+0], vol->verts[j*3+1], vol->verts[j*3+2]);
+		ShapeVolume* vol = &m_volumes[i];
+
+		switch (vol->type)
+		{
+		case VOLUME_BOX:
+			fprintf(fp, "b %hu %hhu %f %f %f %f %f %f\n", vol->flags, vol->area,
+				vol->verts[0], vol->verts[1], vol->verts[2],
+				vol->verts[3], vol->verts[4], vol->verts[5]);
+			break;
+		case VOLUME_CYLINDER:
+			fprintf(fp, "c %hu %hhu %f %f %f %f %f\n", vol->flags, vol->area,
+				vol->verts[0], vol->verts[1], vol->verts[2],
+				vol->verts[3], vol->verts[4]);
+			break;
+		case VOLUME_CONVEX:
+			fprintf(fp, "p %d %hu %hhu %f %f\n", vol->nverts, vol->flags, vol->area, vol->hmin, vol->hmax);
+			for (int j = 0; j < vol->nverts; ++j)
+				fprintf(fp, "%f %f %f\n", vol->verts[j*3+0], vol->verts[j*3+1], vol->verts[j*3+2]);
+		}
 	}
 	
 	fclose(fp);
@@ -463,94 +514,99 @@ bool InputGeom::saveGeomSet(const BuildSettings* settings)
 	return true;
 }
 
-static bool isectSegAABB(const float* sp, const float* sq,
-						 const float* amin, const float* amax,
-						 float& tmin, float& tmax)
+bool InputGeom::raycastMesh(const float* src, const float* dst, const unsigned int mask, int* vidx, float* tmin) const
 {
-	float d[3];
-	d[0] = sq[0] - sp[0];
-	d[1] = sq[1] - sp[1];
-	d[2] = sq[2] - sp[2];
-	tmin = 0.0;
-	tmax = 1.0f;
-	
-	for (int i = 0; i < 3; i++)
-	{
-		if (rdMathFabsf(d[i]) < RD_EPS)
-		{
-			if (sp[i] < amin[i] || sp[i] > amax[i])
-				return false;
-		}
-		else
-		{
-			const float ood = 1.0f / d[i];
-			float t1 = (amin[i] - sp[i]) * ood;
-			float t2 = (amax[i] - sp[i]) * ood;
-			if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-			if (t1 > tmin) tmin = t1;
-			if (t2 < tmax) tmax = t2;
-			if (tmin > tmax) return false;
-		}
-	}
-	
-	return true;
-}
+	if (vidx)
+		*vidx = -1;
 
-
-bool InputGeom::raycastMesh(const float* src, const float* dst, float* tmin) const
-{
 	// Prune hit ray.
-	float btmin, btmax;
-	if (!isectSegAABB(src, dst, m_meshBMin, m_meshBMax, btmin, btmax))
-		return false;
-	float p[2], q[2];
-	p[0] = src[0] + (dst[0]-src[0])*btmin;
-	p[1] = src[1] + (dst[1]-src[1])*btmin;
-	q[0] = src[0] + (dst[0]-src[0])*btmax;
-	q[1] = src[1] + (dst[1]-src[1])*btmax;
-	
-	int cid[4096]; //stack is crying for help
-	const int ncid = rcGetChunksOverlappingSegment(m_chunkyMesh, p, q, cid, 4096);
-	if (!ncid)
+	float btmin = 0, btmax = 1;
+	if (!rdIntersectSegmentAABB(src, dst, m_meshBMin, m_meshBMax, btmin, btmax))
 		return false;
 
 	bool hit = false;
 	const int nvol = m_volumeCount;
 
-	float tsmin = 0.0f, tsmax = 0.0f;
-	int segMin = 0, segMax = 0;
+	const bool traceClip = mask & TRACE_CLIP;
+	const bool traceTrigger = mask & TRACE_TRIGGER;
 
-	const bool calcTmin = tmin != nullptr;
+	float isectTmin = 1.0f;
+	int isectVolIdx = -1;
 
 	for (int i = 0; i < nvol; i++)
 	{
-		const ConvexVolume& vol = m_volumes[i];
+		const ShapeVolume& vol = m_volumes[i];
+		float tsmin = 0.0f, tsmax = 1.0f;
+		bool isect = false;
 
-		if (vol.area != RC_NULL_AREA)
-			continue; // Clip brushes only.
+		if (vol.area == RC_NULL_AREA && !traceClip)
+			continue;
 
-		if ((src[2] >= vol.hmin && src[2] <= vol.hmax) ||
-			(dst[2] >= vol.hmin && dst[2] <= vol.hmax))
+		if (vol.area == DT_POLYAREA_TRIGGER && !traceTrigger)
+			continue;
+
+		if (vol.type == VOLUME_BOX)
 		{
-			if (rdIntersectSegmentPoly2D(src, dst, vol.verts, vol.nverts,
-				tsmin, tsmax, segMin, segMax))
+			if (rdIntersectSegmentAABB(src, dst, &vol.verts[0], &vol.verts[3], tsmin, tsmax))
+				isect = true;
+		}
+		else if (vol.type == VOLUME_CYLINDER)
+		{
+			if (rdIntersectSegmentCylinder(src, dst, &vol.verts[0], vol.verts[3], vol.verts[4], tsmin, tsmax))
+				isect = true;
+		}
+		else if (vol.type == VOLUME_CONVEX)
+		{
+			if (rdIntersectSegmentConvexHull(src, dst, vol.verts, vol.nverts, vol.hmin, vol.hmax, tsmin, tsmax))
+				isect = true;
+		}
+
+		if (isect)
+		{
+			hit = true;
+
+			// Caller isn't interested in finding the closest intersection; break out.
+			if (!tmin)
 			{
-				hit = true;
+				isectVolIdx = i;
 				break;
+			}
+			else if (tsmin < isectTmin)
+			{
+				isectTmin = tsmin;
+				isectVolIdx = i;
 			}
 		}
 	}
 
 	if (hit)
 	{
-		if (calcTmin)
-			*tmin = tsmin;
+		if (vidx)
+			*vidx = isectVolIdx;
+
+		if (tmin)
+			*tmin = isectTmin;
 
 		return true;
 	}
 
+	const bool traceWorld = mask & TRACE_WORLD;
+
+	if (!traceWorld)
+		return false;
+
+	float p[2], q[2];
+	p[0] = src[0] + (dst[0]-src[0]) * btmin;
+	p[1] = src[1] + (dst[1]-src[1]) * btmin;
+	q[0] = src[0] + (dst[0]-src[0]) * btmax;
+	q[1] = src[1] + (dst[1]-src[1]) * btmax;
+	
+	int cid[512];
+	const int ncid = rcGetChunksOverlappingSegment(m_chunkyMesh, p, q, cid, 512);
+	if (!ncid)
+		return false;
+
 	const float* verts = m_mesh->getVerts();
-	float localtmin = 1.0f;
 	
 	for (int i = 0; i < ncid; ++i)
 	{
@@ -564,20 +620,24 @@ bool InputGeom::raycastMesh(const float* src, const float* dst, float* tmin) con
 			if (intersectSegmentTriangle(src, dst,
 										 &verts[tris[j]*3],
 										 &verts[tris[j+1]*3],
-										 &verts[tris[j+2]*3], t, calcTmin))
+										 &verts[tris[j+2]*3], t, tmin != nullptr))
 			{
+				// Caller isn't interested in finding the closest intersection; return out.
+				if (!tmin)
+					return true;
+
 				hit = true;
 
-				if (calcTmin && t < localtmin)
-					localtmin = t;
+				if (t < isectTmin)
+					isectTmin = t;
 				else
 					break;
 			}
 		}
 	}
 
-	if (calcTmin)
-		*tmin = localtmin;
+	if (tmin)
+		*tmin = isectTmin;
 	
 	return hit;
 }
@@ -668,41 +728,149 @@ void InputGeom::drawOffMeshConnections(duDebugDraw* dd, const float* offset, boo
 	dd->depthMask(true);
 }
 
-void InputGeom::addConvexVolume(const float* verts, const int nverts,
+int InputGeom::addBoxVolume(const float* bmin, const float* bmax,
+						 unsigned short flags, unsigned char area)
+{
+	if (m_volumeCount >= MAX_VOLUMES) return -1;
+	ShapeVolume* vol = &m_volumes[m_volumeCount++];
+	rdVcopy(&vol->verts[0], bmin);
+	rdVcopy(&vol->verts[3], bmax);
+	vol->hmin = 0.0f;
+	vol->hmax = 0.0f;
+	vol->nverts = 6;
+	vol->flags = flags;
+	vol->area = area;
+	vol->type = VOLUME_BOX;
+
+	return m_volumeCount-1;
+}
+
+int InputGeom::addCylinderVolume(const float* pos, const float radius,
+						 const float height, unsigned short flags, unsigned char area)
+{
+	if (m_volumeCount >= MAX_VOLUMES) return -1;
+	ShapeVolume* vol = &m_volumes[m_volumeCount++];
+	rdVcopy(vol->verts, pos);
+	vol->verts[3] = radius;
+	vol->verts[4] = height;
+	vol->hmin = 0.0f;
+	vol->hmax = 0.0f;
+	vol->nverts = 5;
+	vol->flags = flags;
+	vol->area = area;
+	vol->type = VOLUME_CYLINDER;
+
+	return m_volumeCount-1;
+}
+
+int InputGeom::addConvexVolume(const float* verts, const int nverts,
 								const float minh, const float maxh, unsigned short flags, unsigned char area)
 {
-	if (m_volumeCount >= MAX_VOLUMES) return;
-	ConvexVolume* vol = &m_volumes[m_volumeCount++];
-	memset(vol, 0, sizeof(ConvexVolume));
+	if (m_volumeCount >= MAX_VOLUMES) return -1;
+	ShapeVolume* vol = &m_volumes[m_volumeCount++];
 	memcpy(vol->verts, verts, sizeof(float)*3*nverts);
 	vol->hmin = minh;
 	vol->hmax = maxh;
 	vol->nverts = nverts;
 	vol->flags = flags;
 	vol->area = area;
+	vol->type = VOLUME_CONVEX;
+
+	return m_volumeCount-1;
 }
 
-void InputGeom::deleteConvexVolume(int i)
+void InputGeom::deleteShapeVolume(int i)
 {
 	m_volumeCount--;
 	m_volumes[i] = m_volumes[m_volumeCount];
 }
 
-void InputGeom::drawConvexVolumes(struct duDebugDraw* dd, const float* offset, bool /*hilight*/)
-{
-	dd->depthMask(false);
+static const int FACE_ALPHA = 168;
+static const int WIRE_ALPHA = 220;
 
+void InputGeom::drawBoxVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx)
+{
+	for (int i = 0; i < m_volumeCount; ++i)
+	{
+		const ShapeVolume* vol = &m_volumes[i];
+
+		if (vol->type != VOLUME_BOX)
+			continue;
+
+		const int faceAlpha = hilightIdx == i ? WIRE_ALPHA : FACE_ALPHA;
+
+		const unsigned int faceCol = vol->area == RC_NULL_AREA
+			? duRGBA(255, 0, 0, faceAlpha) // Use red for visibility (null acts as deletion).
+			: duTransCol(dd->areaToCol(vol->area), faceAlpha);
+
+		unsigned int fcol[6] = { faceCol, faceCol, faceCol, faceCol, faceCol, faceCol };
+
+		duDebugDrawBox(dd, 
+			vol->verts[0],vol->verts[1],vol->verts[2],
+			vol->verts[3],vol->verts[4],vol->verts[5], 
+			fcol, offset);
+
+		const unsigned int wireCol = vol->area == RC_NULL_AREA
+			? duRGBA(255, 0, 0, WIRE_ALPHA)
+			: duTransCol(dd->areaToCol(vol->area), WIRE_ALPHA);
+
+		duDebugDrawBoxWire(dd,
+			vol->verts[0],vol->verts[1],vol->verts[2],
+			vol->verts[3],vol->verts[4],vol->verts[5], 
+			wireCol, 2.0f, offset);
+	}
+}
+
+void InputGeom::drawCylinderVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx)
+{
+	for (int i = 0; i < m_volumeCount; ++i)
+	{
+		const ShapeVolume* vol = &m_volumes[i];
+
+		if (vol->type != VOLUME_CYLINDER)
+			continue;
+
+		const int faceAlpha = hilightIdx == i ? WIRE_ALPHA : FACE_ALPHA;
+
+		const unsigned int faceCol = vol->area == RC_NULL_AREA
+			? duRGBA(255, 0, 0, faceAlpha) // Use red for visibility (null acts as deletion).
+			: duTransCol(dd->areaToCol(vol->area), faceAlpha);
+
+		const float radius = vol->verts[3];
+		const float height = vol->verts[4];
+
+		duDebugDrawCylinder(dd, 
+			vol->verts[0]-radius,vol->verts[1]-radius,vol->verts[2]+0.1f,
+			vol->verts[0]+radius,vol->verts[1]+radius,vol->verts[2]+height, faceCol, offset);
+
+		const unsigned int wireCol = vol->area == RC_NULL_AREA
+			? duRGBA(255, 0, 0, WIRE_ALPHA)
+			: duTransCol(dd->areaToCol(vol->area), WIRE_ALPHA);
+
+		duDebugDrawCylinderWire(dd, 
+			vol->verts[0]-radius,vol->verts[1]-radius,vol->verts[2]+0.1f,
+			vol->verts[0]+radius,vol->verts[1]+radius,vol->verts[2]+height, wireCol, 2.0f, offset);
+	}
+}
+
+void InputGeom::drawConvexVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx)
+{
 	dd->begin(DU_DRAW_TRIS, 1.0f, offset);
 	
 	for (int i = 0; i < m_volumeCount; ++i)
 	{
-		const ConvexVolume* vol = &m_volumes[i];
+		const ShapeVolume* vol = &m_volumes[i];
+
+		if (vol->type != VOLUME_CONVEX)
+			continue;
+
 		unsigned int col;
+		const int faceAlpha = hilightIdx == i ? WIRE_ALPHA : FACE_ALPHA;
 
 		if (vol->area == RC_NULL_AREA)
-			col = duRGBA(255, 0, 0, 128); // Use red for visibility (null acts as deletion).
+			col = duRGBA(255, 0, 0, faceAlpha); // Use red for visibility (null acts as deletion).
 		else
-			col = duTransCol(dd->areaToCol(vol->area), 64);
+			col = duTransCol(dd->areaToCol(vol->area), faceAlpha);
 
 		for (int j = 0, k = vol->nverts-1; j < vol->nverts; k = j++)
 		{
@@ -728,13 +896,17 @@ void InputGeom::drawConvexVolumes(struct duDebugDraw* dd, const float* offset, b
 	dd->begin(DU_DRAW_LINES, 2.0f, offset);
 	for (int i = 0; i < m_volumeCount; ++i)
 	{
-		const ConvexVolume* vol = &m_volumes[i];
+		const ShapeVolume* vol = &m_volumes[i];
+
+		if (vol->type != VOLUME_CONVEX)
+			continue;
+
 		unsigned int col;
 
 		if (vol->area == RC_NULL_AREA)
-			col = duRGBA(255, 0, 0, 220);
+			col = duRGBA(255, 0, 0, WIRE_ALPHA);
 		else
-			col = duTransCol(dd->areaToCol(vol->area), 220);
+			col = duTransCol(dd->areaToCol(vol->area), WIRE_ALPHA);
 
 		for (int j = 0, k = vol->nverts-1; j < vol->nverts; k = j++)
 		{
@@ -753,13 +925,17 @@ void InputGeom::drawConvexVolumes(struct duDebugDraw* dd, const float* offset, b
 	dd->begin(DU_DRAW_POINTS, 3.0f, offset);
 	for (int i = 0; i < m_volumeCount; ++i)
 	{
-		const ConvexVolume* vol = &m_volumes[i];
+		const ShapeVolume* vol = &m_volumes[i];
+
+		if (vol->type != VOLUME_CONVEX)
+			continue;
+
 		unsigned int col;
 
 		if (vol->area == RC_NULL_AREA)
-			col = duRGBA(255, 0, 0, 220);
+			col = duDarkenCol(duRGBA(255, 0, 0, WIRE_ALPHA));
 		else
-			col = duDarkenCol(duTransCol(dd->areaToCol(vol->area), 220));
+			col = duDarkenCol(duTransCol(dd->areaToCol(vol->area), WIRE_ALPHA));
 
 		for (int j = 0; j < vol->nverts; ++j)
 		{
@@ -769,6 +945,4 @@ void InputGeom::drawConvexVolumes(struct duDebugDraw* dd, const float* offset, b
 		}
 	}
 	dd->end();
-
-	dd->depthMask(true);
 }

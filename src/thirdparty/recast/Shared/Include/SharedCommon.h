@@ -478,6 +478,18 @@ bool rdIntersectSegmentPoly2D(const float* p0, const float* p1,
 							  float& tmin, float& tmax,
 							  int& segMin, int& segMax);
 
+bool rdIntersectSegmentAABB(const float* sp, const float* sq,
+						 const float* amin, const float* amax,
+						 float& tmin, float& tmax);
+
+bool rdIntersectSegmentCylinder(const float* sp, const float* sq, const float* position,
+								const float radius, const float height,
+								float& tmin, float& tmax);
+
+bool rdIntersectSegmentConvexHull(const float* sp, const float* sq, const float* verts,
+								  int nverts, float hmin, float hmax,
+								  float& tmin, float& tmax);
+
 bool rdIntersectSegSeg2D(const float* ap, const float* aq,
 						 const float* bp, const float* bq,
 						 float& s, float& t);
@@ -532,6 +544,21 @@ float rdCalcLedgeSpanOffsetAmount(const float ledgeSpan, const float slopeAngle,
 unsigned char rdClassifyPointOutsideBounds(const float* pt, const float* bmin, const float* bmax);
 unsigned char rdClassifyPointInsideBounds(const float* pt, const float* bmin, const float* bmax);
 unsigned char rdClassifyDirection(const float* dir, const float* bmin, const float* bmax);
+
+/// Determines if the specified point is inside the axis-aligned bounding box.
+///  @param[in]		pt		The point to check. [(x, y, z)]
+///  @param[in]		bmin	Minimum bounds of the box. [(x, y, z)]
+///  @param[in]		bmax	Maximum bounds of the box. [(x, y, z)]
+/// @return True if the point is inside the axis-aligned bounding box.
+bool rdPointInAABB(const float* pt, const float* bmin, const float* bmax);
+
+/// Determines if the specified point is inside the cylinder on the xy-plane.
+///  @param[in]		pt		The point to check. [(x, y, z)]
+///  @param[in]		pos		The position of the cylinder. [(x, y, z)]
+///  @param[in]		radius	The radius of the cylinder.
+///  @param[in]		height	The height of the cylinder.
+/// @return True if the point is inside the cylinder.
+bool rdPointInCylinder(const float* pt, const float* pos, const float radius, const float height);
 
 /// Determines if the specified point is inside the convex polygon on the xy-plane.
 ///  @param[in]		pt		The point to check. [(x, y, z)]

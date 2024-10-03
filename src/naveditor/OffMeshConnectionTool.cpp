@@ -76,7 +76,10 @@ void OffMeshConnectionTool::reset()
 
 void OffMeshConnectionTool::handleMenu()
 {
+	// On newer navmesh sets, off-mesh links are always bidirectional.
+#if DT_NAVMESH_SET_VERSION < 7
 	ImGui::Checkbox("Bidirectional", &m_bidir);
+#endif
 	ImGui::Checkbox("Invert Lookup Order", &m_invertVertexLookupOrder);
 
 	ImGui::PushItemWidth(140);
@@ -85,7 +88,7 @@ void OffMeshConnectionTool::handleMenu()
 	ImGui::PopItemWidth();
 }
 
-void OffMeshConnectionTool::handleClick(const float* /*s*/, const float* p, bool shift)
+void OffMeshConnectionTool::handleClick(const float* /*s*/, const float* p, const int /*v*/, bool shift)
 {
 	if (!m_editor) return;
 	InputGeom* geom = m_editor->getInputGeom();
@@ -125,8 +128,13 @@ void OffMeshConnectionTool::handleClick(const float* /*s*/, const float* p, bool
 		}
 		else
 		{
-			const unsigned char area = EDITOR_POLYAREA_JUMP;
-			const unsigned short flags = EDITOR_POLYFLAGS_WALK;
+			const unsigned char area = DT_POLYAREA_JUMP;
+			const unsigned short flags = DT_POLYFLAGS_WALK
+#if DT_NAVMESH_SET_VERSION >= 7
+				| DT_POLYFLAGS_JUMP;
+#else
+				;
+#endif;
 			geom->addOffMeshConnection(m_hitPos, p, m_radius, m_bidir ? 1 : 0,
 				(unsigned char)m_traverseType, m_invertVertexLookupOrder ? 1 : 0, area, flags);
 			m_hitPosSet = false;
@@ -182,11 +190,11 @@ void OffMeshConnectionTool::handleRenderOverlay(double* proj, double* model, int
 	if (!m_hitPosSet)
 	{
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft,
-			ImVec2(280, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Create new connection.  SHIFT+LMB: Delete existing connection, click close to start or end point.");
+			ImVec2(300, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Create new connection.  SHIFT+LMB: Delete existing connection, click close to start or end point.");
 	}
 	else
 	{
 		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, 
-			ImVec2(280, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Set connection end point and finish.");
+			ImVec2(300, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Set connection end point and finish.");
 	}
 }

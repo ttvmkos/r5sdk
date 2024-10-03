@@ -181,7 +181,7 @@ static bool createBVTree(dtNavMeshCreateParams* params, rdTempVector<BVItem>& no
 		BVItem& it = items[i];
 		it.i = i;
 
-		float polyVerts[DT_VERTS_PER_POLYGON*3];
+		float polyVerts[RD_VERTS_PER_POLYGON*3];
 
 		const float* targetVert;
 		int vertCount;
@@ -552,7 +552,7 @@ static bool createPolyMeshCells(const dtNavMeshCreateParams* params, rdTempVecto
 		const unsigned int tb = params->detailMeshes[i*4+2];
 		const unsigned int tc = params->detailMeshes[i*4+3];
 
-		float polyVerts[DT_VERTS_PER_POLYGON*3];
+		float polyVerts[RD_VERTS_PER_POLYGON*3];
 
 		for (int j = 0; j < nv; ++j)
 		{
@@ -713,7 +713,7 @@ static bool createPolyMeshCells(const dtNavMeshCreateParams* params, rdTempVecto
 /// @see dtNavMesh, dtNavMesh::addTile()
 bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData, int* outDataSize)
 {
-	if (params->nvp > DT_VERTS_PER_POLYGON)
+	if (params->nvp > RD_VERTS_PER_POLYGON)
 		return false;
 	if (params->vertCount >= 0xffff)
 		return false;
@@ -1125,18 +1125,23 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 		if (offMeshConClass[i*2+0] == 0xff)
 		{
 			dtOffMeshConnection* con = &offMeshCons[n];
-			con->poly = (unsigned short)(offMeshPolyBase + n);
 			// Copy connection end-points.
 			const float* endPts = &params->offMeshConVerts[i*2*3];
 			const float* refPos = &params->offMeshConRefPos[i*3];
 			rdVcopy(&con->pos[0], &endPts[0]);
 			rdVcopy(&con->pos[3], &endPts[3]);
-			rdVcopy(&con->refPos[0], &refPos[0]);
 			con->rad = params->offMeshConRad[i];
-			con->refYaw = params->offMeshConRefYaw[i];
-			con->flags = params->offMeshConDir[i] ? DT_OFFMESH_CON_BIDIR : 0;
+			con->poly = (unsigned short)(offMeshPolyBase + n);
 			con->side = offMeshConClass[i*2+1];
 			con->setTraverseType(params->offMeshConJumps[i], params->offMeshConOrders[i]);
+			con->userId = params->offMeshConUserID[i];
+#if DT_NAVMESH_SET_VERSION >= 7
+			con->hintIndex = DT_NULL_HINT;
+#else
+			con->flags = params->offMeshConDir[i] ? DT_OFFMESH_CON_BIDIR : 0;
+#endif
+			rdVcopy(&con->refPos[0], &refPos[0]);
+			con->refYaw = params->offMeshConRefYaw[i];
 			n++;
 		}
 	}
@@ -1260,7 +1265,7 @@ bool dtNavMeshDataSwapEndian(unsigned char* data, const int /*dataSize*/)
 	{
 		dtPoly* p = &polys[i];
 		// poly->firstLink is update when tile is added, no need to swap.
-		for (int j = 0; j < DT_VERTS_PER_POLYGON; ++j)
+		for (int j = 0; j < RD_VERTS_PER_POLYGON; ++j)
 		{
 			rdSwapEndian(&p->verts[j]);
 			rdSwapEndian(&p->neis[j]);

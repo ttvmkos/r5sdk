@@ -16,36 +16,52 @@
 // 3. This notice may not be removed or altered from any source distribution.
 //
 
-#ifndef CONVEXVOLUMETOOL_H
-#define CONVEXVOLUMETOOL_H
+#ifndef SHAPEVOLUMETOOL_H
+#define SHAPEVOLUMETOOL_H
 
 #include "NavEditor/Include/Editor.h"
+#include "NavEditor/Include/InputGeom.h"
 
-// Tool to create convex volumess for InputGeom
+// Tool to create shape volumes for InputGeom
 
-class ConvexVolumeTool : public EditorTool
+class ShapeVolumeTool : public EditorTool
 {
 	Editor* m_editor;
+
+	int m_selectedVolumeIndex;
+	int m_selectedPrimitive;
+
 	int m_areaType;
 	int m_polyFlags;
-	float m_polyOffset;
-	float m_boxHeight;
+
 	float m_boxDescent;
+	float m_boxAscent;
+
+	float m_cylinderRadius;
+	float m_cylinderHeight;
+
+	float m_convexOffset;
+	float m_convexHeight;
+	float m_convexDescent;
 	
-	static const int MAX_PTS = 12;
-	float m_pts[MAX_PTS*3];
+	float m_pts[MAX_SHAPEVOL_PTS*3];
 	int m_npts;
-	int m_hull[MAX_PTS];
+	int m_hull[MAX_SHAPEVOL_PTS];
 	int m_nhull;
+
+	ShapeVolume m_shapeCopy;
+	int m_copiedShapeIndex;
 	
 public:
-	ConvexVolumeTool();
-	
-	virtual int type() { return TOOL_CONVEX_VOLUME; }
+	ShapeVolumeTool();
+
+	inline int getSelectedVolumeIndex() const { return m_selectedVolumeIndex; };
+
+	virtual int type() { return TOOL_SHAPE_VOLUME; }
 	virtual void init(Editor* editor);
 	virtual void reset();
 	virtual void handleMenu();
-	virtual void handleClick(const float* s, const float* p, bool shift);
+	virtual void handleClick(const float* s, const float* p, const int v, bool shift);
 	virtual void handleToggle();
 	virtual void handleStep();
 	virtual void handleUpdate(const float dt);
@@ -53,4 +69,4 @@ public:
 	virtual void handleRenderOverlay(double* proj, double* model, int* view);
 };
 
-#endif // CONVEXVOLUMETOOL_H
+#endif // SHAPEVOLUMETOOL_H

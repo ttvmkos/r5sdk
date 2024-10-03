@@ -635,6 +635,9 @@ static const unsigned char RC_WALKABLE_AREA = 63;
 /// @see rcPolyMesh::surfa
 static const float RC_POLY_SURFAREA_QUANT_FACTOR = 0.01f;
 
+// Polygons with surface areas not larger than this amount should be flagged.
+static const unsigned short RC_POLY_SURFAREA_TOO_SMALL_THRESHOLD = 120;
+
 /// The value returned by #rcGetCon if the specified direction is not connected
 /// to another span. (Has no neighbor.)
 static const int RC_NOT_CONNECTED = 0x3f;
@@ -931,33 +934,6 @@ bool rcErodeWalkableArea(rcContext* ctx, int radius, rcCompactHeightfield& chf);
 /// @returns True if the operation completed successfully.
 bool rcMedianFilterWalkableArea(rcContext* ctx, rcCompactHeightfield& chf);
 
-/// Applies an area id to all spans within the specified bounding box. (AABB) 
-/// @ingroup recast
-/// @param[in,out]	ctx		The build context to use during the operation.
-/// @param[in]		bmin	The minimum of the bounding box. [(x, y, z)]
-/// @param[in]		bmax	The maximum of the bounding box. [(x, y, z)]
-/// @param[in]		flags	The flags to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in,out]	chf		A populated compact heightfield.
-void rcMarkBoxArea(rcContext* ctx, const float* bmin, const float* bmax,
-				   unsigned short flags, unsigned char areaId,
-				   rcCompactHeightfield& chf);
-
-/// Applies the area id to the all spans within the specified convex polygon. 
-/// @ingroup recast
-/// @param[in,out]	ctx		The build context to use during the operation.
-/// @param[in]		verts	The vertices of the polygon [Fomr: (x, y, z) * @p nverts]
-/// @param[in]		nverts	The number of vertices in the polygon.
-/// @param[in]		hmin	The height of the base of the polygon.
-/// @param[in]		hmax	The height of the top of the polygon.
-/// @param[in]		flags	The flags to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in,out]	chf		A populated compact heightfield.
-void rcMarkConvexPolyArea(rcContext* ctx, const float* verts, const int nverts,
-						  const float hmin, const float hmax, 
-						  unsigned short flags, unsigned char areaId,
-						  rcCompactHeightfield& chf);
-
 /// Helper function to offset voncex polygons for rcMarkConvexPolyArea.
 /// @ingroup recast
 /// @param[in]		verts		The vertices of the polygon [Form: (x, y, z) * @p nverts]
@@ -969,16 +945,45 @@ void rcMarkConvexPolyArea(rcContext* ctx, const float* verts, const int nverts,
 int rcOffsetPoly(const float* verts, const int nverts, const float offset,
 				 float* outVerts, const int maxOutVerts);
 
+/// Applies an area id to all spans within the specified bounding box. (AABB) 
+/// @ingroup recast
+/// @param[in,out]	ctx		The build context to use during the operation.
+/// @param[in]		bmin	The minimum of the bounding box. [(x, y, z)]
+/// @param[in]		bmax	The maximum of the bounding box. [(x, y, z)]
+/// @param[in]		flags	The flags to apply.
+/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
+/// @param[in,out]	chf		A populated compact heightfield.
+void rcMarkBoxArea(rcContext* ctx, const float* bmin, const float* bmax,
+				   unsigned short flags, unsigned char areaId,
+				   rcCompactHeightfield& chf);
+
+/// Applies the area id to the all spans within the specified convex polygon. 
+/// @ingroup recast
+/// @param[in,out]	ctx		The build context to use during the operation.
+/// @param[in]		verts	The vertices of the polygon [Form: (x, y, z) * @p nverts]
+/// @param[in]		nverts	The number of vertices in the polygon.
+/// @param[in]		hmin	The height of the base of the polygon.
+/// @param[in]		hmax	The height of the top of the polygon.
+/// @param[in]		flags	The flags to apply.
+/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
+/// @param[in,out]	chf		A populated compact heightfield.
+void rcMarkConvexPolyArea(rcContext* ctx, const float* verts, const int nverts,
+						  const float hmin, const float hmax, 
+						  unsigned short flags, unsigned char areaId,
+						  rcCompactHeightfield& chf);
+
 /// Applies the area id to all spans within the specified cylinder.
 /// @ingroup recast
 /// @param[in,out]	ctx		The build context to use during the operation.
 /// @param[in]		pos		The center of the base of the cylinder. [Form: (x, y, z)] 
 /// @param[in]		r		The radius of the cylinder.
 /// @param[in]		h		The height of the cylinder.
+/// @param[in]		flags	The flags to apply.
 /// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
 /// @param[in,out]	chf	A populated compact heightfield.
 void rcMarkCylinderArea(rcContext* ctx, const float* pos,
-						const float r, const float h, unsigned char areaId,
+						const float r, const float h, 
+						unsigned short flags, unsigned char areaId,
 						rcCompactHeightfield& chf);
 
 /// Builds the distance field for the specified compact heightfield. 

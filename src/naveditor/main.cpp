@@ -771,7 +771,9 @@ int not_main(int argc, char** argv)
 		if (processHitTest && geom && editor)
 		{
 			float hitTime;
-			bool hit = geom->raycastMesh(rayStart, rayEnd, &hitTime);
+			int volumeIndex;
+
+			bool hit = geom->raycastMesh(rayStart, rayEnd, TRACE_ALL, &volumeIndex, &hitTime);
 			
 			if (hit)
 			{
@@ -789,7 +791,7 @@ int not_main(int argc, char** argv)
 					pos[0] = rayStart[0] + (rayEnd[0] - rayStart[0]) * hitTime;
 					pos[1] = rayStart[1] + (rayEnd[1] - rayStart[1]) * hitTime;
 					pos[2] = rayStart[2] + (rayEnd[2] - rayStart[2]) * hitTime;
-					editor->handleClick(rayStart, pos, processHitTestShift);
+					editor->handleClick(rayStart, pos, volumeIndex, processHitTestShift);
 				}
 			}
 			else
@@ -949,7 +951,7 @@ int not_main(int argc, char** argv)
 		if (showMenu)
 		{
 			ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, 
-				ImVec2(280, 20), ImVec4(1.0f,1.0f,1.0f,0.5f), "W/S/A/D: Move  RMB: Rotate");
+				ImVec2(300, 20), ImVec4(1.0f,1.0f,1.0f,0.5f), "W/S/A/D: Move  RMB: Rotate");
 		}
 		string geom_path;
 
@@ -1292,8 +1294,8 @@ int not_main(int argc, char** argv)
 		if (!showTestCases && showTools && showMenu) // && geom && editor)
 		{
 			ImGui::SetNextWindowPos(ImVec2(10.f, 10.f), ImGuiCond_Once);
-			ImGui::SetNextWindowSize(ImVec2(260, (float)height-20), ImGuiCond_Once);
-			ImGui::SetNextWindowSizeConstraints(ImVec2(260, 300), ImVec2(FLT_MAX, FLT_MAX));
+			ImGui::SetNextWindowSize(ImVec2(280, (float)height-20), ImGuiCond_Once);
+			ImGui::SetNextWindowSizeConstraints(ImVec2(280, 300), ImVec2(FLT_MAX, FLT_MAX));
 
 			if (ImGui::Begin("Tools", nullptr, baseWindowFlags))
 			{

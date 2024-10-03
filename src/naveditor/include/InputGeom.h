@@ -22,14 +22,45 @@
 #include "NavEditor/Include/ChunkyTriMesh.h"
 #include "NavEditor/Include/MeshLoaderObj.h"
 
-static const int MAX_CONVEXVOL_PTS = 12;
-struct ConvexVolume
+enum VolumeType : unsigned char
 {
-	float verts[MAX_CONVEXVOL_PTS*3];
+	VOLUME_INVALID = 0xff,
+	VOLUME_BOX = 0,
+	VOLUME_CYLINDER,
+	VOLUME_CONVEX
+};
+
+enum TraceMask : unsigned int
+{
+	TRACE_WORLD   = 1<<0, // The imported world geometry.
+	TRACE_CLIP    = 1<<1, // Clip brushes.
+	TRACE_TRIGGER = 1<<2, // Trigger brushes.
+	TRACE_ALL = 0xffffffff
+};
+
+static const int MAX_SHAPEVOL_PTS = 12;
+struct ShapeVolume
+{
+	ShapeVolume()
+	{
+		for (int i = 0; i < MAX_SHAPEVOL_PTS; i++)
+		{
+			rdVset(&verts[i*3], 0.f,0.f,0.f);
+		}
+		hmin = 0.f;
+		hmax = 0.f;
+		nverts = 0;
+		flags = 0;
+		area = 0;
+		type = VOLUME_INVALID;
+	}
+
+	float verts[MAX_SHAPEVOL_PTS*3];
 	float hmin, hmax;
 	int nverts;
 	unsigned short flags;
 	unsigned char area;
+	unsigned char type;
 };
 
 struct BuildSettings
@@ -103,7 +134,7 @@ class InputGeom
 	/// @name Convex Volumes.
 	///@{
 	static const int MAX_VOLUMES = 256;
-	ConvexVolume m_volumes[MAX_VOLUMES];
+	ShapeVolume m_volumes[MAX_VOLUMES];
 	int m_volumeCount;
 	///@}
 	
@@ -134,7 +165,7 @@ public:
 
 	const rcChunkyTriMesh* getChunkyMesh() const { return m_chunkyMesh; }
 	const BuildSettings* getBuildSettings() const { return m_hasBuildSettings ? &m_buildSettings : 0; }
-	bool raycastMesh(const float* src, const float* dst, float* tmin = nullptr) const;
+	bool raycastMesh(const float* src, const float* dst, const unsigned int mask, int* vol = nullptr, float* tmin = nullptr) const;
 
 	/// @name Off-Mesh connections.
 	///@{
@@ -156,14 +187,20 @@ public:
 	void drawOffMeshConnections(struct duDebugDraw* dd, const float* offset, bool hilight = false);
 	///@}
 
-	/// @name Box Volumes.
+	/// @name Shape Volumes.
 	///@{
-	int getConvexVolumeCount() const { return m_volumeCount; }
-	const ConvexVolume* getConvexVolumes() const { return m_volumes; }
-	void addConvexVolume(const float* verts, const int nverts,
+	int getShapeVolumeCount() const { return m_volumeCount; } // todo(amos): rename to 'getShapeVolumeCount'
+	ShapeVolume* getShapeVolumes() { return m_volumes; } // todo(amos): rename to 'getShapeVolumes'
+	int addBoxVolume(const float* bmin, const float* bmax,
+						 unsigned short flags, unsigned char area);
+	int addCylinderVolume(const float* pos, const float radius,
+						 const float height, unsigned short flags, unsigned char area);
+	int addConvexVolume(const float* verts, const int nverts,
 						 const float minh, const float maxh, unsigned short flags, unsigned char area);
-	void deleteConvexVolume(int i);
-	void drawConvexVolumes(struct duDebugDraw* dd, const float* offset, bool hilight = false);
+	void deleteShapeVolume(int i);
+	void drawBoxVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx = -1);
+	void drawCylinderVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx = -1);
+	void drawConvexVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx = -1);
 	///@}
 	
 private:

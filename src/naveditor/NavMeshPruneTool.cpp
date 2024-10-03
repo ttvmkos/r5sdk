@@ -181,7 +181,7 @@ static void disableUnvisitedPolys(dtNavMesh* nav, NavmeshFlags* flags)
 
 				targetPoly->groupId = DT_UNLINKED_POLY_GROUP;
 				targetPoly->firstLink = DT_NULL_LINK;
-				targetPoly->flags = EDITOR_POLYFLAGS_DISABLED;
+				targetPoly->flags = DT_POLYFLAGS_DISABLED;
 
 				numUnlinkedPolys++;
 			}
@@ -272,7 +272,7 @@ void NavMeshPruneTool::handleMenu()
 	}
 }
 
-void NavMeshPruneTool::handleClick(const float* s, const float* p, bool shift)
+void NavMeshPruneTool::handleClick(const float* s, const float* p, const int /*v*/, bool shift)
 {
 	rdIgnoreUnused(s);
 	rdIgnoreUnused(shift);
@@ -362,5 +362,5 @@ void NavMeshPruneTool::handleRenderOverlay(double* proj, double* model, int* vie
 	rdIgnoreUnused(view);
 
 	// Tool help
-	ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(280, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Click fill area.");
+	ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(300, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Click fill area.");
 }

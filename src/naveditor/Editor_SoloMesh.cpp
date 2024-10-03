@@ -25,7 +25,7 @@
 #include "NavEditor/Include/NavMeshTesterTool.h"
 #include "NavEditor/Include/NavMeshPruneTool.h"
 #include "NavEditor/Include/OffMeshConnectionTool.h"
-#include "NavEditor/Include/ConvexVolumeTool.h"
+#include "NavEditor/Include/ShapeVolumeTool.h"
 #include "NavEditor/Include/CrowdTool.h"
 #include "NavEditor/Include/InputGeom.h"
 #include "NavEditor/Include/Editor.h"
@@ -92,10 +92,10 @@ void Editor_SoloMesh::handleTools()
 		setTool(new OffMeshConnectionTool);
 	}
 
-	enabled = type == TOOL_CONVEX_VOLUME;
-	if (ImGui::Checkbox("Create Convex Volumes", &enabled))
+	enabled = type == TOOL_SHAPE_VOLUME;
+	if (ImGui::Checkbox("Create Shape Volumes", &enabled))
 	{
-		setTool(new ConvexVolumeTool);
+		setTool(new ShapeVolumeTool);
 	}
 
 	enabled = type == TOOL_CROWD;
@@ -299,8 +299,8 @@ bool Editor_SoloMesh::handleBuild()
 	}
 
 	// (Optional) Mark areas.
-	const ConvexVolume* vols = m_geom->getConvexVolumes();
-	for (int i  = 0; i < m_geom->getConvexVolumeCount(); ++i)
+	const ShapeVolume* vols = m_geom->getShapeVolumes();
+	for (int i  = 0; i < m_geom->getShapeVolumeCount(); ++i)
 		rcMarkConvexPolyArea(m_ctx, vols[i].verts, vols[i].nverts, vols[i].hmin, vols[i].hmax, (unsigned short)vols[i].flags, (unsigned char)vols[i].area, *m_chf);
 
 	
@@ -437,7 +437,7 @@ bool Editor_SoloMesh::handleBuild()
 
 	const int traverseTableCount = NavMesh_GetTraverseTableCountForNavMeshType(m_selectedNavMeshType);
 
-	if (m_cfg.maxVertsPerPoly <= DT_VERTS_PER_POLYGON)
+	if (m_cfg.maxVertsPerPoly <= RD_VERTS_PER_POLYGON)
 	{
 		unsigned char* navData = 0;
 		int navDataSize = 0;
@@ -447,23 +447,23 @@ bool Editor_SoloMesh::handleBuild()
 		for (int i = 0; i < m_pmesh->npolys; ++i)
 		{
 			if (m_pmesh->areas[i] == RC_WALKABLE_AREA)
-				m_pmesh->areas[i] = EDITOR_POLYAREA_GROUND;
+				m_pmesh->areas[i] = DT_POLYAREA_GROUND;
 				
-			if (m_pmesh->areas[i] == EDITOR_POLYAREA_GROUND
+			if (m_pmesh->areas[i] == DT_POLYAREA_GROUND
 				//||
 				//m_pmesh->areas[i] == EDITOR_POLYAREA_GRASS ||
 				//m_pmesh->areas[i] == EDITOR_POLYAREA_ROAD
 				)
 			{
-				m_pmesh->flags[i] = EDITOR_POLYFLAGS_WALK;
+				m_pmesh->flags[i] = DT_POLYFLAGS_WALK;
 			}
 			//else if (m_pmesh->areas[i] == EDITOR_POLYAREA_WATER)
 			//{
 			//	m_pmesh->flags[i] = EDITOR_POLYFLAGS_SWIM;
 			//}
-			else if (m_pmesh->areas[i] == EDITOR_POLYAREA_TRIGGER)
+			else if (m_pmesh->areas[i] == DT_POLYAREA_TRIGGER)
 			{
-				m_pmesh->flags[i] = EDITOR_POLYFLAGS_WALK /*| EDITOR_POLYFLAGS_DOOR*/;
+				m_pmesh->flags[i] = DT_POLYFLAGS_WALK /*| EDITOR_POLYFLAGS_DOOR*/;
 			}
 		}
 

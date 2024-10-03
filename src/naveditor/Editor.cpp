@@ -38,11 +38,11 @@ unsigned int EditorDebugDraw::areaToCol(unsigned int area)
 	switch(area)
 	{
 	// Ground : light blue
-	case EDITOR_POLYAREA_GROUND: return duRGBA(0, 192, 215, 255);
+	case DT_POLYAREA_GROUND: return duRGBA(0, 192, 215, 255);
 	// Jump : blue
-	case EDITOR_POLYAREA_JUMP: return duRGBA(0, 0, 255, 255);
+	case DT_POLYAREA_JUMP: return duRGBA(0, 0, 255, 255);
 	// Trigger : light green
-	case EDITOR_POLYAREA_TRIGGER: return duRGBA(20, 245, 0, 255);
+	case DT_POLYAREA_TRIGGER: return duRGBA(20, 245, 0, 255);
 	// Unexpected : white
 	default: return duRGBA(255, 255, 255, 255);
 	}
@@ -145,8 +145,8 @@ Editor::Editor() :
 	for (int i = 0; i < MAX_TOOLS; i++)
 		m_toolStates[i] = 0;
 
-	rdVset(m_recastDrawOffset, 0.0f,0.0f,4.0f);
-	rdVset(m_detourDrawOffset, 0.0f,0.0f,8.0f);
+	rdVset(m_recastDrawOffset, 0.0f,0.0f,0.0f);
+	rdVset(m_detourDrawOffset, 0.0f,0.0f,4.0f);
 }
 
 Editor::~Editor()
@@ -277,7 +277,7 @@ void Editor::resetCommonSettings()
 	m_vertsPerPoly = 6;
 	m_detailSampleDist = 6.0f;
 	m_detailSampleMaxError = 1.0f;
-	m_partitionType = EDITOR_PARTITION_WATERSHED;
+	m_partitionType = EDITOR_PARTITION_LAYERS;
 
 	initTraverseMasks();
 	initTraverseTableParams();
@@ -430,10 +430,10 @@ void Editor::handleCommonSettings()
 	ImGui::Separator();
 }
 
-void Editor::handleClick(const float* s, const float* p, bool shift)
+void Editor::handleClick(const float* s, const float* p, const int v, bool shift)
 {
 	if (m_tool)
-		m_tool->handleClick(s, p, shift);
+		m_tool->handleClick(s, p, v, shift);
 }
 
 void Editor::handleToggle()
@@ -555,6 +555,11 @@ static bool polyEdgeFaceAgainst(const float* v1, const float* v2, const float* n
 	return (rdVdot2D(delta, n1) >= 0 && rdVdot2D(delta, n2) < 0);
 }
 
+// NOTE: we don't want to collide with trigger area's as this would otherwise
+// prevent a link from happening between 2 valid slabs that intersect with
+// something like a door or action trigger.
+static const int TRAVERSE_LINK_TRACE_MASK = TRACE_WORLD|TRACE_CLIP;
+
 static bool traverseLinkOffsetIntersectsGeom(const InputGeom* geom, const float* basePos, const float* offsetPos)
 {
 	// We need to fire a raycast from out initial
@@ -577,8 +582,8 @@ static bool traverseLinkOffsetIntersectsGeom(const InputGeom* geom, const float*
 	// Otherwise we create links between a mesh
 	// inside and outside an object, causing the
 	// ai to traverse inside of it.
-	if (geom->raycastMesh(basePos, offsetPos) ||
-		geom->raycastMesh(offsetPos, basePos))
+	if (geom->raycastMesh(basePos, offsetPos, TRAVERSE_LINK_TRACE_MASK) ||
+		geom->raycastMesh(offsetPos, basePos, TRAVERSE_LINK_TRACE_MASK))
 		return true;
 
 	return false;
@@ -694,8 +699,8 @@ static bool traverseLinkInLOS(void* userData, const float* lowPos, const float* 
 	// won't be any navmesh on the higher pos in the first place.
 	// Its still possible there's something blocking on the lower
 	// pos' side, but this is a lot less likely to happen.
-	if (geom->raycastMesh(targetRayPos, lowPos) ||
-		geom->raycastMesh(lowPos, targetRayPos))
+	if (geom->raycastMesh(targetRayPos, lowPos, TRAVERSE_LINK_TRACE_MASK) ||
+		geom->raycastMesh(lowPos, targetRayPos, TRAVERSE_LINK_TRACE_MASK))
 		return false;
 
 	return true;
@@ -850,12 +855,8 @@ void Editor::connectOffMeshLinks()
 
 		const dtTileRef targetRef = m_navMesh->getTileRef(target);
 
-		// Base off-mesh connections to their starting polygons 
-		// and connect connections inside the tile.
-		m_navMesh->baseOffMeshLinks(targetRef);
-
-		// Connect off-mesh polygons to outer tiles.
-		m_navMesh->connectExtOffMeshLinks(targetRef);
+		// Connect off-mesh polygons to inner and outer tiles.
+		m_navMesh->connectOffMeshLinks(targetRef);
 	}
 }
 
@@ -1238,8 +1239,8 @@ const hulldef hulls[NAVMESH_COUNT] = {
 	{ g_navMeshNames[NAVMESH_SMALL]      , NAI_Hull::Width(HULL_HUMAN)   * NAI_Hull::Scale(HULL_HUMAN)  , NAI_Hull::Height(HULL_HUMAN)  , NAI_Hull::Height(HULL_HUMAN)   * NAI_Hull::Scale(HULL_HUMAN)  , 32, 8 },
 	{ g_navMeshNames[NAVMESH_MED_SHORT]  , NAI_Hull::Width(HULL_PROWLER) * NAI_Hull::Scale(HULL_PROWLER), NAI_Hull::Height(HULL_PROWLER), NAI_Hull::Height(HULL_PROWLER) * NAI_Hull::Scale(HULL_PROWLER), 32, 4 },
 	{ g_navMeshNames[NAVMESH_MEDIUM]     , NAI_Hull::Width(HULL_MEDIUM)  * NAI_Hull::Scale(HULL_MEDIUM) , NAI_Hull::Height(HULL_MEDIUM) , NAI_Hull::Height(HULL_MEDIUM)  * NAI_Hull::Scale(HULL_MEDIUM) , 32, 4 },
-	{ g_navMeshNames[NAVMESH_LARGE]      , NAI_Hull::Width(HULL_TITAN)   * NAI_Hull::Scale(HULL_TITAN)  , NAI_Hull::Height(HULL_TITAN)  , NAI_Hull::Height(HULL_TITAN)   * NAI_Hull::Scale(HULL_TITAN)  , 64, 2 },
-	{ g_navMeshNames[NAVMESH_EXTRA_LARGE], NAI_Hull::Width(HULL_GOLIATH) * NAI_Hull::Scale(HULL_GOLIATH), NAI_Hull::Height(HULL_GOLIATH), NAI_Hull::Height(HULL_GOLIATH) * NAI_Hull::Scale(HULL_GOLIATH), 64, 2 },
+	{ g_navMeshNames[NAVMESH_LARGE]      , NAI_Hull::Width(HULL_TITAN)   * NAI_Hull::Scale(HULL_TITAN)  , NAI_Hull::Height(HULL_TITAN)  , NAI_Hull::Height(HULL_TITAN)   * NAI_Hull::Scale(HULL_TITAN)  , 60, 2 },
+	{ g_navMeshNames[NAVMESH_EXTRA_LARGE], NAI_Hull::Width(HULL_GOLIATH) * NAI_Hull::Scale(HULL_GOLIATH), NAI_Hull::Height(HULL_GOLIATH), NAI_Hull::Height(HULL_GOLIATH) * NAI_Hull::Scale(HULL_GOLIATH), 60, 2 },
 };
 
 void Editor::selectNavMeshType(const NavMeshType_e navMeshType)

@@ -20,6 +20,7 @@
 #define DETOURNAVMESH_H
 
 #include "Shared/Include/SharedAlloc.h"
+#include "Shared/Include/SharedConst.h"
 #include "Detour/Include/DetourStatus.h"
 
 // NOTE: these are defines as we need to be able to switch between code that is
@@ -71,10 +72,6 @@ static const int DT_FULL_UNLINKED_TILE_USER_ID = 1;
 /// A value that indicates that this tile contains at least 1 polygon that doesn't link
 /// to anything (tagged as #DT_UNLINKED_POLY_GROUP), and 1 that does link to something.
 static const int DT_SEMI_UNLINKED_TILE_USER_ID = 2;
-
-/// The maximum number of vertices per navigation polygon.
-/// @ingroup detour
-static const int DT_VERTS_PER_POLYGON = 6;
 
 /// A value that indicates that this poly hasn't been assigned to a group yet.
 static const unsigned short DT_NULL_POLY_GROUP = 0;
@@ -214,6 +211,69 @@ enum dtPolyTypes
 	DT_POLYTYPE_OFFMESH_CONNECTION = 1,
 };
 
+enum dtPolyAreas
+{
+#if DT_NAVMESH_SET_VERSION >= 9
+	DT_POLYAREA_JUMP,
+	DT_POLYAREA_GROUND,
+#else
+	DT_POLYAREA_GROUND,
+	DT_POLYAREA_JUMP,
+#endif
+	// NOTE: not sure if anything beyond DT_POLYAREA_JUMP belongs to MSET5,
+	// this needs to be confirmed, for now its been kept in for MSET5.
+	DT_POLYAREA_JUMP_REVERSE,
+	DT_POLYAREA_TRIGGER,
+	DT_POLYAREA_WALLJUMP_LEFT,
+	DT_POLYAREA_WALLJUMP_RIGHT,
+	DT_POLYAREA_WALLJUMP_LEFT_REVERSE,
+	DT_POLYAREA_WALLJUMP_RIGHT_REVERSE,
+};
+
+enum dtPolyFlags
+{
+	/// Most common polygon flags.
+
+	/// Ability to walk (ground, grass, road).
+	DT_POLYFLAGS_WALK            = 1<<0,
+	/// This polygon's surface area is too small; it will be ignored during AIN script nodes generation, NavMesh_RandomPositions, dtNavMeshQuery::findLocalNeighbourhood, etc.
+	DT_POLYFLAGS_TOO_SMALL       = 1<<1,
+	/// This polygon is connected to a polygon on a neighbouring tile.
+	DT_POLYFLAGS_HAS_NEIGHBOUR   = 1<<2,
+
+	/// Off-mesh connection flags
+
+	/// Ability to jump (exclusively used on off-mesh connection polygons).
+	DT_POLYFLAGS_JUMP            = 1<<3,
+	/// Off-mesh connections who's start and end verts link to other polygons need this flag.
+	DT_POLYFLAGS_JUMP_LINKED     = 1<<4,
+
+	/// Unknown, no use cases found yet.
+	DT_POLYFLAGS_UNK2            = 1<<5,
+
+	/// Only used along with poly area 'DT_POLYAREA_TRIGGER'.
+
+	/// Unknown, used for small road blocks and other small but easily climbable obstacles.
+	DT_POLYFLAGS_OBSTACLE        = 1<<6,
+	/// Unknown, no use cases found yet.
+	DT_POLYFLAGS_UNK4            = 1<<7,
+	/// Used for ToggleNPCPathsForEntity. Also, see [r5apex_ds + 0xC96EA8]. Used for toggling poly's when a door closes during runtime.
+	/// Also used to disable poly's in the navmesh file itself when we do happen to build navmesh on lava or other very hazardous areas.
+	DT_POLYFLAGS_DISABLED        = 1<<8,
+	/// see [r5apex_ds + 0xC96ED0], used for hostile objects such as electric fences.
+	DT_POLYFLAGS_HAZARD          = 1<<9,
+	/// See [r5apex_ds + 0xECBAE0], used for large bunker style doors (vertical and horizontal opening ones), perhaps also shooting cover hint?.
+	DT_POLYFLAGS_DOOR            = 1<<10,
+	/// Unknown, no use cases found yet.
+	DT_POLYFLAGS_UNK8            = 1<<11,
+	/// Unknown, no use cases found yet.
+	DT_POLYFLAGS_UNK9            = 1<<12,
+	/// Used for doors that need to be breached, such as the Explosive Holds doors.
+	DT_POLYFLAGS_DOOR_BREACHABLE = 1<<13,
+
+	/// All abilities.
+	DT_POLYFLAGS_ALL             = 0xffff
+};
 
 /// Defines a polygon within a dtMeshTile object.
 /// @ingroup detour
@@ -224,10 +284,10 @@ struct dtPoly
 
 	/// The indices of the polygon's vertices.
 	/// The actual vertices are located in dtMeshTile::verts.
-	unsigned short verts[DT_VERTS_PER_POLYGON];
+	unsigned short verts[RD_VERTS_PER_POLYGON];
 
 	/// Packed data representing neighbor polygons references and flags for each edge.
-	unsigned short neis[DT_VERTS_PER_POLYGON];
+	unsigned short neis[RD_VERTS_PER_POLYGON];
 
 	/// The user defined polygon flags.
 	unsigned short flags;
@@ -349,13 +409,41 @@ struct dtBVNode
 /// An off-mesh connection is a user defined traversable connection made up to two vertices.
 struct dtOffMeshConnection
 {
-	unsigned char getTraverseType() { return traverseContext & 0xff; }
-	unsigned char getVertLookupOrder() { return (traverseContext >> 8) & 0xff; }
-	void setTraverseType(unsigned char type, unsigned char order) { traverseContext = type | (order << 8); }
+	unsigned char getTraverseType() 
+	{ 
+#if DT_NAVMESH_SET_VERSION >= 7
+		return traverseType & (DT_MAX_TRAVERSE_TYPES-1);
+#else
+		return traverseContext & 0xff;
+#endif
+	}
 
+	unsigned char getVertLookupOrder()
+	{
+#if DT_NAVMESH_SET_VERSION >= 7
+		return traverseType & (1<<6);
+#else
+		return (traverseContext >> 8) & 0xff;
+#endif
+	}
+
+	void setTraverseType(unsigned char type, unsigned char order)
+	{
+#if DT_NAVMESH_SET_VERSION >= 7
+		traverseType = type & (DT_MAX_TRAVERSE_TYPES-1);
+
+		if (order) // Inverted, mark it.
+			traverseType |= (1<<6);
+#else
+		traverseContext = type | (order<<8);
+#endif
+	}
+
+#if DT_NAVMESH_SET_VERSION < 7
 	/// The hint index of the off-mesh connection. (Or #DT_NULL_HINT if there is no hint.)
 	unsigned short getHintIndex() { return traverseContext; };
 	void setHintIndex(unsigned short index) { traverseContext = index; };
+#endif
 
 	/// The endpoints of the connection. [(ax, ay, az, bx, by, bz)]
 	float pos[6];
@@ -366,21 +454,34 @@ struct dtOffMeshConnection
 	/// The polygon reference of the connection within the tile.
 	unsigned short poly;
 
-	/// Link flags. 
-	/// @note These are not the connection's user defined flags. Those are assigned via the 
+#if DT_NAVMESH_SET_VERSION >= 7
+	/// End point side.
+	unsigned char side;
+
+	/// The traverse type.
+	unsigned char traverseType;
+
+	/// The id of the off-mesh connection. (User assigned when the navigation mesh is built.)
+	unsigned short userId;
+
+	/// The hint index.
+	unsigned short hintIndex;
+#else
+	/// Link flags.
+	/// @note These are not the connection's user defined flags. Those are assigned via the
 	/// connection's dtPoly definition. These are link flags used for internal purposes.
 	unsigned char flags;
 
 	/// End point side.
 	unsigned char side;
 
-	/// The traverse types or hint indices. (If the off-mesh connection is used for wall running,
-	/// it needs a corresponding probe which this field will reference. Otherwise this field will
-	/// contain the traverse type and lookup order.)
+	/// The traverse type and lookup order.
 	unsigned short traverseContext;
 
 	/// The id of the off-mesh connection. (User assigned when the navigation mesh is built.)
 	unsigned short userId;
+#endif
+
 	/// The reference position set to the start of the off-mesh connection with an offset of DT_OFFMESH_CON_REFPOS_OFFSET
 	float refPos[3]; // See [r5apex_ds + F114CF], [r5apex_ds + F11B42], [r5apex_ds + F12447].
 	/// The reference yaw angle set towards the end position of the off-mesh connection.
@@ -898,7 +999,7 @@ private:
 
 
 public:
-	/// Returns neighbour tile based on side.
+	/// Returns tile based on position.
 	int getTilesAt(const int x, const int y,
 		dtMeshTile** tiles, const int maxTiles) const;
 
@@ -909,11 +1010,9 @@ public:
 	/// Builds external polygon links for a tile.
 	dtStatus connectTraverseLinks(const dtTileRef tileRef, const dtTraverseLinkConnectParams& params);
 	/// Builds external polygon links for a tile.
-	dtStatus connectExtOffMeshLinks(const dtTileRef tileRef);
-	/// Builds internal polygons links for a tile.
-	dtStatus baseOffMeshLinks(const dtTileRef tileRef);
+	dtStatus connectOffMeshLinks(const dtTileRef tileRef);
 
-	dtPolyRef clampOffMeshVertToPoly(const dtOffMeshConnection* con, dtMeshTile* conTile, const dtMeshTile* lookupTile, const bool start);
+	dtPolyRef clampOffMeshVertToPoly(dtOffMeshConnection* con, dtMeshTile* conTile, const dtMeshTile* lookupTile, const bool start);
 
 private:
 	/// Returns all polygons in neighbour tile based on portal defined by the segment.

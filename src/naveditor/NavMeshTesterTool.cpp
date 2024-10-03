@@ -176,7 +176,7 @@ NavMeshTesterTool::NavMeshTesterTool() :
 	m_pathIterPolyCount(0),
 	m_steerPointCount(0)
 {
-	m_filter.setIncludeFlags(EDITOR_POLYFLAGS_ALL ^ EDITOR_POLYFLAGS_DISABLED);
+	m_filter.setIncludeFlags(DT_POLYFLAGS_ALL ^ DT_POLYFLAGS_DISABLED);
 	m_filter.setExcludeFlags(0);
 
 	m_polyPickExt[0] = 2;
@@ -197,10 +197,10 @@ void NavMeshTesterTool::init(Editor* editor)
 	if (m_navQuery)
 	{
 		// Change costs.
-		m_filter.setAreaCost(EDITOR_POLYAREA_GROUND, 1.0f);
-		m_filter.setAreaCost(EDITOR_POLYAREA_JUMP, 1.5f);
+		m_filter.setAreaCost(DT_POLYAREA_GROUND, 1.0f);
+		m_filter.setAreaCost(DT_POLYAREA_JUMP, 1.5f);
 		//m_filter.setAreaCost(EDITOR_POLYAREA_ROAD, 1.0f);
-		m_filter.setAreaCost(EDITOR_POLYAREA_TRIGGER, 1.0f);
+		m_filter.setAreaCost(DT_POLYAREA_TRIGGER, 1.0f);
 		//m_filter.setAreaCost(EDITOR_POLYAREA_GRASS, 2.0f);
 		//m_filter.setAreaCost(EDITOR_POLYAREA_WATER, 10.0f);
 	}
@@ -387,19 +387,19 @@ void NavMeshTesterTool::handleMenu()
 
 	ImGui::Indent();
 
-	isEnabled = (m_filter.getIncludeFlags() & EDITOR_POLYFLAGS_WALK) != 0;
+	isEnabled = (m_filter.getIncludeFlags() & DT_POLYFLAGS_WALK) != 0;
 
 	if (ImGui::Checkbox("Walk##IncludeFlags", &isEnabled))
 	{
-		m_filter.setIncludeFlags(m_filter.getIncludeFlags() ^ EDITOR_POLYFLAGS_WALK);
+		m_filter.setIncludeFlags(m_filter.getIncludeFlags() ^ DT_POLYFLAGS_WALK);
 		recalc();
 	}
 
-	isEnabled = (m_filter.getIncludeFlags() & EDITOR_POLYFLAGS_TOO_SMALL) != 0;
+	isEnabled = (m_filter.getIncludeFlags() & DT_POLYFLAGS_TOO_SMALL) != 0;
 
 	if (ImGui::Checkbox("Skip##IncludeFlags", &isEnabled))
 	{
-		m_filter.setIncludeFlags(m_filter.getIncludeFlags() ^ EDITOR_POLYFLAGS_TOO_SMALL);
+		m_filter.setIncludeFlags(m_filter.getIncludeFlags() ^ DT_POLYFLAGS_TOO_SMALL);
 		recalc();
 	}
 
@@ -410,19 +410,19 @@ void NavMeshTesterTool::handleMenu()
 	
 	ImGui::Indent();
 
-	isEnabled = (m_filter.getExcludeFlags() & EDITOR_POLYFLAGS_WALK) != 0;
+	isEnabled = (m_filter.getExcludeFlags() & DT_POLYFLAGS_WALK) != 0;
 
 	if (ImGui::Checkbox("Walk##ExcludeFlags", &isEnabled))
 	{
-		m_filter.setExcludeFlags(m_filter.getExcludeFlags() ^ EDITOR_POLYFLAGS_WALK);
+		m_filter.setExcludeFlags(m_filter.getExcludeFlags() ^ DT_POLYFLAGS_WALK);
 		recalc();
 	}
 
-	isEnabled = (m_filter.getExcludeFlags() & EDITOR_POLYFLAGS_TOO_SMALL) != 0;
+	isEnabled = (m_filter.getExcludeFlags() & DT_POLYFLAGS_TOO_SMALL) != 0;
 
 	if (ImGui::Checkbox("Skip##ExcludeFlags", &isEnabled))
 	{
-		m_filter.setExcludeFlags(m_filter.getExcludeFlags() ^ EDITOR_POLYFLAGS_TOO_SMALL);
+		m_filter.setExcludeFlags(m_filter.getExcludeFlags() ^ DT_POLYFLAGS_TOO_SMALL);
 		recalc();
 	}
 
@@ -459,7 +459,7 @@ void NavMeshTesterTool::handleMenu()
 	ImGui::Separator();
 }
 
-void NavMeshTesterTool::handleClick(const float* /*s*/, const float* p, bool shift)
+void NavMeshTesterTool::handleClick(const float* /*s*/, const float* p, const int /*v*/, bool shift)
 {
 	if (!shift)
 	{
@@ -1316,7 +1316,7 @@ void NavMeshTesterTool::handleRender()
 				dd.depthMask(true);
 			}
 
-			static const int MAX_SEGS = DT_VERTS_PER_POLYGON*4;
+			static const int MAX_SEGS = RD_VERTS_PER_POLYGON*4;
 			float segs[MAX_SEGS*6];
 			dtPolyRef refs[MAX_SEGS];
 			memset(refs, 0, sizeof(dtPolyRef)*MAX_SEGS); 
@@ -1413,7 +1413,7 @@ void NavMeshTesterTool::handleRenderOverlay(double* proj, double* model, int* vi
 	}
 	
 	// Tool help
-	ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(280, 40),
+	ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(300, 40),
 		ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB+SHIFT: Set start location  LMB: Set end location");
 }
 
