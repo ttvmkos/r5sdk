@@ -1694,7 +1694,7 @@ namespace LOGGER
 
         std::string serverName = ::IsDedicated() ? hostname->GetString() : GetLocalServerData(HOST_NAME);
         std::string serverMap = g_pHostState->m_levelName;
-        std::string gameType = GetLocalServerData(HOST_PLAYLIST);
+        std::string gameType = ::IsDedicated() ? mp_gamemode->GetString() : GetLocalServerData(HOST_PLAYLIST);
         std::string identifier = GetSetting("identifier");
         std::string uniquekey = GetSetting("apikey");
 
