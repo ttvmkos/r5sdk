@@ -1182,7 +1182,6 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
     //send a message as a bot.
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_CreateServerBot__internal, "Creates a bot to send messages", "array< int >", "string");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_ServerMsg__internal, "Says message from specified senderId", "void", "string,int");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SetClassVarSynced, "Change a variable in the class settings for server and all connected clients", "bool", "string, string");
 
     //misc
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by ip & nucleus id, returns true for success", "bool", "string, string");
