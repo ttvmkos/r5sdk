@@ -580,17 +580,39 @@ namespace VScriptCode
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
-        std::string SanitizeString(const std::string& input)
+        void Sanitize_AlphaNumHyphenUnderscore(std::string& input)
         {
-            //appropriate
-            auto isDisallowed = [](unsigned char c) {
-                return !std::isalnum(c) && c != '-' && c != '_';
-                };
+            input.erase
+            (
+                std::remove_if
+                ( 
+                    input.begin(), input.end(), []( unsigned char c ) 
+                    {
+                        return !std::isalnum(c) && c != '-' && c != '_';
+                    }
+                ),
 
-            if (std::any_of(input.begin(), input.end(), isDisallowed)) {
-                return "";
-            }
-            return input;
+                input.end()
+            );
+        }
+
+        std::string Sanitize_NumbersOnly( const std::string& input )
+        {
+            std::string sanitized = input;
+            sanitized.erase
+            (
+                std::remove_if
+                ( 
+                    sanitized.begin(), sanitized.end(), []( unsigned char c ) 
+                    {
+                        return !std::isdigit(c);
+                    }
+                ), 
+                
+                sanitized.end()
+            );
+            
+            return sanitized;
         }
 
         //-----------------------------------------------------------------------------
@@ -626,7 +648,7 @@ namespace VScriptCode
                 Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s\n", e.what());
             }
 
-            std::string command = "CodeCallback_VerifyEaAccount(\"" + SanitizeString(OID) + "\", " + status + ")";
+            std::string command = "CodeCallback_VerifyEaAccount(\"" + Sanitize_NumbersOnly(OID) + "\", " + status + ")";
 
             g_TaskQueue.Dispatch([command] {
                 g_pServerScript->Run(command.c_str());
