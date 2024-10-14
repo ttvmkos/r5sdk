@@ -9,6 +9,8 @@
 #include <networksystem/hostmanager.h>
 #include "vscript/vscript.h"
 #include "engine/cmd.h"
+#include <stack>
+#include "rtech/playlists/playlists.h"
 
 //-----------------------------------------------------------------------------
 // POINTERS
@@ -22,6 +24,7 @@ LOGGER::Logger* LOGGER::pMkosLogger = nullptr;
 const std::string SERVER_V = "rc_2.5";
 const std::string API_KEY = "tMcLsTYqcraC7K2j"; //public
 constexpr const char* R5RDEV_CONFIG = "r5rdev_config.json";
+constexpr const char* PLAYER_COUNT_ENDPOINT = "https://r5r.dev/api/playercount.php";
 const std::string STATS_API = "https://r5r.dev/api/stats7.php";
 
 //-----------------------------------------------------------------------------
@@ -31,17 +34,18 @@ const std::string STATS_API = "https://r5r.dev/api/stats7.php";
 std::vector<std::string> split(const std::string& str, char delimiter)
 {
     std::vector<std::string> result;
-    size_t start = 0;
-    size_t end = str.find(delimiter);
+    result.reserve(std::count(str.begin(), str.end(), delimiter) + 1);
 
-    while (end != std::string::npos)
+    size_t start = 0;
+    size_t end = 0;
+
+    while ((end = str.find(delimiter, start)) != std::string::npos)
     {
-        result.push_back(str.substr(start, end - start));
+        result.emplace_back(str, start, end - start);
         start = end + 1;
-        end = str.find(delimiter, start);
     }
 
-    result.push_back(str.substr(start));
+    result.emplace_back(str, start);
     return result;
 }
 
@@ -57,26 +61,71 @@ enum ServerData
     HOST_PLAYLIST,
 };
 
+std::string GetServerData(ServerData dataType)
+{
+    if ( ::IsDedicated() )
+    {
+        switch (dataType)
+        {
+            case HOST_NAME: return hostname->GetString();
+            case HOST_PLAYLIST: return v_Playlists_GetCurrent();
+            default: return "";
+        }
+    }
+    else
+    {
+        const NetGameServer_t& server = g_ServerHostManager.GetDetails();
+
+        switch (dataType)
+        {
+            case HOST_NAME: return server.name;
+            case HOST_DESCRIPTION:return server.description;
+            case HOST_PLAYLIST: return server.playlist;
+            default: return "";
+        }
+    }
+    
+}
+
 
 //-----------------------------------------------------------------------------
 // string manipulation sanitize function
 //-----------------------------------------------------------------------------
 
-std::string SanitizeString(const std::string& input)
+void Sanitize_AlphaNumHyphenUnderscore(std::string& input)
 {
-    //appropriate
-    auto isDisallowed = [](unsigned char c) {
-        return !std::isalnum(c) && c != '-' && c != '_';
-        };
+    input.erase
+    (
+        std::remove_if
+        (
+            input.begin(), input.end(), []( unsigned char c ) 
+            {
+                return !std::isalnum( static_cast<unsigned char>(c) ) && c != '-' && c != '_';
+            }
+        ),
 
-    if (std::any_of(input.begin(), input.end(), isDisallowed)) {
-        return "";
-    }
-    return input;
+        input.end()
+    );
 }
 
+std::string Sanitize_NumbersOnly(const std::string& input)
+{
+    std::string sanitized = input;
+    sanitized.erase
+    (
+        std::remove_if
+        (
+            sanitized.begin(), sanitized.end(), [](unsigned char c)
+            {
+                return !std::isdigit(c);
+            }
+        ),
 
+        sanitized.end()
+    );
 
+    return sanitized;
+}
 
 namespace LOGGER
 {
@@ -111,7 +160,7 @@ namespace LOGGER
             DEL_ALL = (strcmp(delete_all, "true") == 0);
         }
 
-        if (!subDir)
+        if ( !subDir || strcmp(subDir, "") == 0 )
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Attempted to load an invalid setting value.\n");
             return;
@@ -330,7 +379,6 @@ namespace LOGGER
                 curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1L);
                 curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
                 curl_easy_setopt(handle, CURLOPT_TCP_KEEPALIVE, 1L);
-                curl_easy_setopt(handle, CURLOPT_TCP_KEEPIDLE, 60L);
                 curl_easy_setopt(handle, CURLOPT_TCP_KEEPINTVL, 60L);
                 curl_easy_setopt(handle, CURLOPT_TCP_KEEPIDLE, 30L);
                 pool.push(handle);
@@ -383,8 +431,7 @@ namespace LOGGER
             curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1L);
             curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
             curl_easy_setopt(handle, CURLOPT_TCP_KEEPALIVE, 1L);
-            curl_easy_setopt(handle, CURLOPT_TCP_KEEPIDLE, 60L);
-            curl_easy_setopt(handle, CURLOPT_TCP_KEEPINTVL, 60L); 
+            curl_easy_setopt(handle, CURLOPT_TCP_KEEPINTVL, 60L);
             curl_easy_setopt(handle, CURLOPT_TCP_KEEPIDLE, 30L);
         }
         else
@@ -424,6 +471,7 @@ namespace LOGGER
                     return false;
 
                 default:
+                    Error(eDLL_T::SERVER, NO_ERROR, "Unspecified reason: %s", curl_easy_strerror(res) );
                     DiscardHandle(handle);
             }
         }
@@ -541,26 +589,52 @@ namespace LOGGER
         return str;
     }
 
+    std::stack<CURL*> curlStack;
+    const size_t threshold = 10;
 
-
-
-    std::string LOGGER::url_encode(const std::string& value)
-    {
-        CURL* curl = curl_easy_init();
-        std::string retStr;
-        if (curl) {
-            std::string new_value = replace_all(value, "\n", "<br/>");
-            char* output = curl_easy_escape(curl, new_value.c_str(), static_cast<int>(new_value.length()));
-            if (output) {
-                retStr = std::string(output);
-                curl_free(output);
-            }
-            curl_easy_cleanup(curl);
+    void cleanupStack() {
+        while (!curlStack.empty()) {
+            curl_easy_cleanup(curlStack.top());
+            curlStack.pop();
         }
-        return retStr;
     }
 
 
+    std::string url_encode(const std::string& value) 
+    {
+        CURL* curl = nullptr;
+
+        if ( curlStack.empty() ) 
+            curl = curl_easy_init();
+        else
+        {
+            curl = curlStack.top();
+            curlStack.pop();
+        }
+
+        std::string retStr;
+        if ( curl ) 
+        {
+            std::string new_value = replace_all( value, "\n", "<br/>" );
+            char* output = curl_easy_escape( curl, new_value.c_str(), static_cast<int>( new_value.length() ) );
+            
+            if ( output ) 
+            {
+                retStr = std::string( output );
+                curl_free( output );
+            }
+
+            curlStack.push( curl );
+
+            if ( curlStack.size() >= threshold )
+            {
+                Error( eDLL_T::SERVER, NO_ERROR, "Threshold was reached for curlstack: %zu", threshold );
+                cleanupStack();
+            }
+        }
+
+        return retStr;
+    }
 
 
     size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp)
@@ -569,8 +643,6 @@ namespace LOGGER
         userp->append((char*)contents, totalSize);
         return totalSize;
     }
-
-
 
 
     //////////////////
@@ -589,22 +661,16 @@ namespace LOGGER
     }
 
 
-
-
     TaskManager::TaskManager()
     {
         StartWorkerThread();
     }
 
 
-
-
     TaskManager::~TaskManager()
     {
         StopWorkerThread();
     }
-
-
 
 
     void TaskManager::StopWorkerThread()
@@ -619,14 +685,10 @@ namespace LOGGER
     }
 
 
-
-
     void TaskManager::StartWorkerThread()
     {
         workerThread = std::thread(&TaskManager::ProcessTasks, this);
     }
-
-
 
 
     void TaskManager::AddTask(const std::function<void()>& task)
@@ -635,8 +697,6 @@ namespace LOGGER
         taskQueue.push(task);
         condVar.notify_one();
     }
-
-
 
 
     //keeps map lean by removing map slot for player after assignment in squirrel
@@ -688,7 +748,7 @@ namespace LOGGER
                 if (stop_tasks_flag && taskQueue.empty())
                 {
                     lock.unlock();
-                    break; //compiler lies
+                    break;
                 }
 
                 task = taskQueue.front();
@@ -774,7 +834,9 @@ namespace LOGGER
         }
 
         std::string readBuffer;
-        std::string identifier = SanitizeString(GetSetting("identifier"));
+        std::string identifier = GetSetting("identifier");
+        Sanitize_AlphaNumHyphenUnderscore(identifier);
+
         std::string url = STATS_API + "?TYPE=batch&KEY=" + API_KEY + "&identifier=" + identifier + "&requestedStats=" + requestedStats + "&requestedSettings=" + requestedSettings;
 
         for (const std::string& oid : player_oids)
@@ -891,7 +953,9 @@ namespace LOGGER
         }
 
         std::string readBuffer;
-        std::string identifier = SanitizeString(GetSetting("identifier"));
+        std::string identifier = GetSetting("identifier");
+        Sanitize_AlphaNumHyphenUnderscore(identifier);
+
         std::string url = STATS_API + "?KEY=" + API_KEY + "&requestedStats=" + requestedStats + "&player_oid=" + player_oid + "&identifier=" + identifier + "&requestedSettings=" + requestedSettings;
 
         curl_easy_setopt(easy_handle, CURLOPT_URL, url.c_str());
@@ -994,9 +1058,13 @@ namespace LOGGER
             return;
         }
 
-        std::string uniquekey = SanitizeString(GetSetting("uniquekey"));
-        std::string identifier = SanitizeString(GetSetting("identifier"));
-        std::string serverName = hostname->GetString();
+        std::string uniquekey = GetSetting("uniquekey");
+        Sanitize_AlphaNumHyphenUnderscore(uniquekey);
+
+        std::string identifier = GetSetting("identifier");
+        Sanitize_AlphaNumHyphenUnderscore(identifier);
+
+        std::string serverName = GetServerData(HOST_NAME);
 
         doc.AddMember("stats", stats, allocator);
         doc.AddMember("servername", rapidjson::Value(serverName.c_str(), allocator), allocator);
@@ -1023,7 +1091,6 @@ namespace LOGGER
         curl_slist_free_all(headers);
 
         CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, "RunUpdateLiveStats");
-
     }
 
 
@@ -1085,10 +1152,10 @@ namespace LOGGER
         postData += "&KEY=";
         postData += API_KEY;
 
-        curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/playercount.php");
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
-        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt( curl, CURLOPT_URL, PLAYER_COUNT_ENDPOINT );
+        curl_easy_setopt( curl, CURLOPT_POSTFIELDS, postData.c_str() );
+        curl_easy_setopt( curl, CURLOPT_TIMEOUT, 5L );
+        curl_easy_setopt( curl, CURLOPT_POST, 1L );
 
         CURLcode res = curl_easy_perform(curl);
 
@@ -1297,7 +1364,7 @@ namespace LOGGER
         }
 
 
-        std::string identifier = SanitizeString(GetSetting("identifier"));
+        std::string identifier = GetSetting("identifier");
         std::string postfields = "KEY=" + API_KEY + "&query=" + query + "&identifier=" + identifier;
 
         std::string readBuffer;
@@ -1687,15 +1754,14 @@ namespace LOGGER
         std::string identifier = GetSetting("identifier");
         std::string uniquekey = GetSetting("apikey");
 
-        if (SanitizeString(identifier).empty())
-        {
-            Error(eDLL_T::SERVER, NO_ERROR, "Invalid characters in identifier. \n");
-        }
+        Sanitize_AlphaNumHyphenUnderscore(identifier);
+        Sanitize_AlphaNumHyphenUnderscore(uniquekey);
 
-        if (SanitizeString(uniquekey).empty())
-        {
+        if ( identifier.empty() )
+            Error(eDLL_T::SERVER, NO_ERROR, "empty identifier. \n");
+
+        if ( uniquekey.empty() )
             Error(eDLL_T::SERVER, NO_ERROR, "Invalid characters in uniquekey. \n");
-        }
 
         //DevMsg(eDLL_T::SERVER, "Server name: %s \n", serverName.c_str());
         //DevMsg(eDLL_T::SERVER, "Server map: %s \n", serverMap.c_str());
