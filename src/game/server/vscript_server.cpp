@@ -635,24 +635,29 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
-            int32_t status_num = 0;
-            string status = LOGGER::VERIFY_EA_ACCOUNT(token, OID, ea_name);
+            LOGGER::TaskManager::getInstance().AddTask
+            (
+                [ token, OID, ea_name ]() //ref counted?
+                {
+                    int32_t status_num = 0;
+                    std::string status = LOGGER::VERIFY_EA_ACCOUNT(token, OID, ea_name);
 
-            try {
-                status_num = std::stoi(status);
-            }
-            catch (const std::invalid_argument& e) {
-                Msg(eDLL_T::SERVER, "Error: Invalid argument for conversion: %s\n", e.what());
-            }
-            catch (const std::out_of_range& e) {
-                Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s\n", e.what());
-            }
+                    try {
+                        status_num = std::stoi(status);
+                    }
+                    catch (const std::invalid_argument& e) {
+                        Msg(eDLL_T::SERVER, "Error: Invalid argument for conversion: %s\n", e.what());
+                    }
+                    catch (const std::out_of_range& e) {
+                        Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s\n", e.what());
+                    }
 
-            std::string command = "CodeCallback_VerifyEaAccount(\"" + Sanitize_NumbersOnly(OID) + "\", " + status + ")";
-
-            g_TaskQueue.Dispatch([command] {
-                g_pServerScript->Run(command.c_str());
-                }, 0);
+                    std::string command = "CodeCallback_VerifyEaAccount(\"" + Sanitize_NumbersOnly(OID) + "\", " + status + ")";
+                    g_TaskQueue.Dispatch([command] {
+                        g_pServerScript->Run(command.c_str());
+                        }, 0);
+                }
+            );
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }

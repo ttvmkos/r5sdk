@@ -127,6 +127,11 @@ std::string Sanitize_NumbersOnly(const std::string& input)
     return sanitized;
 }
 
+void Script_CodeCallback_BatchStatsLoaded()
+{
+    g_pServerScript->ExecuteCodeCallback("CodeCallback_BatchStatsLoaded");
+}
+
 namespace LOGGER
 {
 
@@ -881,6 +886,7 @@ namespace LOGGER
                 if (player_oids_str.empty())
                 {
                     Error(eDLL_T::SERVER, NO_ERROR, "Error in [LoadBatchKDStrings] : player_oids_str was empty \n");
+                    Script_CodeCallback_BatchStatsLoaded();
                     return;
                 }
 
@@ -893,12 +899,14 @@ namespace LOGGER
                 {
                     Error(eDLL_T::SERVER, NO_ERROR, "JSON parsing failed: %s\n",
                         rapidjson::GetParseError_En(document.GetParseError()));
+                    Script_CodeCallback_BatchStatsLoaded();
                     return;
                 }
 
                 if (!document.IsObject())
                 {
                     Error(eDLL_T::SERVER, NO_ERROR, "JSON root is not an object\n");
+                    Script_CodeCallback_BatchStatsLoaded();
                     return;
                 }
 
@@ -928,7 +936,7 @@ namespace LOGGER
                     }
                 }
 
-                g_pServerScript->ExecuteCodeCallback("CodeCallback_BatchStatsLoaded");
+                Script_CodeCallback_BatchStatsLoaded();
             });
     }
 
