@@ -1039,7 +1039,7 @@ namespace LOGGER
 
         if (!stats_json)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[RunUpdateLiveStats] Failed: Nullptr\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "[%s] Failed: Nullptr\n", __FUNCTION__);
             return;
         }
 
@@ -1060,7 +1060,7 @@ namespace LOGGER
         if (stats.HasParseError())
         {
             size_t offset = stats.GetErrorOffset();
-            Error(eDLL_T::SERVER, NO_ERROR, "[RunUpdateLiveStats] Failed to parse stats JSON at offset %zu: %s\n", offset, rapidjson::GetParseError_En(stats.GetParseError()));
+            Error(eDLL_T::SERVER, NO_ERROR, "[%s] Failed to parse stats JSON at offset %zu: %s\n", __FUNCTION__, offset, rapidjson::GetParseError_En(stats.GetParseError()));
             return;
         }
 
@@ -1096,7 +1096,7 @@ namespace LOGGER
 
         curl_slist_free_all(headers);
 
-        CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, "RunUpdateLiveStats");
+        CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, __FUNCTION__ );
     }
 
 
@@ -1107,7 +1107,7 @@ namespace LOGGER
     {
         if (stats_json.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[UpdateLiveStats] failed: stats_json empty\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "[%s] failed: stats_json empty\n", __FUNCTION__);
             return;
         }
 

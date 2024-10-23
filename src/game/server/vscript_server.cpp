@@ -653,9 +653,15 @@ namespace VScriptCode
                     }
 
                     std::string command = "CodeCallback_VerifyEaAccount(\"" + Sanitize_NumbersOnly(OID) + "\", " + status + ")";
-                    g_TaskQueue.Dispatch([command] {
-                        g_pServerScript->Run(command.c_str());
-                        }, 0);
+                    g_TaskQueue.Dispatch
+                    (
+                        [ command ] 
+                        {
+                            g_pServerScript->Run( command.c_str() );
+                        }
+
+                        ,0
+                    );
                 }
             );
 
@@ -951,7 +957,8 @@ namespace VScriptCode
 
             const std::string msg(inMsg);
 
-            CServerGameDLL::OnReceivedSayTextMessage(g_pServerGameDLL, static_cast<int>(senderId), msg.c_str(), false);
+            if(g_pServer->IsActive() )
+                CServerGameDLL::OnReceivedSayTextMessage(g_pServerGameDLL, static_cast<int>(senderId), msg.c_str(), false);
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
