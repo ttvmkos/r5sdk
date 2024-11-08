@@ -19,8 +19,8 @@ LOGGER::Logger* LOGGER::pMkosLogger = nullptr;
 // CONSTANTS
 //-----------------------------------------------------------------------------
 
-const std::string SERVER_V = "rc_2.4.5";
-const std::string API_KEY = "Kfvtu2TSNKQ7S2pP"; //public
+const std::string SERVER_V = "rc_2.5";
+const std::string API_KEY = "tMcLsTYqcraC7K2j"; //public
 constexpr const char* R5RDEV_CONFIG = "r5rdev_config.json";
 const std::string STATS_API = "https://r5r.dev/api/stats7.php";
 
