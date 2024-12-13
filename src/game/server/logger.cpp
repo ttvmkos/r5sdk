@@ -914,6 +914,7 @@ namespace LOGGER
 
 
     //for individual players, stores data in playerStatsMap
+        //for individual players, stores data in playerStatsMap
     void TaskManager::LoadKDString(const char* player_oid, const char* requestedStats, const char* requestedSettings)
     {
         if (!player_oid)
@@ -931,26 +932,26 @@ namespace LOGGER
                 std::string stats = FetchPlayerStats(playerOidStr.c_str(), requestedStatsStr.c_str(), requestedSettingsStr.c_str());
 
                 bool has_lock = false;
-                std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
-                if (lock.try_lock_for(std::chrono::milliseconds(3000)))
-                {
-                    playerStatsMap[playerOidStr] = stats;
-                    has_lock = true;
 
-                    std::string command = "CodeCallback_PlayerStatsReady(\"" + SanitizeString(playerOidStr) + "\")";
-                    
-                    g_TaskQueue.Dispatch([command] {
-                        g_pServerScript->Run(command.c_str());
+                {
+                    std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
+                    if (lock.try_lock_for(std::chrono::milliseconds(3000)))
+                    {
+                        playerStatsMap[playerOidStr] = stats;
+                        has_lock = true;
+                    }
+                    else
+                    {
+                        Error(eDLL_T::SERVER, NO_ERROR, "failed to aquire lock to write player stats into map for: %s\n", playerOidStr.c_str());
+                    }
+                }
+
+                std::string command = "CodeCallback_PlayerStatsReady(\"" + Sanitize_NumbersOnly(playerOidStr) + "\")";
+
+                //always call
+                g_TaskQueue.Dispatch([command] {
+                    g_pServerScript->Run(command.c_str());
                     }, 0);
-
-                    //Cbuf_AddText( ECommandTarget_t::CBUF_SERVER, command.c_str(), cmd_source_t::kCommandSrcCode );
-                }
-
-                if (!has_lock)
-                {
-                    Error(eDLL_T::SERVER, NO_ERROR, "failed to aquire lock to write player stats into map for: %s\n", playerOidStr.c_str());
-                }
-
             });
     }
 
