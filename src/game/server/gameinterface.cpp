@@ -154,7 +154,7 @@ void DrawServerHitboxes(bool bRunOverlays)
 	}
 }
 
-void CServerGameClients::ProcessUserCmds(CServerGameClients* thisp, edict_t edict,
+void CServerGameClients::_ProcessUserCmds(CServerGameClients* thisp, edict_t edict,
 	bf_read* buf, int numCmds, int totalCmds, int droppedPackets, bool ignore, bool paused)
 {
 	int i;
@@ -168,13 +168,13 @@ void CServerGameClients::ProcessUserCmds(CServerGameClients* thisp, edict_t edic
 	Assert(numCmds >= 0);
 	Assert((totalCmds - numCmds) >= 0);
 
-	CPlayer* pPlayer = UTIL_PlayerByIndex(edict);
+	CPlayer* const pPlayer = UTIL_PlayerByIndex(edict);
 
 	// Too many commands?
 	if (totalCmds < 0 || totalCmds >= (MAX_BACKUP_COMMANDS_PROCESS - 1) ||
 		numCmds < 0 || numCmds > totalCmds)
 	{
-		CClient* pClient = g_pServer->GetClient(edict-1);
+		const CClient* const pClient = g_pServer->GetClient(edict-1);
 
 		Warning(eDLL_T::SERVER, "%s: Player '%s' sent too many cmds (%i)\n", __FUNCTION__, pClient->GetServerName(), totalCmds);
 		buf->SetOverflowFlag();
@@ -209,7 +209,7 @@ void VServerGameDLL::Detour(const bool bAttach) const
 {
 	DetourSetup(&CServerGameDLL__DLLInit, &CServerGameDLL::DLLInit, bAttach);
 	DetourSetup(&CServerGameDLL__OnReceivedSayTextMessage, &CServerGameDLL::OnReceivedSayTextMessage, bAttach);
-	DetourSetup(&CServerGameClients__ProcessUserCmds, CServerGameClients::ProcessUserCmds, bAttach);
+	DetourSetup(&CServerGameClients__ProcessUserCmds, CServerGameClients::_ProcessUserCmds, bAttach);
 	DetourSetup(&v_RunFrameServer, &RunFrameServer, bAttach);
 }
 

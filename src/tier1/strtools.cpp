@@ -446,7 +446,14 @@ void V_SplitString2(const char* pString, const char** pSeparators, ssize_t nSepa
 
 			if (pFirstSeparator > pCurPos)
 			{
-				outStrings.AddToTail(AllocString(pCurPos, pFirstSeparator - pCurPos));
+				const ssize_t nLen = pFirstSeparator - pCurPos;
+				char* const pSplit = AllocString(pCurPos, nLen);
+
+				// We need to terminate the array here since we copy the string
+				// from the list minus the delimiter. AllocString adds 1 to len
+				//  or the null character.
+				pSplit[nLen] = '\0';
+				outStrings.AddToTail(pSplit);
 			}
 
 			pCurPos = pFirstSeparator + separatorLen;

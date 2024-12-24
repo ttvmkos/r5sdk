@@ -27,7 +27,7 @@
 #include "DebugUtils/Include/DetourDebugDraw.h"
 #include "NavEditor/Include/NavMeshTesterTool.h"
 #include "NavEditor/Include/OffMeshConnectionTool.h"
-#include "NavEditor/Include/ConvexVolumeTool.h"
+#include "NavEditor/Include/ShapeVolumeTool.h"
 #include "NavEditor/Include/CrowdTool.h"
 #include "NavEditor/Include/InputGeom.h"
 #include "NavEditor/Include/Editor.h"
@@ -37,43 +37,6 @@
 // This value specifies how many layers (or "floors") each navmesh tile is expected to have.
 static const int EXPECTED_LAYERS_PER_TILE = 4;
 
-
-static bool isectSegAABB(const float* sp, const float* sq,
-						 const float* amin, const float* amax,
-						 float& tmin, float& tmax)
-{
-	float d[3];
-	rdVsub(d, sq, sp);
-	tmin = 0;  // set to -FLT_MAX to get first hit on line
-	tmax = FLT_MAX;		// set to max distance ray can travel (for segment)
-	
-	// For all three slabs
-	for (int i = 0; i < 3; i++)
-	{
-		if (fabsf(d[i]) < RD_EPS)
-		{
-			// Ray is parallel to slab. No hit if origin not within slab
-			if (sp[i] < amin[i] || sp[i] > amax[i])
-				return false;
-		}
-		else
-		{
-			// Compute intersection t value of ray with near and far plane of slab
-			const float ood = 1.0f / d[i];
-			float t1 = (amin[i] - sp[i]) * ood;
-			float t2 = (amax[i] - sp[i]) * ood;
-			// Make t1 be intersection with near plane, t2 with far plane
-			if (t1 > t2) rdSwap(t1, t2);
-			// Compute the intersection of slab intersections intervals
-			if (t1 > tmin) tmin = t1;
-			if (t2 < tmax) tmax = t2;
-			// Exit with no collision as soon as slab intersection becomes empty
-			if (tmin > tmax) return false;
-		}
-	}
-	
-	return true;
-}
 
 static int calcLayerBufferSize(const int gridWidth, const int gridHeight)
 {
@@ -175,23 +138,23 @@ struct MeshProcess : public dtTileCacheMeshProcess
 		for (int i = 0; i < params->polyCount; ++i)
 		{
 			if (polyAreas[i] == DT_TILECACHE_WALKABLE_AREA)
-				polyAreas[i] = EDITOR_POLYAREA_GROUND;
+				polyAreas[i] = DT_POLYAREA_GROUND;
 
-			if (polyAreas[i] == EDITOR_POLYAREA_GROUND
+			if (polyAreas[i] == DT_POLYAREA_GROUND
 				//||
 				//polyAreas[i] == EDITOR_POLYAREA_GRASS ||
 				//polyAreas[i] == EDITOR_POLYAREA_ROAD
 				)
 			{
-				polyFlags[i] = EDITOR_POLYFLAGS_WALK;
+				polyFlags[i] = DT_POLYFLAGS_WALK;
 			}
 			//else if (polyAreas[i] == EDITOR_POLYAREA_WATER)
 			//{
 			//	polyFlags[i] = EDITOR_POLYFLAGS_SWIM;
 			//}
-			else if (polyAreas[i] == EDITOR_POLYAREA_TRIGGER)
+			else if (polyAreas[i] == DT_POLYAREA_TRIGGER)
 			{
-				polyFlags[i] = EDITOR_POLYFLAGS_WALK /*| EDITOR_POLYFLAGS_DOOR*/;
+				polyFlags[i] = DT_POLYFLAGS_WALK /*| EDITOR_POLYFLAGS_DOOR*/;
 			}
 		}
 
@@ -290,6 +253,8 @@ int Editor_TempObstacles::rasterizeTileLayers(
 	tcfg.bmin[1] -= tcfg.borderSize*tcfg.cs;
 	tcfg.bmax[0] += tcfg.borderSize*tcfg.cs;
 	tcfg.bmax[1] += tcfg.borderSize*tcfg.cs;
+
+	tcfg.ignoreWindingOrder = m_ignoreWindingOrder;
 	
 	// Allocate voxel heightfield where we rasterize our input data to.
 	rc.solid = rcAllocHeightfield();
@@ -335,7 +300,7 @@ int Editor_TempObstacles::rasterizeTileLayers(
 		
 		memset(rc.triareas, 0, ntris*sizeof(unsigned char));
 		rcMarkWalkableTriangles(m_ctx, tcfg.walkableSlopeAngle,
-								verts, nverts, tris, ntris, rc.triareas);
+								verts, nverts, tris, ntris, rc.triareas, tcfg.ignoreWindingOrder);
 		
 		if (!rcRasterizeTriangles(m_ctx, verts, nverts, tris, rc.triareas, ntris, *rc.solid, tcfg.walkableClimb))
 			return 0;
@@ -356,7 +321,7 @@ int Editor_TempObstacles::rasterizeTileLayers(
 
 			memset(rc.triareas, 0, ntris * sizeof(unsigned char));
 			rcMarkWalkableTriangles(m_ctx, tcfg.walkableSlopeAngle,
-				verts, nverts, tris, ntris, rc.triareas);
+				verts, nverts, tris, ntris, rc.triareas, tcfg.ignoreWindingOrder);
 
 			if (!rcRasterizeTriangles(m_ctx, verts, nverts, tris, rc.triareas, ntris, *rc.solid, tcfg.walkableClimb))
 				return 0;
@@ -370,7 +335,7 @@ int Editor_TempObstacles::rasterizeTileLayers(
 	if (m_filterLowHangingObstacles)
 		rcFilterLowHangingWalkableObstacles(m_ctx, tcfg.walkableClimb, *rc.solid);
 	if (m_filterLedgeSpans)
-		rcFilterLedgeSpans(m_ctx, tcfg.walkableHeight, tcfg.walkableClimb, *rc.solid);
+		rcFilterLedgeSpans(m_ctx, tcfg.walkableHeight, tcfg.walkableClimb, m_filterNeighborSlopes , *rc.solid);
 	if (m_filterWalkableLowHeightSpans)
 		rcFilterWalkableLowHeightSpans(m_ctx, tcfg.walkableHeight, *rc.solid);
 	
@@ -397,8 +362,8 @@ int Editor_TempObstacles::rasterizeTileLayers(
 	}
 	
 	// (Optional) Mark areas.
-	const ConvexVolume* vols = m_geom->getConvexVolumes();
-	for (int i  = 0; i < m_geom->getConvexVolumeCount(); ++i)
+	const ShapeVolume* vols = m_geom->getShapeVolumes();
+	for (int i  = 0; i < m_geom->getShapeVolumeCount(); ++i)
 	{
 		rcMarkConvexPolyArea(m_ctx, vols[i].verts, vols[i].nverts,
 							 vols[i].hmin, vols[i].hmax,
@@ -599,7 +564,7 @@ void drawDetailOverlay(const dtTileCache* tc, const int tx, const int ty, double
 		
 dtObstacleRef hitTestObstacle(const dtTileCache* tc, const float* sp, const float* sq)
 {
-	float tmin = FLT_MAX;
+	float tmin = 1;
 	const dtTileCacheObstacle* obmin = 0;
 	for (int i = 0; i < tc->getObstacleCount(); ++i)
 	{
@@ -610,7 +575,7 @@ dtObstacleRef hitTestObstacle(const dtTileCache* tc, const float* sp, const floa
 		float bmin[3], bmax[3], t0,t1;
 		tc->getObstacleBounds(ob, bmin,bmax);
 		
-		if (isectSegAABB(sp,sq, bmin,bmax, t0,t1))
+		if (rdIntersectSegmentAABB(sp,sq, bmin,bmax, t0,t1))
 		{
 			if (t0 < tmin)
 			{
@@ -678,7 +643,7 @@ public:
 			m_drawType = DRAWDETAIL_MESH;
 	}
 
-	virtual void handleClick(const float* /*s*/, const float* p, bool /*shift*/)
+	virtual void handleClick(const float* /*s*/, const float* p, const int /*v*/, bool /*shift*/)
 	{
 		m_hitPosSet = true;
 		rdVcopy(m_hitPos,p);
@@ -764,7 +729,7 @@ public:
 		ImGui::Text("Shift+LMB to remove an obstacle.");
 	}
 	
-	virtual void handleClick(const float* s, const float* p, bool shift)
+	virtual void handleClick(const float* s, const float* p, const int /*v*/, bool shift)
 	{
 		if (m_editor)
 		{
@@ -801,9 +766,11 @@ Editor_TempObstacles::Editor_TempObstacles()
 
 Editor_TempObstacles::~Editor_TempObstacles()
 {
-	dtFreeNavMesh(m_navMesh);
-	m_navMesh = 0;
 	dtFreeTileCache(m_tileCache);
+
+	delete m_talloc;
+	delete m_tcomp;
+	delete m_tmproc;
 }
 
 void Editor_TempObstacles::handleSettings()
@@ -892,10 +859,10 @@ void Editor_TempObstacles::handleTools()
 		setTool(new OffMeshConnectionTool);
 	}
 
-	enabled = type == TOOL_CONVEX_VOLUME;
-	if (ImGui::Checkbox("Create Convex Volumes", &enabled))
+	enabled = type == TOOL_SHAPE_VOLUME;
+	if (ImGui::Checkbox("Create Shape Volumes", &enabled))
 	{
-		setTool(new ConvexVolumeTool);
+		setTool(new ShapeVolumeTool);
 	}
 
 	enabled = type == TOOL_CROWD;

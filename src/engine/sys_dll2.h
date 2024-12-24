@@ -2,17 +2,9 @@
 #include "vpc/interfaces.h"
 #include "common/engine_launcher_api.h"
 
-class CEngineAPI : public IEngineAPI
+class CEngineAPI : public CTier1AppSystem<IEngineAPI>
 {
 public:
-	virtual bool Connect(const CreateInterfaceFn factory) = 0;
-	virtual void Disconnect() = 0;
-	virtual void* QueryInterface(const char* const pInterfaceName) = 0;
-	virtual InitReturnVal_t Init() = 0;
-	virtual void Shutdown() = 0;
-	virtual AppSystemTier_t GetTier() = 0;
-	virtual void Reconnect(const CreateInterfaceFn factory, const char* const pInterfaceName) = 0;
-
 	// This function must be called before init
 	virtual bool SetStartupInfo(StartupInfo_t& info) = 0;
 
@@ -32,6 +24,7 @@ public:
 
 	static InitReturnVal_t VInit(CEngineAPI* thisp);
 	static bool VModInit(CEngineAPI* pEngineAPI, const char* pModName, const char* pGameDir);
+	static bool OnStartup(CEngineAPI* pEngineAPI, void* pInstance, const char* pStartupModName);
 	static void VSetStartupInfo(CEngineAPI* pEngineAPI, StartupInfo_t* pStartupInfo);
 
 	static void PumpMessages();
@@ -49,6 +42,7 @@ inline InitReturnVal_t(*CEngineAPI__Init)(CEngineAPI* thisp);
 inline void(*CEngineAPI__Shutdown)(void);
 inline bool(*CEngineAPI__Connect)(CEngineAPI* thisptr, CreateInterfaceFn factory);
 inline bool(*CEngineAPI__ModInit)(CEngineAPI* pEngineAPI, const char* pModName, const char* pGameDir);
+inline bool(*CEngineAPI__OnStartup)(CEngineAPI* pEngineAPI, void* pInstance, const char* pStartupModName);
 inline bool(*CEngineAPI__MainLoop)(void);
 inline void(*CEngineAPI__PumpMessages)(void);
 inline void(*CEngineAPI__SetStartupInfo)(CEngineAPI* pEngineAPI, StartupInfo_t* pStartupInfo);
@@ -69,6 +63,7 @@ class VSys_Dll2 : public IDetour
 		LogFunAdr("CEngineAPI::Shutdown", CEngineAPI__Shutdown);
 		LogFunAdr("CEngineAPI::Connect", CEngineAPI__Connect);
 		LogFunAdr("CEngineAPI::ModInit", CEngineAPI__ModInit);
+		LogFunAdr("CEngineAPI::OnStartup", CEngineAPI__OnStartup);
 		LogFunAdr("CEngineAPI::MainLoop", CEngineAPI__MainLoop);
 		LogFunAdr("CEngineAPI::PumpMessages", CEngineAPI__PumpMessages);
 		LogFunAdr("CEngineAPI::SetStartupInfo", CEngineAPI__SetStartupInfo);
@@ -85,6 +80,7 @@ class VSys_Dll2 : public IDetour
 		g_GameDll.FindPatternSIMD("48 83 EC 28 48 8B 05 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? 48 85 C0 48 89 15").GetPtr(CEngineAPI__Connect);
 		g_GameDll.FindPatternSIMD("48 83 EC 28 48 8B 0D ?? ?? ?? ?? 33 D2 48 8B 01 FF 90 ?? ?? ?? ?? B1 01").GetPtr(CEngineAPI__Shutdown);
 		g_GameDll.FindPatternSIMD("48 89 5C 24 ?? 48 89 4C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 81 EC ?? ?? ?? ?? 4D 8B F8").GetPtr(CEngineAPI__ModInit);
+		g_GameDll.FindPatternSIMD("48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 49 8B F8 48 8B DA").GetPtr(CEngineAPI__OnStartup);
 		g_GameDll.FindPatternSIMD("4C 8B DC 49 89 4B 08 48 81 EC ?? ?? ?? ?? 8B 05 ?? ?? ?? ??").GetPtr(CEngineAPI__MainLoop);
 		g_GameDll.FindPatternSIMD("44 88 44 24 ?? 53 55 56 57").GetPtr(v_PakFile_Init);
 		g_GameDll.FindPatternSIMD("48 89 5C 24 ?? 55 48 81 EC ?? ?? ?? ?? 45 33 C9").GetPtr(CEngineAPI__PumpMessages);

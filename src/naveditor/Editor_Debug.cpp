@@ -188,7 +188,7 @@ void Editor_Debug::handleRender()
 	}
 		
 	if (m_navMesh)
-		duDebugDrawNavMesh(&m_dd, *m_navMesh, m_detourDrawOffset, DU_DRAWNAVMESH_OFFMESHCONS, m_traverseLinkDrawParams);
+		duDebugDrawNavMesh(&m_dd, *m_navMesh, m_detourDrawOffset, DU_DRAW_DETOURMESH_OFFMESHCONS, m_traverseLinkDrawParams);
 
 	if (m_ref && m_navMesh)
 		duDebugDrawNavMeshPoly(&m_dd, *m_navMesh, m_ref, m_detourDrawOffset, m_navMeshDrawFlags, duRGBA(255,0,0,128));
@@ -339,10 +339,10 @@ const float* Editor_Debug::getBoundsMax()
 	return 0;
 }
 
-void Editor_Debug::handleClick(const float* s, const float* p, bool shift)
+void Editor_Debug::handleClick(const float* s, const float* p, const int v, bool shift)
 {
 	if (m_tool)
-		m_tool->handleClick(s, p, shift);
+		m_tool->handleClick(s, p, v, shift);
 }
 
 void Editor_Debug::handleToggle()

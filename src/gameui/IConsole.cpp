@@ -22,6 +22,7 @@ History:
 #include "windows/resource.h"
 #include "engine/cmd.h"
 #include "gameui/IConsole.h"
+#include "imgui_system.h"
 
 //-----------------------------------------------------------------------------
 // Console variables
@@ -279,20 +280,6 @@ bool CConsole::DrawSurface(void)
 
     ImGui::Text("%s", m_summaryTextBuf);
 
-    const std::function<void(void)> fnHandleInput = [&](void)
-    {
-        if (m_inputTextBuf[0])
-        {
-            ProcessCommand(m_inputTextBuf);
-            ResetAutoCompleteData();
-
-            m_inputTextBufModified = true;
-        }
-
-        BuildSummaryText("");
-        m_reclaimFocus = true;
-    };
-
     ///////////////////////////////////////////////////////////////////////
     const static int inputTextFieldFlags =
         ImGuiInputTextFlags_EnterReturnsTrue       |
@@ -310,16 +297,17 @@ bool CConsole::DrawSurface(void)
         // command from that instead
         if (m_suggestPos > ConAutoCompletePos_e::kPark)
         {
-            DetermineInputTextFromSelectedSuggestion(m_vecSuggest[m_suggestPos], m_selectedSuggestionText);
-            BuildSummaryText(m_selectedSuggestionText.c_str());
-
-            m_inputTextBufModified = true;
-            m_reclaimFocus = true;
+            HandleSuggest();
         }
         else
         {
-            fnHandleInput();
+            HandleCommand();
         }
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Tab))
+    {
+        HandleSuggest();
     }
 
     // Auto-focus input field on window apparition.
@@ -337,7 +325,7 @@ bool CConsole::DrawSurface(void)
     ImGui::SameLine();
     if (ImGui::Button("Submit"))
     {
-        fnHandleInput();
+        HandleCommand();
     }
 
     ImGui::End();
@@ -352,42 +340,175 @@ void CConsole::DrawOptionsPanel(void)
     ImGui::Checkbox("Auto-scroll", &m_colorTextLogger.m_bAutoScroll);
 
     ImGui::SameLine();
-    ImGui::PushItemWidth(100);
+    ImGui::Spacing();
+    ImGui::SameLine();
 
-    ImGui::PopItemWidth();
-
-    if (ImGui::SmallButton("Clear"))
+    if (ImGui::SmallButton("Clear Text"))
     {
         ClearLog();
     }
 
     ImGui::SameLine();
+    ImGui::Spacing();
+    ImGui::SameLine();
 
     // Copies all logged text to the clip board
-    if (ImGui::SmallButton("Copy"))
+    if (ImGui::SmallButton("Copy Text"))
     {
         AUTO_LOCK(m_colorTextLoggerMutex);
         m_colorTextLogger.Copy(true);
     }
 
-    ImGui::Text("Console hotkey:");
+    ImGui::Text("Console HotKey:");
     ImGui::SameLine();
 
-    if (ImGui::Hotkey("##ToggleConsole", &g_ImGuiConfig.m_ConsoleConfig.m_nBind0, ImVec2(80, 80)))
+    int selected = g_ImGuiConfig.m_ConsoleConfig.m_nBind0;
+
+    if (ImGui::Hotkey("##ToggleConsolePrimary", &selected, ImVec2(80, 80)) &&
+        !g_ImGuiConfig.KeyUsed(selected))
     {
+        g_ImGuiConfig.m_ConsoleConfig.m_nBind0 = selected;
         g_ImGuiConfig.Save();
     }
 
-    ImGui::Text("Browser hotkey:");
+    ImGui::SameLine();
+    selected = g_ImGuiConfig.m_ConsoleConfig.m_nBind1;
+
+    if (ImGui::Hotkey("##ToggleConsoleSecondary", &selected, ImVec2(80, 80)) &&
+        !g_ImGuiConfig.KeyUsed(selected))
+    {
+        g_ImGuiConfig.m_ConsoleConfig.m_nBind1 = selected;
+        g_ImGuiConfig.Save();
+    }
+
+    ImGui::Text("Browser HotKey:");
     ImGui::SameLine();
 
-    if (ImGui::Hotkey("##ToggleBrowser", &g_ImGuiConfig.m_BrowserConfig.m_nBind0, ImVec2(80, 80)))
+    selected = g_ImGuiConfig.m_BrowserConfig.m_nBind0;
+
+    if (ImGui::Hotkey("##ToggleBrowserPrimary", &selected, ImVec2(80, 80)) &&
+        !g_ImGuiConfig.KeyUsed(selected))
     {
+        g_ImGuiConfig.m_BrowserConfig.m_nBind0 = selected;
+        g_ImGuiConfig.Save();
+    }
+
+    ImGui::SameLine();
+    selected = g_ImGuiConfig.m_BrowserConfig.m_nBind1;
+
+    if (ImGui::Hotkey("##ToggleBrowserSecondary", &selected, ImVec2(80, 80)) &&
+        !g_ImGuiConfig.KeyUsed(selected))
+    {
+        g_ImGuiConfig.m_BrowserConfig.m_nBind1 = selected;
         g_ImGuiConfig.Save();
     }
 
     ImGui::EndPopup();
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: returns flag texture index for CommandBase (must be aligned with resource.h!)
+//          in the future we should build the texture procedurally with use of popcnt.
+// Input  : nFlags - 
+//-----------------------------------------------------------------------------
+static int GetFlagTextureIndex(const int flags)
+{
+    switch (flags) // All indices for single/dual flag textures.
+    {
+    case FCVAR_DEVELOPMENTONLY:
+        return 9;
+    case FCVAR_GAMEDLL:
+        return 10;
+    case FCVAR_CLIENTDLL:
+        return 11;
+    case FCVAR_REPLICATED:
+        return 12;
+    case FCVAR_CHEAT:
+        return 13;
+    case FCVAR_RELEASE:
+        return 14;
+    case FCVAR_MATERIAL_SYSTEM_THREAD:
+        return 15;
+    case FCVAR_DEVELOPMENTONLY | FCVAR_GAMEDLL:
+        return 16;
+    case FCVAR_DEVELOPMENTONLY | FCVAR_CLIENTDLL:
+        return 17;
+    case FCVAR_DEVELOPMENTONLY | FCVAR_REPLICATED:
+        return 18;
+    case FCVAR_DEVELOPMENTONLY | FCVAR_CHEAT:
+        return 19;
+    case FCVAR_DEVELOPMENTONLY | FCVAR_MATERIAL_SYSTEM_THREAD:
+        return 20;
+    case FCVAR_REPLICATED | FCVAR_CHEAT:
+        return 21;
+    case FCVAR_REPLICATED | FCVAR_RELEASE:
+        return 22;
+    case FCVAR_GAMEDLL | FCVAR_CHEAT:
+        return 23;
+    case FCVAR_GAMEDLL | FCVAR_RELEASE:
+        return 24;
+    case FCVAR_CLIENTDLL | FCVAR_CHEAT:
+        return 25;
+    case FCVAR_CLIENTDLL | FCVAR_RELEASE:
+        return 26;
+    case FCVAR_MATERIAL_SYSTEM_THREAD | FCVAR_CHEAT:
+        return 27;
+    case FCVAR_MATERIAL_SYSTEM_THREAD | FCVAR_RELEASE:
+        return 28;
+    case COMMAND_COMPLETION_MARKER:
+        return 29;
+
+    default: // Hit when flag is zero/non-indexed or 3+ bits are set.
+
+        const unsigned int v = __popcnt(flags);
+        switch (v)
+        {
+        case 0:
+            return 0; // Pink checker texture (FCVAR_NONE)
+        case 1:
+            return 1; // Yellow checker texture (non-indexed).
+        default:
+
+            // If 3 or more bits are set, we test the flags
+            // and display the appropriate checker texture.
+            const bool mul = v > 2;
+
+            if (flags & FCVAR_DEVELOPMENTONLY)
+            {
+                return mul ? 4 : 3;
+            }
+            else if (flags & FCVAR_CHEAT)
+            {
+                return mul ? 6 : 5;
+            }
+            else if (flags & FCVAR_RELEASE && // RELEASE command but no context restriction.
+                !(flags & FCVAR_SERVER_CAN_EXECUTE) &&
+                !(flags & FCVAR_CLIENTCMD_CAN_EXECUTE))
+            {
+                return mul ? 8 : 7;
+            }
+
+            // Rainbow checker texture (user needs to manually check flags).
+            // These commands are not restricted if ran from the same context.
+            return 2;
+        }
+    }
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: adds an icon hint to the suggest panel
+// Input  : &cvarInfo - 
+//          &flagIconHandles - 
+//-----------------------------------------------------------------------------
+static void AddHint(const ConVarFlags::FlagDesc_t& cvarInfo, const vector<MODULERESOURCE>& flagIconHandles)
+{
+    const int hintTexIdx = GetFlagTextureIndex(cvarInfo.bit);
+    const MODULERESOURCE& hintRes = flagIconHandles[hintTexIdx];
+
+    ImGui::Image(hintRes.m_idIcon, ImVec2(float(hintRes.m_nWidth), float(hintRes.m_nHeight)));
+    ImGui::SameLine();
+    ImGui::Text("%s", cvarInfo.shortdesc);
+};
 
 //-----------------------------------------------------------------------------
 // Purpose: draws the autocomplete panel with results based on user input
@@ -433,16 +554,6 @@ void CConsole::DrawAutoCompletePanel(void)
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly) &&
                 suggest.flags != COMMAND_COMPLETION_MARKER)
             {
-                const std::function<void(const ConVarFlags::FlagDesc_t&)> fnAddHint = [&](const ConVarFlags::FlagDesc_t& cvarInfo)
-                {
-                    const int hintTexIdx = GetFlagTextureIndex(cvarInfo.bit);
-                    const MODULERESOURCE& hintRes = m_vecFlagIcons[hintTexIdx];
-
-                    ImGui::Image(hintRes.m_idIcon, ImVec2(float(hintRes.m_nWidth), float(hintRes.m_nHeight)));
-                    ImGui::SameLine();
-                    ImGui::Text("%s", cvarInfo.shortdesc);
-                };
-
                 ImGui::BeginTooltip();
                 bool isFlagSet = false;
 
@@ -453,12 +564,12 @@ void CConsole::DrawAutoCompletePanel(void)
                     if (suggest.flags & info.bit)
                     {
                         isFlagSet = true;
-                        fnAddHint(info);
+                        AddHint(info, m_vecFlagIcons);
                     }
                 }
                 if (!isFlagSet) // Display the FCVAR_NONE flag if no flags are set.
                 {
-                    fnAddHint(g_ConVarFlags.m_FlagsToDesc[0]);
+                    AddHint(g_ConVarFlags.m_FlagsToDesc[0], m_vecFlagIcons);
                 }
 
                 ImGui::EndTooltip();
@@ -607,6 +718,29 @@ void CConsole::ResetAutoCompleteData(void)
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: format appends the value string
+//-----------------------------------------------------------------------------
+static void AppendValueString(string& targetString, const char* const toAppend)
+{
+    targetString.append(" = ["); // Assign current value to string if its a ConVar.
+    targetString.append(toAppend);
+    targetString.append("]");
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: format appends the doc string
+//-----------------------------------------------------------------------------
+static void AppendDocString(string& targetString, const char* const toAppend)
+{
+    if (VALID_CHARSTAR(toAppend))
+    {
+        targetString.append(" - \"");
+        targetString.append(toAppend);
+        targetString.append("\"");
+    }
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: find ConVars/ConCommands from user input and add to vector
 // - Ignores ConVars marked FCVAR_HIDDEN
 //-----------------------------------------------------------------------------
@@ -641,28 +775,16 @@ void CConsole::CreateSuggestionsFromPartial(void)
         {
             string docString;
 
+            // Assign current value to string if its a ConVar.
             if (!commandBase->IsCommand())
             {
-                const ConVar* conVar = reinterpret_cast<const ConVar*>(commandBase);
-
-                docString = " = ["; // Assign current value to string if its a ConVar.
-                docString.append(conVar->GetString());
-                docString.append("]");
+                const ConVar* const conVar = reinterpret_cast<const ConVar*>(commandBase);
+                AppendValueString(docString, conVar->GetString());
             }
             if (con_suggest_helptext.GetBool())
             {
-                std::function<void(string& , const char*)> fnAppendDocString = [&](string& targetString, const char* toAppend)
-                {
-                    if (VALID_CHARSTAR(toAppend))
-                    {
-                        targetString.append(" - \"");
-                        targetString.append(toAppend);
-                        targetString.append("\"");
-                    }
-                };
-
-                fnAppendDocString(docString, commandBase->GetHelpText());
-                fnAppendDocString(docString, commandBase->GetUsageText());
+                AppendDocString(docString, commandBase->GetHelpText());
+                AppendDocString(docString, commandBase->GetUsageText());
             }
             m_vecSuggest.push_back(ConAutoCompleteSuggest_s(commandName + docString, commandBase->GetFlags()));
         }
@@ -809,95 +931,6 @@ bool CConsole::LoadFlagIcons(void)
 
     m_autoCompleteTexturesLoaded = ret;
     return ret;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: returns flag texture index for CommandBase (must be aligned with resource.h!)
-//          in the future we should build the texture procedurally with use of popcnt.
-// Input  : nFlags - 
-//-----------------------------------------------------------------------------
-int CConsole::GetFlagTextureIndex(const int flags) const
-{
-    switch (flags) // All indices for single/dual flag textures.
-    {
-    case FCVAR_DEVELOPMENTONLY:
-        return 9;
-    case FCVAR_GAMEDLL:
-        return 10;
-    case FCVAR_CLIENTDLL:
-        return 11;
-    case FCVAR_REPLICATED:
-        return 12;
-    case FCVAR_CHEAT:
-        return 13;
-    case FCVAR_RELEASE:
-        return 14;
-    case FCVAR_MATERIAL_SYSTEM_THREAD:
-        return 15;
-    case FCVAR_DEVELOPMENTONLY | FCVAR_GAMEDLL:
-        return 16;
-    case FCVAR_DEVELOPMENTONLY | FCVAR_CLIENTDLL:
-        return 17;
-    case FCVAR_DEVELOPMENTONLY | FCVAR_REPLICATED:
-        return 18;
-    case FCVAR_DEVELOPMENTONLY | FCVAR_CHEAT:
-        return 19;
-    case FCVAR_DEVELOPMENTONLY | FCVAR_MATERIAL_SYSTEM_THREAD:
-        return 20;
-    case FCVAR_REPLICATED | FCVAR_CHEAT:
-        return 21;
-    case FCVAR_REPLICATED | FCVAR_RELEASE:
-        return 22;
-    case FCVAR_GAMEDLL | FCVAR_CHEAT:
-        return 23;
-    case FCVAR_GAMEDLL | FCVAR_RELEASE:
-        return 24;
-    case FCVAR_CLIENTDLL | FCVAR_CHEAT:
-        return 25;
-    case FCVAR_CLIENTDLL | FCVAR_RELEASE:
-        return 26;
-    case FCVAR_MATERIAL_SYSTEM_THREAD | FCVAR_CHEAT:
-        return 27;
-    case FCVAR_MATERIAL_SYSTEM_THREAD | FCVAR_RELEASE:
-        return 28;
-    case COMMAND_COMPLETION_MARKER:
-        return 29;
-
-    default: // Hit when flag is zero/non-indexed or 3+ bits are set.
-
-        const unsigned int v = __popcnt(flags);
-        switch (v)
-        {
-        case 0:
-            return 0; // Pink checker texture (FCVAR_NONE)
-        case 1:
-            return 1; // Yellow checker texture (non-indexed).
-        default:
-
-            // If 3 or more bits are set, we test the flags
-            // and display the appropriate checker texture.
-            bool mul = v > 2;
-
-            if (flags & FCVAR_DEVELOPMENTONLY)
-            {
-                return mul ? 4 : 3;
-            }
-            else if (flags & FCVAR_CHEAT)
-            {
-                return mul ? 6 : 5;
-            }
-            else if (flags & FCVAR_RELEASE && // RELEASE command but no context restriction.
-                !(flags & FCVAR_SERVER_CAN_EXECUTE) &&
-                !(flags & FCVAR_CLIENTCMD_CAN_EXECUTE))
-            {
-                return mul ? 8 : 7;
-            }
-
-            // Rainbow checker texture (user needs to manually check flags).
-            // These commands are not restricted if ran from the same context.
-            return 2;
-        }
-    }
 }
 
 //-----------------------------------------------------------------------------
@@ -1075,6 +1108,50 @@ int CConsole::TextEditCallbackStub(ImGuiInputTextCallbackData* iData)
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: handle anything in the command buffer
+//-----------------------------------------------------------------------------
+void CConsole::HandleCommand()
+{
+    if (m_inputTextBuf[0])
+    {
+        ProcessCommand(m_inputTextBuf);
+        ResetAutoCompleteData();
+
+        m_inputTextBufModified = true;
+    }
+
+    BuildSummaryText("");
+    m_reclaimFocus = true;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: handle the suggested item that was selected
+//-----------------------------------------------------------------------------
+void CConsole::HandleSuggest()
+{
+    const bool parked = m_suggestPos == ConAutoCompletePos_e::kPark;
+
+    if (parked && m_vecSuggest.empty())
+    {
+        return;
+    }
+
+    // Note: we should never be able to move the suggest pos
+    // if the suggest list is empty. Suggest pos must always
+    // be cleared if the list is cleared.
+    Assert(!m_vecSuggest.empty());
+
+    // Use the first item if the suggest position is parked.
+    const int vecIndex = parked ? 0 : m_suggestPos;
+
+    DetermineInputTextFromSelectedSuggestion(m_vecSuggest[vecIndex], m_selectedSuggestionText);
+    BuildSummaryText(m_selectedSuggestionText.c_str());
+
+    m_inputTextBufModified = true;
+    m_reclaimFocus = true;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: adds logs to the console; this is the only place text is added to
 // the vector, do not call 'm_Logger.InsertText' elsewhere as we also manage
 // the size of the vector here !!!
@@ -1082,6 +1159,11 @@ int CConsole::TextEditCallbackStub(ImGuiInputTextCallbackData* iData)
 //-----------------------------------------------------------------------------
 void CConsole::AddLog(const char* const text, const ImU32 color)
 {
+    if (!ImguiSystem()->IsEnabled())
+    {
+        return;
+    }
+
     AUTO_LOCK(m_colorTextLoggerMutex);
 
     m_colorTextLogger.InsertText(text, color);

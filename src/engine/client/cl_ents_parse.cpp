@@ -6,12 +6,27 @@
 //=============================================================================//
 #include "core/stdafx.h"
 #include "public/const.h"
+#include "engine/host.h"
 #include "engine/client/cl_ents_parse.h"
 
-bool CL_CopyExistingEntity(__int64 a1, unsigned int* a2, char* a3)
+bool CL_CopyNewEntity(CEntityReadInfo* const u, unsigned int* const iClass, const int iSerialNum, bool* const pbError)
 {
-	int nNewEntity = *reinterpret_cast<int*>(a1 + 40);
-	if (nNewEntity >= MAX_EDICTS || nNewEntity < NULL)
+	// Similar to the issue in CL_CopyExistingEntity,
+	// except, only the lower bounds check was missing.
+	if (u->m_nNewEntity < NULL || u->m_nNewEntity >= MAX_EDICTS)
+	{
+		Host_Error("CL_CopyNewEntity: u.m_nNewEntity < 0 || u.m_nNewEntity >= MAX_EDICTS");
+		*pbError = true;
+
+		return false;
+	}
+
+	return v_CL_CopyNewEntity(u, iClass, iSerialNum, pbError);
+}
+
+bool CL_CopyExistingEntity(CEntityReadInfo* const u, unsigned int* const iClass, bool* const pbError)
+{
+	if (u->m_nNewEntity < NULL || u->m_nNewEntity >= MAX_EDICTS)
 	{
 		// Value isn't sanitized in release builds for
 		// every game powered by the Source Engine 1
@@ -20,7 +35,11 @@ bool CL_CopyExistingEntity(__int64 a1, unsigned int* a2, char* a3)
 		// full-chain RCE exploit. We hook and perform
 		// sanity checks for the value of m_nNewEntity
 		// here to prevent this behavior from happening.
+		Host_Error("CL_CopyExistingEntity: u.m_nNewEntity < 0 || u.m_nNewEntity >= MAX_EDICTS");
+		*pbError = true;
+
 		return false;
 	}
-	return v_CL_CopyExistingEntity(a1, a2, a3);
+
+	return v_CL_CopyExistingEntity(u, iClass, pbError);
 }

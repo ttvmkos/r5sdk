@@ -120,7 +120,7 @@ public:
 	
 };
 
-static void floodNavmesh(dtNavMesh* nav, NavmeshFlags* flags, dtPolyRef start, unsigned char flag)
+static void floodNavMesh(dtNavMesh* nav, NavmeshFlags* flags, dtPolyRef start, unsigned char flag)
 {
 	// If already visited, skip.
 	if (flags->getFlags(start))
@@ -157,11 +157,11 @@ static void floodNavmesh(dtNavMesh* nav, NavmeshFlags* flags, dtPolyRef start, u
 	}
 }
 
-static void disableUnvisitedPolys(dtNavMesh* nav, NavmeshFlags* flags)
+void NavMeshPruneTool::pruneUnvisitedTilesAndPolys(dtNavMesh* nav, NavmeshFlags* flags)
 {
-	for (int i = 0; i < nav->getTileCount(); ++i)
+	for (int i = 0; i < nav->getMaxTiles(); ++i)
 	{
-		const dtMeshTile* tile = nav->getTile(i);
+		dtMeshTile* tile = nav->getTile(i);
 		dtMeshHeader* header = tile->header;
 
 		if (!header) continue;
@@ -181,7 +181,7 @@ static void disableUnvisitedPolys(dtNavMesh* nav, NavmeshFlags* flags)
 
 				targetPoly->groupId = DT_UNLINKED_POLY_GROUP;
 				targetPoly->firstLink = DT_NULL_LINK;
-				targetPoly->flags = EDITOR_POLYFLAGS_DISABLED;
+				targetPoly->flags = DT_POLYFLAGS_DISABLED;
 
 				numUnlinkedPolys++;
 			}
@@ -190,30 +190,20 @@ static void disableUnvisitedPolys(dtNavMesh* nav, NavmeshFlags* flags)
 		if (numUnlinkedPolys == header->polyCount)
 		{
 			header->userId = DT_FULL_UNLINKED_TILE_USER_ID;
-			continue;
+			nav->removeTile(nav->getTileRef(tile), 0, 0);
+		}
+		else
+		{
+			header->userId = DT_SEMI_UNLINKED_TILE_USER_ID;
+			dtUpdateNavMeshData(nav, (unsigned int)i);
 		}
 	}
-}
-
-static void removeUnlinkedTiles(dtNavMesh* nav)
-{
-	for (int i = nav->getTileCount(); i-- > 0;)
-	{
-		const dtMeshTile* tile = nav->getTile(i);
-		const dtMeshHeader* header = tile->header;
-
-		if (!header) continue;
-
-		if (header->userId == DT_FULL_UNLINKED_TILE_USER_ID)
-			nav->removeTile(nav->getTileRef(tile), 0, 0);
-	};
 }
 
 NavMeshPruneTool::NavMeshPruneTool() :
 	m_editor(0),
 	m_flags(0),
-	m_hitPosSet(false),
-	m_ranPruneTool(false)
+	m_hitPosSet(false)
 {
 	m_hitPos[0] = 0.0f;
 	m_hitPos[1] = 0.0f;
@@ -222,20 +212,25 @@ NavMeshPruneTool::NavMeshPruneTool() :
 
 NavMeshPruneTool::~NavMeshPruneTool()
 {
-	delete m_flags;
+	if (m_flags)
+		delete m_flags;
 }
 
 void NavMeshPruneTool::init(Editor* editor)
 {
 	m_editor = editor;
+	reset();
 }
 
 void NavMeshPruneTool::reset()
 {
 	m_hitPosSet = false;
-	m_ranPruneTool = false;
-	delete m_flags;
-	m_flags = 0;
+
+	if (m_flags)
+	{
+		delete m_flags;
+		m_flags = 0;
+	}
 }
 
 void NavMeshPruneTool::handleMenu()
@@ -243,36 +238,27 @@ void NavMeshPruneTool::handleMenu()
 	dtNavMesh* nav = m_editor->getNavMesh();
 	if (!nav) return;
 
-	// todo(amos): once tile rebuilding is done, also remove unlinked polygons!
-	if (m_ranPruneTool && ImGui::Button("Remove Unlinked Tiles"))
-	{
-		removeUnlinkedTiles(nav);
-		m_ranPruneTool = false;
-	}
-
-	if (!m_flags) return;
+	if (!m_flags || !m_hitPosSet) return;
 
 	if (ImGui::Button("Clear Selection"))
 	{
 		m_flags->clearAllFlags();
+		m_hitPosSet = false;
 	}
 	
 	if (ImGui::Button("Prune Unselected"))
 	{
-		disableUnvisitedPolys(nav, m_flags);
-		dtTraverseTableCreateParams params;
-
-		m_editor->createTraverseTableParams(&params);
-		m_editor->updateStaticPathingData(&params);
+		pruneUnvisitedTilesAndPolys(nav, m_flags);
+		m_editor->createStaticPathingData();
 
 		delete m_flags;
 		m_flags = 0;
 
-		m_ranPruneTool = true;
+		m_hitPosSet = false;
 	}
 }
 
-void NavMeshPruneTool::handleClick(const float* s, const float* p, bool shift)
+void NavMeshPruneTool::handleClick(const float* s, const float* p, const int /*v*/, bool shift)
 {
 	rdIgnoreUnused(s);
 	rdIgnoreUnused(shift);
@@ -288,18 +274,20 @@ void NavMeshPruneTool::handleClick(const float* s, const float* p, bool shift)
 	rdVcopy(m_hitPos, p);
 	m_hitPosSet = true;
 	
-	if (!m_flags)
-	{
-		m_flags = new NavmeshFlags;
-		m_flags->init(nav);
-	}
-	
-	const float halfExtents[3] = { 2, 2, 4 };
+	const float halfExtents[3] = { 64, 64, 128 };
 	dtQueryFilter filter;
 	dtPolyRef ref = 0;
-	query->findNearestPoly(p, halfExtents, &filter, &ref, 0);
 
-	floodNavmesh(nav, m_flags, ref, 1);
+	if (dtStatusSucceed(query->findNearestPoly(p, halfExtents, &filter, &ref, 0)) && ref)
+	{
+		if (!m_flags)
+		{
+			m_flags = new NavmeshFlags;
+			m_flags->init(nav);
+		}
+
+		floodNavMesh(nav, m_flags, ref, 1);
+	}
 }
 
 void NavMeshPruneTool::handleToggle()
@@ -362,5 +350,5 @@ void NavMeshPruneTool::handleRenderOverlay(double* proj, double* model, int* vie
 	rdIgnoreUnused(view);
 
 	// Tool help
-	ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(280, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Click fill area.");
+	ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(300, 40), ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Click fill area.");
 }

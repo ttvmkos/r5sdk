@@ -119,9 +119,9 @@ bool IsOriginInitialized()
 // Input  : *pszName -
 // Output : true on success, false on failure
 //-----------------------------------------------------------------------------
-bool IsValidPersonaName(const char* pszName, int nMinLen, int nMaxLen)
+bool IsValidPersonaName(const char* const pszName, const int nMinLen, const int nMaxLen)
 {
-	size_t len = strlen(pszName);
+	const size_t len = strlen(pszName);
 
 	if (len < nMinLen ||
 		len > nMaxLen)
@@ -130,7 +130,7 @@ bool IsValidPersonaName(const char* pszName, int nMinLen, int nMaxLen)
 	}
 
 	// Check if the name contains any special characters.
-	size_t pos = strspn(pszName, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
+	const size_t pos = strspn(pszName, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
 	return pszName[pos] == '\0';
 }
 

@@ -152,7 +152,7 @@ public:
 	/// Returns the total accumulated time of the specified performance timer.
 	/// @param	label	The category of the timer.
 	/// @return The accumulated time of the timer, or -1 if timers are disabled or the timer has never been started.
-	inline int getAccumulatedTime(const rcTimerLabel label) const { return m_timerEnabled ? doGetAccumulatedTime(label) : -1; }
+	inline rdTimeType getAccumulatedTime(const rcTimerLabel label) const { return m_timerEnabled ? doGetAccumulatedTime(label) : -1; }
 
 protected:
 	/// Clears all log entries.
@@ -162,7 +162,7 @@ protected:
 	/// @param[in]		category	The category of the message.
 	/// @param[in]		msg			The formatted message.
 	/// @param[in]		len			The length of the formatted message.
-	virtual void doLog(const rcLogCategory category, const char* msg, const int len) { rdIgnoreUnused(category); rdIgnoreUnused(msg); rdIgnoreUnused(len); }
+	virtual void doLog(const rcLogCategory category, const char* msg, const rdSizeType len) { rdIgnoreUnused(category); rdIgnoreUnused(msg); rdIgnoreUnused(len); }
 
 	/// Clears all timers. (Resets all to unused.)
 	virtual void doResetTimers() {}
@@ -178,7 +178,7 @@ protected:
 	/// Returns the total accumulated time of the specified performance timer.
 	/// @param[in]		label	The category of the timer.
 	/// @return The accumulated time of the timer, or -1 if timers are disabled or the timer has never been started.
-	virtual int doGetAccumulatedTime(const rcTimerLabel label) const { rdIgnoreUnused(label); return -1; }
+	virtual rdTimeType doGetAccumulatedTime(const rcTimerLabel label) const { rdIgnoreUnused(label); return -1; }
 	
 	/// True if logging is enabled.
 	bool m_logEnabled;
@@ -226,7 +226,7 @@ struct rcConfig
 	/// The xy-plane cell size to use for fields. [Limit: > 0] [Units: wu] 
 	float cs;
 
-	/// The y-axis cell size to use for fields. [Limit: > 0] [Units: wu]
+	/// The z-axis cell size to use for fields. [Limit: > 0] [Units: wu]
 	float ch;
 
 	/// The minimum bounds of the field's AABB. [(x, y, z)] [Units: wu]
@@ -274,10 +274,14 @@ struct rcConfig
 	/// The maximum distance the detail mesh surface should deviate from heightfield
 	/// data. (For height detail only.) [Limit: >=0] [Units: wu] 
 	float detailSampleMaxError;
+
+	/// Whether to ignore the winding order of the input geometry's triangles. If set, backwards
+	/// facing triangles will still be considered walkable if they meet all other criteria.
+	bool ignoreWindingOrder;
 };
 
 /// Defines the number of bits allocated to rcSpan::smin and rcSpan::smax.
-static const int RC_SPAN_HEIGHT_BITS = 13;
+static const int RC_SPAN_HEIGHT_BITS = 29;
 /// Defines the maximum value for rcSpan::smin and rcSpan::smax.
 static const int RC_SPAN_MAX_HEIGHT = (1 << RC_SPAN_HEIGHT_BITS) - 1;
 
@@ -339,7 +343,7 @@ struct rcCompactSpan
 	unsigned short z;			///< The lower extent of the span. (Measured from the heightfield's base.)
 	unsigned short reg;			///< The id of the region the span belongs to. (Or zero if not in a region.)
 	unsigned int con : 24;		///< Packed neighbor connection data.
-	unsigned int h : 8;			///< The height of the span.  (Measured from #y.)
+	unsigned int h : 8;			///< The height of the span.  (Measured from #z.)
 };
 
 /// A compact, static heightfield representing unobstructed space.
@@ -635,6 +639,9 @@ static const unsigned char RC_WALKABLE_AREA = 63;
 /// @see rcPolyMesh::surfa
 static const float RC_POLY_SURFAREA_QUANT_FACTOR = 0.01f;
 
+// Polygons with surface areas not larger than this amount should be flagged.
+static const unsigned short RC_POLY_SURFAREA_TOO_SMALL_THRESHOLD = 120;
+
 /// The value returned by #rcGetCon if the specified direction is not connected
 /// to another span. (Has no neighbor.)
 static const int RC_NOT_CONNECTED = 0x3f;
@@ -674,7 +681,7 @@ void rcCalcGridSize(const float* minBounds, const float* maxBounds, float cellSi
 /// @param[in]		minBounds	The minimum bounds of the field's AABB. [(x, y, z)] [Units: wu]
 /// @param[in]		maxBounds	The maximum bounds of the field's AABB. [(x, y, z)] [Units: wu]
 /// @param[in]		cellSize	The xy-plane cell size to use for the field. [Limit: > 0] [Units: wu]
-/// @param[in]		cellHeight	The y-axis cell size to use for field. [Limit: > 0] [Units: wu]
+/// @param[in]		cellHeight	The z-axis cell size to use for field. [Limit: > 0] [Units: wu]
 /// @returns True if the operation completed successfully.
 bool rcCreateHeightfield(rcContext* context, rcHeightfield& heightfield, int sizeX, int sizeZ,
 						 const float* minBounds, const float* maxBounds,
@@ -699,8 +706,9 @@ bool rcCreateHeightfield(rcContext* context, rcHeightfield& heightfield, int siz
 /// @param[in]		tris				The triangle vertex indices. [(vertA, vertB, vertC) * @p nt]
 /// @param[in]		numTris				The number of triangles.
 /// @param[out]		triAreaIDs			The triangle area ids. [Length: >= @p nt]
+/// @param[in]		ignoreWindingOrder	Whether to ignore the winding order of the triangle.
 void rcMarkWalkableTriangles(rcContext* context, float walkableSlopeAngle, const float* verts, int numVerts,
-							 const int* tris, int numTris, unsigned char* triAreaIDs); 
+							 const int* tris, int numTris, unsigned char* triAreaIDs, const bool ignoreWindingOrder);
 
 /// Sets the area id of all triangles with a slope greater than or equal to the specified value to #RC_NULL_AREA.
 /// 
@@ -720,8 +728,9 @@ void rcMarkWalkableTriangles(rcContext* context, float walkableSlopeAngle, const
 /// @param[in]		tris				The triangle vertex indices. [(vertA, vertB, vertC) * @p nt]
 /// @param[in]		numTris				The number of triangles.
 /// @param[out]		triAreaIDs			The triangle area ids. [Length: >= @p nt]
+/// @param[in]		ignoreWindingOrder	Whether to ignore the winding order of the triangle.
 void rcClearUnwalkableTriangles(rcContext* context, float walkableSlopeAngle, const float* verts, int numVerts,
-								const int* tris, int numTris, unsigned char* triAreaIDs); 
+								const int* tris, int numTris, unsigned char* triAreaIDs, const bool ignoreWindingOrder);
 
 /// Adds a span to the specified heightfield.
 /// 
@@ -861,12 +870,13 @@ void rcFilterLowHangingWalkableObstacles(rcContext* context, int walkableClimb, 
 /// 
 /// @ingroup recast
 /// @param[in,out]	context				The build context to use during the operation.
-/// @param[in]		walkableHeight	Minimum floor to 'ceiling' height that will still allow the floor area to 
-/// 								be considered walkable. [Limit: >= 3] [Units: vx]
-/// @param[in]		walkableClimb	Maximum ledge height that is considered to still be traversable. 
-/// 								[Limit: >=0] [Units: vx]
+/// @param[in]		walkableHeight		Minimum floor to 'ceiling' height that will still allow the floor area to 
+/// 									be considered walkable. [Limit: >= 3] [Units: vx]
+/// @param[in]		walkableClimb		Maximum ledge height that is considered to still be traversable. 
+/// @param[in]		cullSteepNeiSlopes	Whether to mark spans having neighbors not within the walkable climb range as non walkable.
+/// 									[Limit: >=0] [Units: vx]
 /// @param[in,out]	heightfield			A fully built heightfield.  (All spans have been added.)
-void rcFilterLedgeSpans(rcContext* context, int walkableHeight, int walkableClimb, rcHeightfield& heightfield);
+void rcFilterLedgeSpans(rcContext* context, int walkableHeight, int walkableClimb, bool cullSteepNeiSlopes, rcHeightfield& heightfield);
 
 /// Marks walkable spans as not walkable if the clearance above the span is less than the specified height.
 /// 
@@ -931,33 +941,6 @@ bool rcErodeWalkableArea(rcContext* ctx, int radius, rcCompactHeightfield& chf);
 /// @returns True if the operation completed successfully.
 bool rcMedianFilterWalkableArea(rcContext* ctx, rcCompactHeightfield& chf);
 
-/// Applies an area id to all spans within the specified bounding box. (AABB) 
-/// @ingroup recast
-/// @param[in,out]	ctx		The build context to use during the operation.
-/// @param[in]		bmin	The minimum of the bounding box. [(x, y, z)]
-/// @param[in]		bmax	The maximum of the bounding box. [(x, y, z)]
-/// @param[in]		flags	The flags to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in,out]	chf		A populated compact heightfield.
-void rcMarkBoxArea(rcContext* ctx, const float* bmin, const float* bmax,
-				   unsigned short flags, unsigned char areaId,
-				   rcCompactHeightfield& chf);
-
-/// Applies the area id to the all spans within the specified convex polygon. 
-/// @ingroup recast
-/// @param[in,out]	ctx		The build context to use during the operation.
-/// @param[in]		verts	The vertices of the polygon [Fomr: (x, y, z) * @p nverts]
-/// @param[in]		nverts	The number of vertices in the polygon.
-/// @param[in]		hmin	The height of the base of the polygon.
-/// @param[in]		hmax	The height of the top of the polygon.
-/// @param[in]		flags	The flags to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
-/// @param[in,out]	chf		A populated compact heightfield.
-void rcMarkConvexPolyArea(rcContext* ctx, const float* verts, const int nverts,
-						  const float hmin, const float hmax, 
-						  unsigned short flags, unsigned char areaId,
-						  rcCompactHeightfield& chf);
-
 /// Helper function to offset voncex polygons for rcMarkConvexPolyArea.
 /// @ingroup recast
 /// @param[in]		verts		The vertices of the polygon [Form: (x, y, z) * @p nverts]
@@ -969,16 +952,45 @@ void rcMarkConvexPolyArea(rcContext* ctx, const float* verts, const int nverts,
 int rcOffsetPoly(const float* verts, const int nverts, const float offset,
 				 float* outVerts, const int maxOutVerts);
 
+/// Applies an area id to all spans within the specified bounding box. (AABB) 
+/// @ingroup recast
+/// @param[in,out]	ctx		The build context to use during the operation.
+/// @param[in]		bmin	The minimum of the bounding box. [(x, y, z)]
+/// @param[in]		bmax	The maximum of the bounding box. [(x, y, z)]
+/// @param[in]		flags	The flags to apply.
+/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
+/// @param[in,out]	chf		A populated compact heightfield.
+void rcMarkBoxArea(rcContext* ctx, const float* bmin, const float* bmax,
+				   unsigned short flags, unsigned char areaId,
+				   rcCompactHeightfield& chf);
+
+/// Applies the area id to the all spans within the specified convex polygon. 
+/// @ingroup recast
+/// @param[in,out]	ctx		The build context to use during the operation.
+/// @param[in]		verts	The vertices of the polygon [Form: (x, y, z) * @p nverts]
+/// @param[in]		nverts	The number of vertices in the polygon.
+/// @param[in]		hmin	The height of the base of the polygon.
+/// @param[in]		hmax	The height of the top of the polygon.
+/// @param[in]		flags	The flags to apply.
+/// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
+/// @param[in,out]	chf		A populated compact heightfield.
+void rcMarkConvexPolyArea(rcContext* ctx, const float* verts, const int nverts,
+						  const float hmin, const float hmax, 
+						  unsigned short flags, unsigned char areaId,
+						  rcCompactHeightfield& chf);
+
 /// Applies the area id to all spans within the specified cylinder.
 /// @ingroup recast
 /// @param[in,out]	ctx		The build context to use during the operation.
 /// @param[in]		pos		The center of the base of the cylinder. [Form: (x, y, z)] 
 /// @param[in]		r		The radius of the cylinder.
 /// @param[in]		h		The height of the cylinder.
+/// @param[in]		flags	The flags to apply.
 /// @param[in]		areaId	The area id to apply. [Limit: <= #RC_WALKABLE_AREA]
 /// @param[in,out]	chf	A populated compact heightfield.
 void rcMarkCylinderArea(rcContext* ctx, const float* pos,
-						const float r, const float h, unsigned char areaId,
+						const float r, const float h, 
+						unsigned short flags, unsigned char areaId,
 						rcCompactHeightfield& chf);
 
 /// Builds the distance field for the specified compact heightfield. 
@@ -1068,12 +1080,12 @@ inline int rcGetDirOffsetY(int direction)
 
 /// Gets the direction for the specified offset. One of x and y should be 0.
 /// @param[in]		offsetX		The x offset. [Limits: -1 <= value <= 1]
-/// @param[in]		offsetZ		The z offset. [Limits: -1 <= value <= 1]
+/// @param[in]		offsetZ		The Y offset. [Limits: -1 <= value <= 1]
 /// @return The direction that represents the offset.
-inline int rcGetDirForOffset(int offsetX, int offsetZ)
+inline int rcGetDirForOffset(int offsetX, int offsetY)
 {
 	static const int dirs[5] = { 3, 0, -1, 2, 1 };
-	return dirs[((offsetZ + 1) << 1) + offsetX];
+	return dirs[((offsetY + 1) << 1) + offsetX];
 }
 
 /// @}
@@ -1159,9 +1171,6 @@ bool rcCopyPolyMesh(rcContext* ctx, const rcPolyMesh& src, rcPolyMesh& dst);
 /// @param[out]		mesh	The resulting detail mesh. (Must be pre-allocated.)
 /// @returns True if the operation completed successfully.
 bool rcMergePolyMeshDetails(rcContext* ctx, rcPolyMeshDetail** meshes, const int nmeshes, rcPolyMeshDetail& mesh);
-
-void rcFlipPolyMesh(rcPolyMesh& mesh);
-void rcFlipPolyMeshDetail(rcPolyMeshDetail& mdetail, int poly_tris);
 
 /// @}
 

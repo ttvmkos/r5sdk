@@ -250,22 +250,34 @@ void Systems_Init()
 
 #ifdef DEDICATED
 	InitCommandLineParameters();
-#endif // DEDICATED
+#else
+	// Must append these here if user specified the -offline parameter so the
+	// engine can take care of disabling the platform systems on time. The
+	// dedicated server already has these disabled, so we don't need to check
+	// for it here.
+	if (CommandLine()->CheckParm("-offline"))
+	{
+		CommandLine()->AppendParm("-noorigin", "");
+		CommandLine()->AppendParm("-nodiscord", "");
+	}
+#endif// DEDICATED
 
 	// Script context registration callbacks.
 	ScriptConstantRegister_Callback = ScriptConstantRegistrationCallback;
 
 #ifndef CLIENT_DLL
 	ServerScriptRegister_Callback = Script_RegisterServerFunctions;
-	CoreServerScriptRegister_Callback = Script_RegisterCoreServerFunctions;
-	AdminPanelScriptRegister_Callback = Script_RegisterAdminPanelFunctions;
-
 	ServerScriptRegisterEnum_Callback = Script_RegisterServerEnums;
 #endif// !CLIENT_DLL
 
 #ifndef SERVER_DLL
 	ClientScriptRegister_Callback = Script_RegisterClientFunctions;
 	UiScriptRegister_Callback =  Script_RegisterUIFunctions;
+
+#ifndef CLIENT_DLL
+	UiServerScriptRegister_Callback = Script_RegisterUIServerFunctions;
+	UiAdminPanelScriptRegister_Callback = Script_RegisterAdminServerFunctions;
+#endif // !CLIENT_DLL
 #endif // !SERVER_DLL
 
 #ifdef CLIENT_DLL
@@ -647,6 +659,12 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 	REGISTER(VSquirrel);
 	REGISTER(VScript);
 	REGISTER(VScriptShared);
+#ifndef CLIENT_DLL
+	REGISTER(VScriptServer);
+#endif // !CLIENT_DLL
+#ifndef DEDICATED
+	REGISTER(VScriptClient);
+#endif // !DEDICATED
 
 	// Squirrel
 	REGISTER(VSquirrelAPI);

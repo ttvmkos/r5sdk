@@ -1369,7 +1369,7 @@ bool rcBuildRegionsMonotone(rcContext* ctx, rcCompactHeightfield& chf,
 	memset(srcReg,0,sizeof(unsigned short)*chf.spanCount);
 
 	const int nsweeps = rdMax(chf.width,chf.height);
-	rdScopedDelete<rcSweepSpan> sweeps((rcSweepSpan*)rdAlloc(sizeof(rcSweepSpan)*nsweeps, RD_ALLOC_TEMP));
+	rdScopedDelete<rcSweepSpan> sweeps(nsweeps);
 	if (!sweeps)
 	{
 		ctx->log(RC_LOG_ERROR, "rcBuildRegionsMonotone: Out of memory 'sweeps' (%d).", nsweeps);
@@ -1425,9 +1425,19 @@ bool rcBuildRegionsMonotone(rcContext* ctx, rcCompactHeightfield& chf,
 				if (!previd)
 				{
 					previd = rid++;
-					sweeps[previd].rid = previd;
-					sweeps[previd].ns = 0;
-					sweeps[previd].nei = 0;
+
+					// If we have multiple spans in the X row, we might need more memory than initially allocated.
+					if (sweeps.grow(previd+1))
+					{
+						sweeps[previd].rid = previd;
+						sweeps[previd].ns = 0;
+						sweeps[previd].nei = 0;
+					}
+					else
+					{
+						ctx->log(RC_LOG_ERROR, "rcBuildRegionsMonotone: Out of memory 'sweeps.grow(%d)'.", previd+1);
+						return false;
+					}
 				}
 
 				// -y
@@ -1734,9 +1744,19 @@ bool rcBuildLayerRegions(rcContext* ctx, rcCompactHeightfield& chf,
 				if (!previd)
 				{
 					previd = rid++;
-					sweeps[previd].rid = previd;
-					sweeps[previd].ns = 0;
-					sweeps[previd].nei = 0;
+
+					// If we have multiple spans in the X row, we might need more memory than initially allocated.
+					if (sweeps.grow(previd+1))
+					{
+						sweeps[previd].rid = previd;
+						sweeps[previd].ns = 0;
+						sweeps[previd].nei = 0;
+					}
+					else
+					{
+						ctx->log(RC_LOG_ERROR, "rcBuildLayerRegions: Out of memory 'sweeps.grow(%d)'.", previd+1);
+						return false;
+					}
 				}
 				
 				// -y

@@ -8,17 +8,16 @@
 #include "engine/sys_mainwind.h"
 #include "windows/id3dx.h"
 
-#include "IBrowser.h"
-#include "IConsole.h"
-
 #include "imgui_system.h"
 
 //-----------------------------------------------------------------------------
 // Constructors/Destructors.
 //-----------------------------------------------------------------------------
 CImguiSystem::CImguiSystem()
+	: m_enabled(true)
+	, m_initialized(false)
+	, m_hasNewFrame(false)
 {
-	m_systemInitState = ImguiSystemInitStage_e::IM_PENDING_INIT;
 }
 
 //-----------------------------------------------------------------------------
@@ -28,14 +27,19 @@ CImguiSystem::CImguiSystem()
 bool CImguiSystem::Init()
 {
 	Assert(ThreadInMainThread(), "CImguiSystem::Init() should only be called from the main thread!");
-	Assert(m_systemInitState == ImguiSystemInitStage_e::IM_PENDING_INIT, "CImguiSystem::Init() called recursively?");
+	Assert(!IsInitialized(), "CImguiSystem::Init() called recursively?");
+
+	Assert(IsEnabled(), "CImguiSystem::Init() called while system was disabled!");
 
 	///////////////////////////////////////////////////////////////////////////
 	IMGUI_CHECKVERSION();
 	ImGuiContext* const context = ImGui::CreateContext();
 
 	if (!context)
+	{
+		m_enabled = false;
 		return false;
+	}
 
 	AUTO_LOCK(m_snapshotBufferMutex);
 	AUTO_LOCK(m_inputEventQueueMutex);
@@ -56,11 +60,13 @@ bool CImguiSystem::Init()
 	{
 		Assert(0);
 
-		m_systemInitState = ImguiSystemInitStage_e::IM_INIT_FAILURE;
+		m_enabled = false;
 		return false;
 	}
 
-	m_systemInitState = ImguiSystemInitStage_e::IM_SYSTEM_INIT;
+	m_initialized = true;
+	m_hasNewFrame = false;
+
 	return true;
 }
 
@@ -70,23 +76,64 @@ bool CImguiSystem::Init()
 void CImguiSystem::Shutdown()
 {
 	Assert(ThreadInMainThread(), "CImguiSystem::Shutdown() should only be called from the main thread!");
-	Assert(m_systemInitState != ImguiSystemInitStage_e::IM_PENDING_INIT, "CImguiSystem::Shutdown() called recursively?");
+	Assert(IsInitialized(), "CImguiSystem::Shutdown() called recursively?");
 
-	// Nothing to shutdown.
-	if (m_systemInitState == ImguiSystemInitStage_e::IM_PENDING_INIT)
-		return;
+	Assert(IsEnabled(), "CImguiSystem::Shutdown() called while system was disabled!");
 
 	AUTO_LOCK(m_snapshotBufferMutex);
 	AUTO_LOCK(m_inputEventQueueMutex);
-
-	m_systemInitState = ImguiSystemInitStage_e::IM_PENDING_INIT;
 
 	ImGui_ImplDX11_Shutdown();
 	ImGui_ImplWin32_Shutdown();
 
 	ImGui::DestroyContext();
-
 	m_snapshotData.Clear();
+
+	m_initialized = false;
+	m_hasNewFrame = false;
+}
+
+//-----------------------------------------------------------------------------
+// Add an imgui surface.
+//-----------------------------------------------------------------------------
+void CImguiSystem::AddSurface(CImguiSurface* const surface)
+{
+	Assert(IsInitialized());
+	m_surfaceList.AddToTail(surface);
+}
+
+//-----------------------------------------------------------------------------
+// Remove an imgui surface.
+//-----------------------------------------------------------------------------
+void CImguiSystem::RemoveSurface(CImguiSurface* const surface)
+{
+	Assert(!IsInitialized());
+	m_surfaceList.FindAndRemove(surface);
+}
+
+//-----------------------------------------------------------------------------
+// Draws the ImGui panels and applies all queued input events.
+//-----------------------------------------------------------------------------
+void CImguiSystem::SampleFrame()
+{
+	Assert(ThreadInMainThread(), "CImguiSystem::SampleFrame() should only be called from the main thread!");
+	Assert(IsInitialized());
+
+	AUTO_LOCK(m_inputEventQueueMutex);
+
+	ImGui_ImplDX11_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+
+	ImGui::NewFrame();
+
+	FOR_EACH_VEC(m_surfaceList, i)
+	{
+		CImguiSurface* const surface = m_surfaceList[i];
+		surface->RunFrame();
+	}
+
+	ImGui::EndFrame();
+	ImGui::Render();
 }
 
 //-----------------------------------------------------------------------------
@@ -97,48 +144,19 @@ void CImguiSystem::Shutdown()
 void CImguiSystem::SwapBuffers()
 {
 	Assert(ThreadInMainThread(), "CImguiSystem::SwapBuffers() should only be called from the main thread!");
+	Assert(IsInitialized());
 
-	if (m_systemInitState < ImguiSystemInitStage_e::IM_FRAME_SAMPLED)
+	ImDrawData* const drawData = ImGui::GetDrawData();
+	Assert(drawData);
+
+	// Nothing has been drawn, nothing to swap.
+	if (!drawData->CmdListsCount)
 		return;
 
 	AUTO_LOCK(m_snapshotBufferMutex);
-	ImDrawData* const drawData = ImGui::GetDrawData();
-
-	// Nothing has been drawn, nothing to swap
-	if (!drawData)
-		return;
 
 	m_snapshotData.SnapUsingSwap(drawData, ImGui::GetTime());
-
-	if (m_systemInitState == ImguiSystemInitStage_e::IM_FRAME_SAMPLED)
-		m_systemInitState = ImguiSystemInitStage_e::IM_FRAME_SWAPPED;
-}
-
-//-----------------------------------------------------------------------------
-// Draws the ImGui panels and applies all queued input events.
-//-----------------------------------------------------------------------------
-void CImguiSystem::SampleFrame()
-{
-	Assert(ThreadInMainThread(), "CImguiSystem::SampleFrame() should only be called from the main thread!");
-
-	if (m_systemInitState == ImguiSystemInitStage_e::IM_PENDING_INIT)
-		return;
-
-	AUTO_LOCK(m_inputEventQueueMutex);
-
-	ImGui_ImplDX11_NewFrame();
-	ImGui_ImplWin32_NewFrame();
-
-	ImGui::NewFrame();
-
-	g_Browser.RunFrame();
-	g_Console.RunFrame();
-
-	ImGui::EndFrame();
-	ImGui::Render();
-
-	if (m_systemInitState == ImguiSystemInitStage_e::IM_SYSTEM_INIT)
-		m_systemInitState = ImguiSystemInitStage_e::IM_FRAME_SAMPLED;
+	m_hasNewFrame = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -146,16 +164,27 @@ void CImguiSystem::SampleFrame()
 //-----------------------------------------------------------------------------
 void CImguiSystem::RenderFrame()
 {
-	if (m_systemInitState < ImguiSystemInitStage_e::IM_FRAME_SWAPPED)
+	Assert(IsInitialized());
+
+	if (!m_hasNewFrame.exchange(false))
 		return;
 
+	AUTO_LOCK(m_snapshotBufferMutex);
+	ImGui_ImplDX11_RenderDrawData(&m_snapshotData.DrawData);
+}
+
+//-----------------------------------------------------------------------------
+// Checks whether we have an active surface.
+//-----------------------------------------------------------------------------
+bool CImguiSystem::IsSurfaceActive() const
+{
+	FOR_EACH_VEC(m_surfaceList, i)
 	{
-		AUTO_LOCK(m_snapshotBufferMutex);
-		ImGui_ImplDX11_RenderDrawData(&m_snapshotData.DrawData);
+		if (m_surfaceList[i]->IsActivated())
+			return true;
 	}
 
-	if (m_systemInitState == ImguiSystemInitStage_e::IM_FRAME_SAMPLED)
-		m_systemInitState = ImguiSystemInitStage_e::IM_FRAME_RENDERED;
+	return false;
 }
 
 //-----------------------------------------------------------------------------
@@ -163,6 +192,9 @@ void CImguiSystem::RenderFrame()
 //-----------------------------------------------------------------------------
 LRESULT CImguiSystem::MessageHandler(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (!ImguiSystem()->IsInitialized())
+		return NULL;
+
 	AUTO_LOCK(ImguiSystem()->m_inputEventQueueMutex);
 
 	extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

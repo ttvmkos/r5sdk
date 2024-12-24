@@ -23,6 +23,7 @@
 #include "DebugUtils/Include/DetourDebugDraw.h"
 #include "Include/InputGeom.h"
 #include "DetourTileCache/Include/DetourTileCache.h"
+#include "include/ShapeVolumeTool.h"
 
 static void EditorCommon_DrawInputGeometry(duDebugDraw* const dd, const InputGeom* const geom,
 	const float maxSlope, const float textureScale)
@@ -126,7 +127,7 @@ Editor_StaticTileMeshCommon::Editor_StaticTileMeshCommon()
 	, m_cset(nullptr)
 	, m_pmesh(nullptr)
 	, m_dmesh(nullptr)
-	, m_tileMeshDrawFlags(TM_DRAWFLAGS_INPUT_MESH|TM_DRAWFLAGS_NAVMESH)
+	, m_tileMeshDrawFlags(DU_DRAW_RECASTMESH_INPUT_MESH|DU_DRAW_RECASTMESH_NAVMESH|DU_DRAW_RECASTMESH_SHAPE_VOLUMES)
 	, m_tileCol(duRGBA(0, 0, 0, 64))
 	, m_totalBuildTimeMs(0.0f)
 	, m_drawActiveTile(false)
@@ -163,13 +164,13 @@ void Editor_StaticTileMeshCommon::renderRecastDebugMenu()
 {
 	ImGui::Text("Recast Render Options");
 
-	bool isEnabled = m_tileMeshDrawFlags & TM_DRAWFLAGS_INPUT_MESH;
+	bool isEnabled = m_tileMeshDrawFlags & DU_DRAW_RECASTMESH_INPUT_MESH;
 
 	// This should always be available, since if we load a large mesh we want to
 	// be able to toggle this off to save on performance. The renderer has to be
 	// moved to its own thread to solve this issue.
 	if (ImGui::Checkbox("Input Mesh", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_INPUT_MESH);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_INPUT_MESH);
 
 	// Check which modes are valid.
 	//const bool hasNavMesh =m_navMesh != 0;
@@ -178,93 +179,98 @@ void Editor_StaticTileMeshCommon::renderRecastDebugMenu()
 	const bool hasSolid = m_solid != 0;
 	const bool hasDMesh = m_dmesh != 0;
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_NAVMESH;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_NAVMESH;
 	//ImGui::BeginDisabled(!hasNavMesh);
 
 	if (ImGui::Checkbox("NavMesh", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_NAVMESH);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_NAVMESH);
 
 	//ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_VOXELS;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_VOXELS;
 	ImGui::BeginDisabled(!hasSolid);
 
 	if (ImGui::Checkbox("Voxels", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_VOXELS);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_VOXELS);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_VOXELS_WALKABLE;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_VOXELS_WALKABLE;
 	ImGui::BeginDisabled(!hasSolid);
 
 	if (ImGui::Checkbox("Walkable Voxels", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_VOXELS_WALKABLE);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_VOXELS_WALKABLE);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_COMPACT;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_COMPACT;
 	ImGui::BeginDisabled(!hasChf);
 
 	if (ImGui::Checkbox("Compact", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_COMPACT);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_COMPACT);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_COMPACT_DISTANCE;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_COMPACT_DISTANCE;
 	ImGui::BeginDisabled(!hasChf);
 
 	if (ImGui::Checkbox("Compact Distance", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_COMPACT_DISTANCE);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_COMPACT_DISTANCE);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_COMPACT_REGIONS;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_COMPACT_REGIONS;
 	ImGui::BeginDisabled(!hasChf);
 
 	if (ImGui::Checkbox("Compact Regions", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_COMPACT_REGIONS);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_COMPACT_REGIONS);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_REGION_CONNECTIONS;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_REGION_CONNECTIONS;
 	ImGui::BeginDisabled(!hasCset);
 
 	if (ImGui::Checkbox("Region Connections", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_REGION_CONNECTIONS);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_REGION_CONNECTIONS);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_RAW_CONTOURS;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_RAW_CONTOURS;
 	ImGui::BeginDisabled(!hasCset);
 
 	if (ImGui::Checkbox("Raw Contours", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_RAW_CONTOURS);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_RAW_CONTOURS);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_CONTOURS;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_CONTOURS;
 	ImGui::BeginDisabled(!hasCset);
 
 	if (ImGui::Checkbox("Contours", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_CONTOURS);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_CONTOURS);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_POLYMESH;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_POLYMESH;
 	ImGui::BeginDisabled(!hasDMesh);
 
 	if (ImGui::Checkbox("Poly Mesh", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_POLYMESH);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_POLYMESH);
 
 	ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_POLYMESH_DETAIL;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_POLYMESH_DETAIL;
 	ImGui::BeginDisabled(!hasDMesh);
 
 	if (ImGui::Checkbox("Poly Mesh Detail", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_POLYMESH_DETAIL);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_POLYMESH_DETAIL);
 
 	ImGui::EndDisabled();
+
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_SHAPE_VOLUMES;
+
+	if (ImGui::Checkbox("Shape Volumes", &isEnabled))
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_SHAPE_VOLUMES);
 
 	//if (intermediateDataUnavailable) // todo(amos): tool tip
 	//{
@@ -284,7 +290,7 @@ void Editor_StaticTileMeshCommon::renderTileMeshData()
 	const float texScale = 1.0f / (m_cellSize * 10.0f);
 
 	// Draw input mesh
-	if (getTileMeshDrawFlags() & TM_DRAWFLAGS_INPUT_MESH)
+	if (getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_INPUT_MESH)
 		EditorCommon_DrawInputGeometry(&m_dd, m_geom, m_agentMaxSlope, texScale);
 
 	glDepthMask(GL_FALSE);
@@ -311,10 +317,10 @@ void Editor_StaticTileMeshCommon::renderTileMeshData()
 
 	if (m_navMesh && m_navQuery)
 	{
-		if (m_tileMeshDrawFlags & TM_DRAWFLAGS_NAVMESH)
+		if (m_tileMeshDrawFlags & DU_DRAW_RECASTMESH_NAVMESH)
 		{
 			duDebugDrawNavMeshWithClosedList(&m_dd, *m_navMesh, *m_navQuery, detourDrawOffset, m_navMeshDrawFlags, m_traverseLinkDrawParams);
-			duDebugDrawNavMeshPolysWithFlags(&m_dd, *m_navMesh, EDITOR_POLYFLAGS_DISABLED, detourDrawOffset, detourDrawFlags, duRGBA(0, 0, 0, 128));
+			duDebugDrawNavMeshPolysWithFlags(&m_dd, *m_navMesh, DT_POLYFLAGS_DISABLED, detourDrawOffset, detourDrawFlags, duRGBA(0, 0, 0, 128));
 		}
 	}
 
@@ -322,24 +328,24 @@ void Editor_StaticTileMeshCommon::renderTileMeshData()
 
 	if (m_chf)
 	{
-		if (recastDrawFlags & TM_DRAWFLAGS_COMPACT)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_COMPACT)
 			duDebugDrawCompactHeightfieldSolid(&m_dd, *m_chf, recastDrawOffset);
 
-		if (recastDrawFlags & TM_DRAWFLAGS_COMPACT_DISTANCE)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_COMPACT_DISTANCE)
 			duDebugDrawCompactHeightfieldDistance(&m_dd, *m_chf, recastDrawOffset);
-		if (recastDrawFlags & TM_DRAWFLAGS_COMPACT_REGIONS)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_COMPACT_REGIONS)
 			duDebugDrawCompactHeightfieldRegions(&m_dd, *m_chf, recastDrawOffset);
 	}
 
 	if (m_solid)
 	{
-		if (recastDrawFlags & TM_DRAWFLAGS_VOXELS)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_VOXELS)
 		{
 			glEnable(GL_FOG);
 			duDebugDrawHeightfieldSolid(&m_dd, *m_solid, recastDrawOffset);
 			glDisable(GL_FOG);
 		}
-		if (recastDrawFlags & TM_DRAWFLAGS_VOXELS_WALKABLE)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_VOXELS_WALKABLE)
 		{
 			glEnable(GL_FOG);
 			duDebugDrawHeightfieldWalkable(&m_dd, *m_solid, recastDrawOffset);
@@ -349,13 +355,13 @@ void Editor_StaticTileMeshCommon::renderTileMeshData()
 
 	if (m_cset)
 	{
-		if (recastDrawFlags & TM_DRAWFLAGS_RAW_CONTOURS)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_RAW_CONTOURS)
 		{
 			glDepthMask(GL_FALSE);
 			duDebugDrawRawContours(&m_dd, *m_cset, recastDrawOffset);
 			glDepthMask(GL_TRUE);
 		}
-		if (recastDrawFlags & TM_DRAWFLAGS_CONTOURS)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_CONTOURS)
 		{
 			glDepthMask(GL_FALSE);
 			duDebugDrawContours(&m_dd, *m_cset, recastDrawOffset);
@@ -364,7 +370,7 @@ void Editor_StaticTileMeshCommon::renderTileMeshData()
 	}
 
 	if ((m_chf &&m_cset) && 
-		(recastDrawFlags & TM_DRAWFLAGS_REGION_CONNECTIONS))
+		(recastDrawFlags & DU_DRAW_RECASTMESH_REGION_CONNECTIONS))
 	{
 		duDebugDrawCompactHeightfieldRegions(&m_dd, *m_chf, recastDrawOffset);
 
@@ -373,22 +379,35 @@ void Editor_StaticTileMeshCommon::renderTileMeshData()
 		glDepthMask(GL_TRUE);
 	}
 
-	if (m_pmesh && (recastDrawFlags & TM_DRAWFLAGS_POLYMESH))
+	if (m_pmesh && (recastDrawFlags & DU_DRAW_RECASTMESH_POLYMESH))
 	{
 		glDepthMask(GL_FALSE);
 		duDebugDrawPolyMesh(&m_dd, *m_pmesh, recastDrawOffset);
 		glDepthMask(GL_TRUE);
 	}
 
-	if (m_dmesh && (recastDrawFlags & TM_DRAWFLAGS_POLYMESH_DETAIL))
+	if (m_dmesh && (recastDrawFlags & DU_DRAW_RECASTMESH_POLYMESH_DETAIL))
 	{
 		glDepthMask(GL_FALSE);
 		duDebugDrawPolyMeshDetail(&m_dd, *m_dmesh, recastDrawOffset);
 		glDepthMask(GL_TRUE);
 	}
 
-	// TODO: also add flags for this
-	m_geom->drawConvexVolumes(&m_dd, recastDrawOffset);
+	int selectedVolumeIndex = -1;
+	const bool isShapeVolumeTool = (m_tool->type() == TOOL_SHAPE_VOLUME);
+
+	if (isShapeVolumeTool)
+	{
+		const ShapeVolumeTool* volTool = (const ShapeVolumeTool*)m_tool;
+		selectedVolumeIndex = volTool->getSelectedVolumeIndex();
+	}
+
+	if ((recastDrawFlags & DU_DRAW_RECASTMESH_SHAPE_VOLUMES) || isShapeVolumeTool)
+	{
+		m_geom->drawBoxVolumes(&m_dd, recastDrawOffset, selectedVolumeIndex);
+		m_geom->drawCylinderVolumes(&m_dd, recastDrawOffset, selectedVolumeIndex);
+		m_geom->drawConvexVolumes(&m_dd, recastDrawOffset, selectedVolumeIndex);
+	}
 
 	// NOTE: commented out because this already gets rendered when the off-mesh
 	// connection tool is activated. And if we generated an off-mesh link, this
@@ -506,7 +525,7 @@ Editor_DynamicTileMeshCommon::Editor_DynamicTileMeshCommon()
 	, m_cacheRawSize(0)
 	, m_cacheLayerCount(0)
 	, m_cacheBuildMemUsage(0)
-	, m_tileMeshDrawFlags(TM_DRAWFLAGS_INPUT_MESH|TM_DRAWFLAGS_NAVMESH)
+	, m_tileMeshDrawFlags(DU_DRAW_RECASTMESH_INPUT_MESH|DU_DRAW_RECASTMESH_NAVMESH|DU_DRAW_RECASTMESH_SHAPE_VOLUMES)
 	, m_keepInterResults(false)
 {
 }
@@ -515,33 +534,33 @@ void Editor_DynamicTileMeshCommon::renderRecastRenderOptions()
 {
 	ImGui::Text("Recast Render Options");
 
-	bool isEnabled = m_tileMeshDrawFlags & TM_DRAWFLAGS_INPUT_MESH;
+	bool isEnabled = m_tileMeshDrawFlags & DU_DRAW_RECASTMESH_INPUT_MESH;
 
 	// This should always be available, since if we load a large mesh we want to
 	// be able to toggle this off to save on performance. The renderer has to be
 	// moved to its own thread to solve this issue.
 	if (ImGui::Checkbox("Input Mesh", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_INPUT_MESH);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_INPUT_MESH);
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_NAVMESH;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_RECASTMESH_NAVMESH;
 	//ImGui::BeginDisabled(!hasNavMesh);
 
 	if (ImGui::Checkbox("NavMesh", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_NAVMESH);
+		toggleTileMeshDrawFlag(DU_DRAW_RECASTMESH_NAVMESH);
 
 	//ImGui::EndDisabled();
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_TILE_CACHE_BOUNDS;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_DETOURMESH_TILE_CACHE_BOUNDS;
 
 	ImGui::BeginDisabled(!m_tileCache);
 
 	if (ImGui::Checkbox("Cache Bounds", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_TILE_CACHE_BOUNDS);
+		toggleNavMeshDrawFlag(DU_DRAW_DETOURMESH_TILE_CACHE_BOUNDS);
 
-	isEnabled = getTileMeshDrawFlags() & TM_DRAWFLAGS_TILE_CACHE_OBSTACLES;
+	isEnabled = getTileMeshDrawFlags() & DU_DRAW_DETOURMESH_TILE_CACHE_OBSTACLES;
 
 	if (ImGui::Checkbox("Temp Obstacles", &isEnabled))
-		toggleTileMeshDrawFlag(TM_DRAWFLAGS_TILE_CACHE_OBSTACLES);
+		toggleNavMeshDrawFlag(DU_DRAW_DETOURMESH_TILE_CACHE_OBSTACLES);
 
 	ImGui::EndDisabled();
 }
@@ -559,7 +578,7 @@ void Editor_DynamicTileMeshCommon::renderTileMeshData()
 	const float* detourDrawOffset = getDetourDrawOffset();
 
 	// Draw input mesh
-	if (recastDrawFlags & TM_DRAWFLAGS_INPUT_MESH)
+	if (recastDrawFlags & DU_DRAW_RECASTMESH_INPUT_MESH)
 		EditorCommon_DrawInputGeometry(&m_dd, m_geom, m_agentMaxSlope, texScale);
 
 	// Draw bounds
@@ -568,23 +587,36 @@ void Editor_DynamicTileMeshCommon::renderTileMeshData()
 	// Tiling grid.
 	EditorCommon_DrawTilingGrid(&m_dd, m_geom, m_tileSize, m_cellSize);
 
-	if (m_tileCache && recastDrawFlags & TM_DRAWFLAGS_TILE_CACHE_BOUNDS)
+	if (m_tileCache && detourDrawFlags & DU_DRAW_DETOURMESH_TILE_CACHE_BOUNDS)
 		drawTiles(&m_dd, m_tileCache, detourDrawOffset);
 
-	if (m_tileCache && recastDrawFlags & TM_DRAWFLAGS_TILE_CACHE_OBSTACLES)
+	if (m_tileCache && detourDrawFlags & DU_DRAW_DETOURMESH_TILE_CACHE_OBSTACLES)
 		drawObstacles(&m_dd, m_tileCache, detourDrawOffset);
 
 	if (m_navMesh && m_navQuery)
 	{
-		if (recastDrawFlags & TM_DRAWFLAGS_NAVMESH)
+		if (recastDrawFlags & DU_DRAW_RECASTMESH_NAVMESH)
 		{
 			duDebugDrawNavMeshWithClosedList(&m_dd, *m_navMesh, *m_navQuery, detourDrawOffset, detourDrawFlags, m_traverseLinkDrawParams);
-			duDebugDrawNavMeshPolysWithFlags(&m_dd, *m_navMesh, EDITOR_POLYFLAGS_DISABLED, detourDrawOffset, detourDrawFlags, duRGBA(0, 0, 0, 128));
+			duDebugDrawNavMeshPolysWithFlags(&m_dd, *m_navMesh, DT_POLYFLAGS_DISABLED, detourDrawOffset, detourDrawFlags, duRGBA(0, 0, 0, 128));
 		}
 	}
 
-	// TODO: also add flags for this
-	m_geom->drawConvexVolumes(&m_dd, recastDrawOffset);
+	int selectedVolumeIndex = -1;
+	const bool isShapeVolumeTool = (m_tool->type() == TOOL_SHAPE_VOLUME);
+
+	if (isShapeVolumeTool)
+	{
+		const ShapeVolumeTool* volTool = (const ShapeVolumeTool*)m_tool;
+		selectedVolumeIndex = volTool->getSelectedVolumeIndex();
+	}
+	
+	if ((recastDrawFlags & DU_DRAW_RECASTMESH_SHAPE_VOLUMES) || isShapeVolumeTool)
+	{
+		m_geom->drawBoxVolumes(&m_dd, recastDrawOffset, selectedVolumeIndex);
+		m_geom->drawCylinderVolumes(&m_dd, recastDrawOffset, selectedVolumeIndex);
+		m_geom->drawConvexVolumes(&m_dd, recastDrawOffset, selectedVolumeIndex);
+	}
 
 	// NOTE: commented out because this already gets rendered when the off-mesh
 	// connection tool is activated. And if we generated an off-mesh link, this

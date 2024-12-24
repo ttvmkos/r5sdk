@@ -746,11 +746,11 @@ VPKEntryBlock_t::VPKEntryBlock_t(const uint8_t* pData, size_t nLen, int64_t nOff
 
 	size_t nFragmentCount = (nLen + VPK_ENTRY_MAX_LEN - 1) / VPK_ENTRY_MAX_LEN;
 	size_t nFileSize = nLen;
-	int64_t nCurrentOffset = nOffset;
+	uint64_t nCurrentOffset = nOffset;
 
 	for (size_t i = 0; i < nFragmentCount; i++) // Fragment data into 1 MiB chunks.
 	{
-		size_t nSize = std::min<uint64_t>(VPK_ENTRY_MAX_LEN, nFileSize);
+		size_t nSize = Min<size_t>(VPK_ENTRY_MAX_LEN, nFileSize);
 		nFileSize -= nSize;
 		m_Fragments.AddToTail(VPKChunkDescriptor_t(nLoadFlags, nTextureFlags, nCurrentOffset, nSize, nSize));
 		nCurrentOffset += nSize;

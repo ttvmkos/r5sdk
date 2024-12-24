@@ -135,6 +135,8 @@ extern ConVar* rui_defaultDebugFontFace;
 extern ConVar* miles_language;
 #endif
 
+bool IsEULAUpToDate();
+
 void ConVar_InitShipped(void);
 void ConVar_PurgeShipped(void);
 void ConVar_PurgeHostNames(void);

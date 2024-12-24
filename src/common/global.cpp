@@ -145,7 +145,6 @@ ConVar* rui_defaultDebugFontFace           = nullptr;
 ConVar* miles_language                     = nullptr;
 #endif
 
-
 //-----------------------------------------------------------------------------
 // Purpose: initialize shipped ConVar's
 //-----------------------------------------------------------------------------
@@ -274,7 +273,15 @@ void ConVar_InitShipped(void)
 	base_tickinterval_mp->RemoveFlags(FCVAR_DEVELOPMENTONLY);
 
 	mp_gamemode->RemoveFlags(FCVAR_DEVELOPMENTONLY);
+
+	// The base callback is for client builds only, must be replaced with the
+	// dedicated server variant as the original one runs this through
+	// CEngineClient::SetupGamemode(). The callback is effectively the same
+	// with the exception that it calls SetupGamemode directly, and not
+	// through an interface like CEngineClient.
+	mp_gamemode->RemoveChangeCallback(mp_gamemode->GetChangeCallback(0), 0);
 	mp_gamemode->InstallChangeCallback(MP_GameMode_Changed_f, nullptr, false);
+
 	net_usesocketsforloopback->RemoveFlags(FCVAR_DEVELOPMENTONLY);
 #ifndef DEDICATED
 	language_cvar->InstallChangeCallback(LanguageChanged_f, nullptr, false);
@@ -380,6 +387,7 @@ void ConCommand_InitShipped(void)
 	//-------------------------------------------------------------------------
 	// CLIENT DLL                                                             |
 	ConCommand* give = g_pCVar->FindCommand("give");
+	ConCommand* set = g_pCVar->FindCommand("set");
 #endif // !DEDICATED
 
 	help->m_fnCommandCallback = CVHelp_f;
@@ -398,7 +406,7 @@ void ConCommand_InitShipped(void)
 #ifndef DEDICATED
 	mat_crosshair->m_fnCommandCallback = Mat_CrossHair_f;
 	give->m_fnCompletionCallback = Game_Give_f_CompletionFunc;
-	fps_max->AddFlags(FCVAR_ARCHIVE);
+	set->m_fnCommandCallback = Set_f;
 #endif // !DEDICATED
 
 	/// ------------------------------------------------------ [ FLAG REMOVAL ]
@@ -470,6 +478,7 @@ void ConCommand_PurgeShipped(void)
 		"getpos_bind",
 		"connect",
 		"silent_connect",
+		"set",
 		"ping",
 		"gameui_activate",
 		"gameui_hide",
@@ -506,5 +515,24 @@ void ConCommand_PurgeShipped(void)
 			g_pCVar->UnregisterConCommand(pCommandBase);
 		}
 	}
+#endif // DEDICATED
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: checks if the accepted EULA is up to date.
+// Output : true on success, false on failure.
+//-----------------------------------------------------------------------------
+bool IsEULAUpToDate()
+{
+#ifdef DEDICATED
+	// Users of the dedicated servers are by default agreeing to the EULA
+	// when using it. They can use it offline (not using the r5reloaded
+	// master servers) to not accept it. The challenge of implementing
+	// something that allows the dedi operator to agree to the EULA upon
+	// launch is that it will break the automation of spinning up dedi
+	// instances.
+	return true;
+#else
+	return (eula_version_accepted->GetInt() == eula_version->GetInt());
 #endif // DEDICATED
 }

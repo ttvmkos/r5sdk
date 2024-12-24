@@ -19,6 +19,13 @@
 #ifndef RECASTDETOURDEFS_H
 #define RECASTDETOURDEFS_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#include <stdint.h>
+typedef int64_t rdTimeType;
+#else
+typedef __int64 rdTimeType;
+#endif
+
 /// Signed to avoid warnings when comparing to int loop indexes, and common error with comparing to zero.
 /// MSVC2010 has a bug where ssize_t is unsigned (!!!).
 typedef intptr_t rdSizeType;

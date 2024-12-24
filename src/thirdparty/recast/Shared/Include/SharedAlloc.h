@@ -21,6 +21,7 @@
 
 #include "SharedDefs.h"
 #include "SharedAssert.h"
+#include "SharedCommon.h"
 
 /// Provides hint values to the memory allocator on how long the
 /// memory is expected to be used.
@@ -243,18 +244,9 @@ void rdVectorBase<T, H>::resize_impl(rdSizeType size, const T* value) {
 }
 template <typename T, rdAllocHint H>
 void rdVectorBase<T, H>::swap(rdVectorBase<T, H>& other) {
-	// TODO: Reorganize headers so we can use rcSwap here.
-	rdSizeType tmp_cap = other.m_cap;
-	rdSizeType tmp_size = other.m_size;
-	T* tmp_data = other.m_data;
-
-	other.m_cap = m_cap;
-	other.m_size = m_size;
-	other.m_data = m_data;
-
-	m_cap = tmp_cap;
-	m_size = tmp_size;
-	m_data = tmp_data;
+	rdSwap(m_cap, other.m_cap);
+	rdSwap(m_size, other.m_size);
+	rdSwap(m_data, other.m_data);
 }
 // static
 template <typename T, rdAllocHint H>
@@ -333,25 +325,51 @@ public:
 /// @note This class is rarely if ever used by the end user.
 template<class T> class rdScopedDelete
 {
-	T* ptr;
+	T* m_ptr;
+	rdSizeType m_size;
 public:
 
 	/// Constructs an instance with a null pointer.
-	inline rdScopedDelete() : ptr(0) {}
+	inline rdScopedDelete() : m_ptr(0), m_size(0) {}
+	inline rdScopedDelete(const rdSizeType n) { m_ptr = (T*)rdAlloc(sizeof(T)*n, RD_ALLOC_TEMP); m_size = n; }
 
 	/// Constructs an instance with the specified pointer.
-	///  @param[in]		p	An pointer to an allocated array.
-	inline rdScopedDelete(T* p) : ptr(p) {}
-	inline ~rdScopedDelete() { rdFree(ptr); }
+	///  @param[in]		p	A pointer to an allocated array.
+	inline rdScopedDelete(T* p) : m_ptr(p), m_size(0) {}
+	inline ~rdScopedDelete() { rdFree(m_ptr); }
+
+	/// Gets the number of elements.
+	inline rdSizeType size() const { return m_size; }
+
+	/// Grow and move existing memory.
+	///  @param[in]		n	New element count.
+	inline bool grow(const rdSizeType n);
 
 	/// The root array pointer.
 	///  @return The root array pointer.
-	inline operator T*() { return ptr; }
+	inline operator T*() { return m_ptr; }
 	
 private:
 	// Explicitly disabled copy constructor and copy assignment operator.
 	rdScopedDelete(const rdScopedDelete&);
 	rdScopedDelete& operator=(const rdScopedDelete&);
 };
+
+template<class T>
+inline bool rdScopedDelete<T>::grow(const rdSizeType n)
+{
+	if (n > m_size)
+	{
+		T* newData = (T*)rdAlloc(sizeof(T)*n, RD_ALLOC_TEMP);
+		if (n && newData) {
+			memcpy(newData, m_ptr, sizeof(T)*n);
+		}
+		rdFree(m_ptr);
+		m_ptr = newData;
+		m_size = n;
+	}
+
+	return (m_ptr != 0);
+}
 
 #endif // RECASTDETOURALLOC_H

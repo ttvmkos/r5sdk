@@ -473,10 +473,25 @@ void rdClosestPtPointTriangle(float* closest, const float* p,
 ///  @param[out]	h		The resulting height.
 bool rdClosestHeightPointTriangle(const float* p, const float* a, const float* b, const float* c, float& h);
 
+bool rdIntersectSegmentTriangle(const float* sp, const float* sq,
+								const float* a, const float* b, const float* c, float& t);
+
 bool rdIntersectSegmentPoly2D(const float* p0, const float* p1,
 							  const float* verts, int nverts,
 							  float& tmin, float& tmax,
 							  int& segMin, int& segMax);
+
+bool rdIntersectSegmentAABB(const float* sp, const float* sq,
+						 const float* amin, const float* amax,
+						 float& tmin, float& tmax);
+
+bool rdIntersectSegmentCylinder(const float* sp, const float* sq, const float* position,
+								const float radius, const float height,
+								float& tmin, float& tmax);
+
+bool rdIntersectSegmentConvexHull(const float* sp, const float* sq, const float* verts,
+								  int nverts, float hmin, float hmax,
+								  float& tmin, float& tmax);
 
 bool rdIntersectSegSeg2D(const float* ap, const float* aq,
 						 const float* bp, const float* bq,
@@ -502,8 +517,7 @@ void rdCalcEdgeNormalPt2D(const float* v1, const float* v2, float* out);
 ///  @param[in]		subEdgeEnd		Second vert of the detail edge. [(x, y, z)]
 ///  @param[out]	tmin			The normalized distance ratio from polygon edge start to detail edge start.
 ///  @param[out]	tmax			The normalized distance ratio from polygon edge start to detail edge end.
-/// @return False if tmin and tmax don't correspond to the winding order of the edge.
-bool rdCalcSubEdgeArea2D(const float* edgeStart, const float* edgeEnd, const float* subEdgeStart,
+void rdCalcSubEdgeArea2D(const float* edgeStart, const float* edgeEnd, const float* subEdgeStart,
 	const float* subEdgeEnd, float& tmin, float& tmax);
 
 /// Derives the overlap between 2 edges.
@@ -531,7 +545,21 @@ float rdCalcLedgeSpanOffsetAmount(const float ledgeSpan, const float slopeAngle,
 
 unsigned char rdClassifyPointOutsideBounds(const float* pt, const float* bmin, const float* bmax);
 unsigned char rdClassifyPointInsideBounds(const float* pt, const float* bmin, const float* bmax);
-unsigned char rdClassifyDirection(const float* dir, const float* bmin, const float* bmax);
+
+/// Determines if the specified point is inside the axis-aligned bounding box.
+///  @param[in]		pt		The point to check. [(x, y, z)]
+///  @param[in]		bmin	Minimum bounds of the box. [(x, y, z)]
+///  @param[in]		bmax	Maximum bounds of the box. [(x, y, z)]
+/// @return True if the point is inside the axis-aligned bounding box.
+bool rdPointInAABB(const float* pt, const float* bmin, const float* bmax);
+
+/// Determines if the specified point is inside the cylinder on the xy-plane.
+///  @param[in]		pt		The point to check. [(x, y, z)]
+///  @param[in]		pos		The position of the cylinder. [(x, y, z)]
+///  @param[in]		radius	The radius of the cylinder.
+///  @param[in]		height	The height of the cylinder.
+/// @return True if the point is inside the cylinder.
+bool rdPointInCylinder(const float* pt, const float* pos, const float radius, const float height);
 
 /// Determines if the specified point is inside the convex polygon on the xy-plane.
 ///  @param[in]		pt		The point to check. [(x, y, z)]
@@ -591,7 +619,8 @@ inline unsigned int rdIlog2(unsigned int v)
 
 inline int rdAlign4(int x) { return (x+3) & ~3; }
 
-inline int rdOppositeTile(int side) { return (side+4) & 0x7; }
+inline unsigned char rdWrapTileSide(const int side) { return side & 0x7; }
+inline unsigned char rdOppositeTile(const int side) { return rdWrapTileSide(side+4); }
 
 inline void rdSwapByte(unsigned char* a, unsigned char* b)
 {

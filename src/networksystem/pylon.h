@@ -24,19 +24,13 @@ public:
 	bool GetServerByToken(NetGameServer_t& slOutServer, string& outMessage, const string& svToken) const;
 	bool PostServerHost(string& outMessage, string& svOutToken, string& outHostIp, const NetGameServer_t& netGameServer) const;
 
-	bool GetBannedList(const CBanSystem::BannedList_t& inBannedVec, CBanSystem::BannedList_t& outBannedVec) const;
+	bool GetBannedList(const CBanSystem::BannedList_t& inBannedVec, CBanSystem::BannedList_t** outBannedVec) const;
 	bool CheckForBan(const string& ipAddress, const uint64_t nucleusId, const string& personaName, string& outReason) const;
 
 	bool AuthForConnection(const uint64_t nucleusId, const char* ipAddress, const char* authCode, string& outToken, string& outMessage) const;
 
 	bool GetEULA(MSEulaData_t& outData, string& outMessage) const;
-
-	void ExtractError(const rapidjson::Document& resultBody, string& outMessage, CURLINFO status, const char* errorText = nullptr) const;
-	void ExtractError(const string& response, string& outMessage, CURLINFO status, const char* messageText = nullptr) const;
-
-	void LogBody(const rapidjson::Document& responseJson) const;
-	bool SendRequest(const char* endpoint, const rapidjson::Document& requestJson, rapidjson::Document& responseJson, string& outMessage, CURLINFO& status, const char* errorText = nullptr, const bool checkEula = true) const;
-	bool QueryServer(const char* endpoint, const char* request, string& outResponse, string& outMessage, CURLINFO& outStatus) const;
+	bool IsEnabled() const;
 
 	inline void SetLanguage(const char* lang)
 	{
@@ -48,6 +42,16 @@ public:
 		AUTO_LOCK(m_StringMutex);
 		return m_Language;
 	};
+
+private:
+	void ExtractError(const rapidjson::Document& resultBody, string& outMessage, CURLINFO status, const char* errorText = nullptr) const;
+	void ExtractError(const string& response, string& outMessage, CURLINFO status, const char* messageText = nullptr) const;
+
+	void LogBody(const rapidjson::Document& responseJson) const;
+	bool SendRequest(const char* endpoint, const rapidjson::Document& requestJson, rapidjson::Document& responseJson, string& outMessage, CURLINFO& status, const char* errorText = nullptr, const bool checkEula = true) const;
+	bool QueryServer(const char* endpoint, const char* request, string& outResponse, string& outMessage, CURLINFO& outStatus) const;
+
+	void SetDisabledMessage(string& outMsg) const;
 
 private:
 	string m_Language;

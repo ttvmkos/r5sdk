@@ -68,7 +68,8 @@ struct duDebugDraw
 	virtual void end() = 0;
 
 	/// Compute a color for given area.
-	virtual unsigned int areaToCol(unsigned int area);
+	virtual unsigned int areaToFaceCol(const unsigned int area) const;
+	virtual unsigned int areaToEdgeCol(const unsigned int area) const;
 };
 
 inline unsigned int duRGBA(int r, int g, int b, int a)
@@ -125,6 +126,8 @@ inline unsigned int duTransCol(unsigned int c, unsigned int a)
 	return (a<<24) | (c & 0x00ffffff);
 }
 
+const unsigned char* duSetBoxVerts(float minx, float miny, float minz, float maxx,
+								   float maxy, float maxz, float* verts);
 
 void duCalcBoxColors(unsigned int* colors, unsigned int colTop, unsigned int colSide);
 

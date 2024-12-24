@@ -22,14 +22,45 @@
 #include "NavEditor/Include/ChunkyTriMesh.h"
 #include "NavEditor/Include/MeshLoaderObj.h"
 
-static const int MAX_CONVEXVOL_PTS = 12;
-struct ConvexVolume
+enum VolumeType : unsigned char
 {
-	float verts[MAX_CONVEXVOL_PTS*3];
+	VOLUME_INVALID = 0xff,
+	VOLUME_BOX = 0,
+	VOLUME_CYLINDER,
+	VOLUME_CONVEX
+};
+
+enum TraceMask : unsigned int
+{
+	TRACE_WORLD   = 1<<0, // The imported world geometry.
+	TRACE_CLIP    = 1<<1, // Clip brushes.
+	TRACE_TRIGGER = 1<<2, // Trigger brushes.
+	TRACE_ALL = 0xffffffff
+};
+
+static const int MAX_SHAPEVOL_PTS = 12;
+struct ShapeVolume
+{
+	ShapeVolume()
+	{
+		for (int i = 0; i < MAX_SHAPEVOL_PTS; i++)
+		{
+			rdVset(&verts[i*3], 0.f,0.f,0.f);
+		}
+		hmin = 0.f;
+		hmax = 0.f;
+		nverts = 0;
+		flags = 0;
+		area = 0;
+		type = VOLUME_INVALID;
+	}
+
+	float verts[MAX_SHAPEVOL_PTS*3];
 	float hmin, hmax;
 	int nverts;
 	unsigned short flags;
 	unsigned char area;
+	unsigned char type;
 };
 
 struct BuildSettings
@@ -77,6 +108,12 @@ struct BuildSettings
 
 class InputGeom
 {
+	enum MeshFormat
+	{
+		MESH_OBJ,
+		MESH_PLY
+	};
+
 	rcChunkyTriMesh* m_chunkyMesh;
 	IMeshLoader* m_mesh;
 	float m_meshBMin[3], m_meshBMax[3];
@@ -103,12 +140,11 @@ class InputGeom
 	/// @name Convex Volumes.
 	///@{
 	static const int MAX_VOLUMES = 256;
-	ConvexVolume m_volumes[MAX_VOLUMES];
+	ShapeVolume m_volumes[MAX_VOLUMES];
 	int m_volumeCount;
 	///@}
 	
-	bool loadMesh(class rcContext* ctx, const std::string& filepath);
-	bool loadPlyMesh(class rcContext* ctx, const std::string& filepath);
+	bool loadMesh(class rcContext* ctx, const std::string& filepath, const MeshFormat format);
 	bool loadGeomSet(class rcContext* ctx, const std::string& filepath);
 public:
 	InputGeom();
@@ -134,36 +170,42 @@ public:
 
 	const rcChunkyTriMesh* getChunkyMesh() const { return m_chunkyMesh; }
 	const BuildSettings* getBuildSettings() const { return m_hasBuildSettings ? &m_buildSettings : 0; }
-	bool raycastMesh(const float* src, const float* dst, float* tmin = nullptr) const;
+	bool raycastMesh(const float* src, const float* dst, const unsigned int mask, int* vol = nullptr, float* tmin = nullptr) const;
 
 	/// @name Off-Mesh connections.
 	///@{
-	int getOffMeshConnectionCount() const { return m_offMeshConCount; }
-	const float* getOffMeshConnectionVerts() const { return m_offMeshConVerts; }
-	const float* getOffMeshConnectionRads() const { return m_offMeshConRads; }
-	const unsigned char* getOffMeshConnectionDirs() const { return m_offMeshConDirs; }
-	const unsigned char* getOffMeshConnectionJumps() const { return m_offMeshConJumps; }
-	const unsigned char* getOffMeshConnectionOrders() const { return m_offMeshConOrders; }
-	const unsigned char* getOffMeshConnectionAreas() const { return m_offMeshConAreas; }
-	const unsigned short* getOffMeshConnectionFlags() const { return m_offMeshConFlags; }
-	const unsigned short* getOffMeshConnectionId() const { return m_offMeshConId; }
-	const float* getOffMeshConnectionRefPos() const { return m_offMeshConRefPos; }
-	const float* getOffMeshConnectionRefYaws() const { return m_offMeshConRefYaws; }
-	void addOffMeshConnection(const float* spos, const float* epos, const float rad,
+	int getOffMeshConnectionCount() { return m_offMeshConCount; }
+	float* getOffMeshConnectionVerts() { return m_offMeshConVerts; }
+	float* getOffMeshConnectionRads() { return m_offMeshConRads; }
+	unsigned char* getOffMeshConnectionDirs() { return m_offMeshConDirs; }
+	unsigned char* getOffMeshConnectionJumps() { return m_offMeshConJumps; }
+	unsigned char* getOffMeshConnectionOrders() { return m_offMeshConOrders; }
+	unsigned char* getOffMeshConnectionAreas() { return m_offMeshConAreas; }
+	unsigned short* getOffMeshConnectionFlags() { return m_offMeshConFlags; }
+	unsigned short* getOffMeshConnectionId() { return m_offMeshConId; }
+	float* getOffMeshConnectionRefPos() { return m_offMeshConRefPos; }
+	float* getOffMeshConnectionRefYaws() { return m_offMeshConRefYaws; }
+	int addOffMeshConnection(const float* spos, const float* epos, const float rad,
 							  unsigned char bidir, unsigned char jump, unsigned char order, 
 							  unsigned char area, unsigned short flags);
 	void deleteOffMeshConnection(int i);
-	void drawOffMeshConnections(struct duDebugDraw* dd, const float* offset, bool hilight = false);
+	void drawOffMeshConnections(struct duDebugDraw* dd, const float* offset, const int hilightIdx = -1);
 	///@}
 
-	/// @name Box Volumes.
+	/// @name Shape Volumes.
 	///@{
-	int getConvexVolumeCount() const { return m_volumeCount; }
-	const ConvexVolume* getConvexVolumes() const { return m_volumes; }
-	void addConvexVolume(const float* verts, const int nverts,
+	int getShapeVolumeCount() const { return m_volumeCount; }
+	ShapeVolume* getShapeVolumes() { return m_volumes; }
+	int addBoxVolume(const float* bmin, const float* bmax,
+						 unsigned short flags, unsigned char area);
+	int addCylinderVolume(const float* pos, const float radius,
+						 const float height, unsigned short flags, unsigned char area);
+	int addConvexVolume(const float* verts, const int nverts,
 						 const float minh, const float maxh, unsigned short flags, unsigned char area);
-	void deleteConvexVolume(int i);
-	void drawConvexVolumes(struct duDebugDraw* dd, const float* offset, bool hilight = false);
+	void deleteShapeVolume(int i);
+	void drawBoxVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx = -1);
+	void drawCylinderVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx = -1);
+	void drawConvexVolumes(struct duDebugDraw* dd, const float* offset, const int hilightIdx = -1);
 	///@}
 	
 private:

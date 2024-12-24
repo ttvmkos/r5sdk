@@ -404,16 +404,16 @@ bool duReadCompactHeightfield(struct rcCompactHeightfield& chf, duFileIO* io)
 }
 
 
-static void logLine(rcContext& ctx, rcTimerLabel label, const char* name, const float pc)
+static void logLine(rcContext& ctx, rcTimerLabel label, const char* name, const double pc)
 {
-	const int t = ctx.getAccumulatedTime(label);
+	const rdTimeType t = ctx.getAccumulatedTime(label);
 	if (t < 0) return;
 	ctx.log(RC_LOG_PROGRESS, "%s:\t%.2fms\t(%.1f%%)", name, t/1000.0f, t*pc);
 }
 
-void duLogBuildTimes(rcContext& ctx, const int totalTimeUsec)
+void duLogBuildTimes(rcContext& ctx, const rdTimeType totalTimeUsec)
 {
-	const float pc = 100.0f / totalTimeUsec;
+	const double pc = 100.0f / totalTimeUsec;
  
 	ctx.log(RC_LOG_PROGRESS, "Build Times");
 	logLine(ctx, RC_TIMER_RASTERIZE_TRIANGLES,		"- Rasterize", pc);

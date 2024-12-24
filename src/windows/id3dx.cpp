@@ -3,6 +3,7 @@
 //------------------------------
 #define STB_IMAGE_IMPLEMENTATION
 #include "tier0/threadtools.h"
+#include "tier0/commandline.h"
 #include "tier1/cvar.h"
 #include "windows/id3dx.h"
 #include "windows/input.h"
@@ -35,13 +36,6 @@ typedef BOOL(WINAPI* IPostMessageA)(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM l
 typedef BOOL(WINAPI* IPostMessageW)(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
 ///////////////////////////////////////////////////////////////////////////////////
-extern UINT                     g_nWindowRect[2] = { NULL, NULL };
-
-///////////////////////////////////////////////////////////////////////////////////
-static IPostMessageA            s_oPostMessageA = NULL;
-static IPostMessageW            s_oPostMessageW = NULL;
-
-///////////////////////////////////////////////////////////////////////////////////
 static IDXGIResizeBuffers       s_fnResizeBuffers    = NULL;
 static IDXGISwapChainPresent    s_fnSwapChainPresent = NULL;
 
@@ -58,30 +52,6 @@ LRESULT CALLBACK DXGIMsgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 }
 
 //#################################################################################
-// POST MESSAGE
-//#################################################################################
-
-BOOL WINAPI HPostMessageA(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
-	if (g_bBlockInput && Msg == WM_MOUSEMOVE)
-	{
-		return TRUE;
-	}
-
-	return s_oPostMessageA(hWnd, Msg, wParam, lParam);
-}
-
-BOOL WINAPI HPostMessageW(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
-	if (g_bBlockInput && Msg == WM_MOUSEMOVE)
-	{
-		return TRUE;
-	}
-
-	return s_oPostMessageW(hWnd, Msg, wParam, lParam);
-}
-
-//#################################################################################
 // IDXGI
 //#################################################################################
 
@@ -91,6 +61,9 @@ static ConVar fps_max_rt_sleep_threshold("fps_max_rt_sleep_threshold", "0.016666
 
 HRESULT __stdcall Present(IDXGISwapChain* pSwapChain, UINT nSyncInterval, UINT nFlags)
 {
+	if (nFlags & DXGI_PRESENT_TEST)
+		return s_fnSwapChainPresent(pSwapChain, nSyncInterval, nFlags);
+
 	float targetFps = fps_max_rt.GetFloat();
 
 	if (targetFps > 0.0f)
@@ -130,10 +103,8 @@ HRESULT __stdcall Present(IDXGISwapChain* pSwapChain, UINT nSyncInterval, UINT n
 
 HRESULT __stdcall ResizeBuffers(IDXGISwapChain* pSwapChain, UINT nBufferCount, UINT nWidth, UINT nHeight, DXGI_FORMAT dxFormat, UINT nSwapChainFlags)
 {
-	g_nWindowRect[0] = nWidth;
-	g_nWindowRect[1] = nHeight;
-
 	///////////////////////////////////////////////////////////////////////////////
+	g_pGame->SetWindowSize(nWidth, nHeight);
 	return s_fnResizeBuffers(pSwapChain, nBufferCount, nWidth, nHeight, dxFormat, nSwapChainFlags);
 }
 
@@ -297,13 +268,13 @@ bool LoadTextureBuffer(unsigned char* buffer, int len, ID3D11ShaderResourceView*
 
 void ResetInput()
 {
-	g_pInputSystem->EnableInput( // Enables the input system when both are not drawn.
-		!g_Browser.IsActivated() && !g_Console.IsActivated());
+	// Enables the input system when no imgui surface is drawn.
+	g_pInputSystem->EnableInput(!ImguiSystem()->IsSurfaceActive());
 }
 
 bool PanelsVisible()
 {
-	if (g_Browser.IsActivated() || g_Console.IsActivated())
+	if (ImguiSystem()->IsSurfaceActive())
 	{
 		return true;
 	}
@@ -316,20 +287,11 @@ bool PanelsVisible()
 
 void DirectX_Init()
 {
-	///////////////////////////////////////////////////////////////////////////////
-	s_oPostMessageA = (IPostMessageA)DetourFindFunction("user32.dll", "PostMessageA");
-	s_oPostMessageW = (IPostMessageW)DetourFindFunction("user32.dll", "PostMessageW");
-
 	// Begin the detour transaction
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 
-	// Hook PostMessage
-	DetourAttach(&(LPVOID&)s_oPostMessageA, (PBYTE)HPostMessageA);
-	DetourAttach(&(LPVOID&)s_oPostMessageW, (PBYTE)HPostMessageW);
-
 	// Hook SwapChain
-
 	DWORD_PTR* pSwapChainVtable = *reinterpret_cast<DWORD_PTR**>(g_ppSwapChain[0]);
 
 	int pIDX = static_cast<int>(DXGISwapChainVTbl::Present);
@@ -350,8 +312,26 @@ void DirectX_Init()
 		Error(eDLL_T::COMMON, 0xBAD0C0DE, "Failed to detour process: error code = %08x\n", hr);
 	}
 
-	if (!ImguiSystem()->Init())
-		Error(eDLL_T::COMMON, 0, "ImguiSystem()->Init() failed!\n");
+	if (ImguiSystem()->IsEnabled())
+	{
+		if (ImguiSystem()->Init())
+		{
+			ImguiSystem()->AddSurface(&g_Console);
+			ImguiSystem()->AddSurface(&g_Browser);
+		}
+		else
+		{
+			Error(eDLL_T::COMMON, 0, "ImguiSystem()->Init() failed!\n");
+
+			// Remove any log that was stored in the buffer for rendering
+			// as the console will not render past this stage due to init
+			// failure. Logging happens before the imgui surface system
+			// is initialized, as the initialization needs to happen after
+			// directx is initialized, but on initialization success, we
+			// do want the logs prior to this stage to be displayed.
+			g_Console.ClearLog();
+		}
+	}
 }
 
 void DirectX_Shutdown()
@@ -360,10 +340,6 @@ void DirectX_Shutdown()
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 
-	// Unhook PostMessage
-	DetourDetach(&(LPVOID&)s_oPostMessageA, (PBYTE)HPostMessageA);
-	DetourDetach(&(LPVOID&)s_oPostMessageW, (PBYTE)HPostMessageW);
-
 	// Unhook SwapChain
 	DetourDetach(&(LPVOID&)s_fnSwapChainPresent, (PBYTE)Present);
 	DetourDetach(&(LPVOID&)s_fnResizeBuffers, (PBYTE)ResizeBuffers);
@@ -371,7 +347,13 @@ void DirectX_Shutdown()
 	// Commit the transaction
 	DetourTransactionCommit();
 
-	ImguiSystem()->Shutdown();
+	if (ImguiSystem()->IsInitialized())
+	{
+		ImguiSystem()->Shutdown();
+
+		ImguiSystem()->RemoveSurface(&g_Browser);
+		ImguiSystem()->RemoveSurface(&g_Console);
+	}
 }
 
 void VDXGI::GetAdr(void) const

@@ -26,14 +26,14 @@
 #define C2S_CHALLENGE           'H' // + challenge value
 #define S2C_CHALLENGE           'I' // + challenge value
 
-#define S2C_CONNACCEPT          'J'
+#define S2C_CONNACCEPT          'J' // special protocol for accepted connections
 #define S2C_CONNREJECT          'K' // special protocol for rejected connections
 
 // Generic Ping Request
-#define	A2A_PING                'L' // respond with an A2A_ACK
-#define	A2A_ACK                 'M' // general acknowledgment without info
+#define A2A_PING                'L' // respond with an A2A_ACK
+#define A2A_ACK                 'M' // general acknowledgment without info
 
-#define S2C_UNKNOWN_UISCRIPT    'N' // TODO: figure out what this does, see [r5apex + 0x288880]
+#define S2C_MATCHINFO_UPDATE    'N' // remote match info update
 
 // Data Block Request
 #define S2C_DATABLOCK_FRAGMENT  'O' // data block fragment

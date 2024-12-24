@@ -330,7 +330,7 @@ static void calcTriNormal(const float* v0, const float* v1, const float* v2, flo
 void rcMarkWalkableTriangles(rcContext* context, const float walkableSlopeAngle,
                              const float* verts, const int numVerts,
                              const int* tris, const int numTris,
-                             unsigned char* triAreaIDs)
+                             unsigned char* triAreaIDs, const bool ignoreWindingOrder)
 {
 	rdIgnoreUnused(context);
 	rdIgnoreUnused(numVerts);
@@ -344,7 +344,7 @@ void rcMarkWalkableTriangles(rcContext* context, const float walkableSlopeAngle,
 		const int* tri = &tris[i * 3];
 		calcTriNormal(&verts[tri[0] * 3], &verts[tri[1] * 3], &verts[tri[2] * 3], norm);
 		// Check if the face is walkable.
-		if (norm[2] > walkableThr)
+		if ((ignoreWindingOrder ? rdMathFabsf(norm[2]) : norm[2]) > walkableThr)
 		{
 			triAreaIDs[i] = RC_WALKABLE_AREA;
 		}
@@ -354,7 +354,7 @@ void rcMarkWalkableTriangles(rcContext* context, const float walkableSlopeAngle,
 void rcClearUnwalkableTriangles(rcContext* context, const float walkableSlopeAngle,
                                 const float* verts, int numVerts,
                                 const int* tris, int numTris,
-                                unsigned char* triAreaIDs)
+                                unsigned char* triAreaIDs, const bool ignoreWindingOrder)
 {
 	rdIgnoreUnused(context);
 	rdIgnoreUnused(numVerts);
@@ -368,7 +368,7 @@ void rcClearUnwalkableTriangles(rcContext* context, const float walkableSlopeAng
 		const int* tri = &tris[i * 3];
 		calcTriNormal(&verts[tri[0] * 3], &verts[tri[1] * 3], &verts[tri[2] * 3], faceNormal);
 		// Check if the face is walkable.
-		if (faceNormal[2] <= walkableLimitZ)
+		if ((ignoreWindingOrder ? rdMathFabsf(faceNormal[2]) : faceNormal[2]) <= walkableLimitZ)
 		{
 			triAreaIDs[i] = RC_NULL_AREA;
 		}
@@ -404,6 +404,9 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 	const int xSize = heightfield.width;
 	const int ySize = heightfield.height;
 	const int spanCount = rcGetHeightFieldSpanCount(context, heightfield);
+
+	if (!spanCount)
+		return false;
 
 	// Fill in header.
 	compactHeightfield.width = xSize;
@@ -446,8 +449,6 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 	}
 	memset(compactHeightfield.areas, RC_NULL_AREA, sizeof(unsigned char) * spanCount);
 
-	const int MAX_HEIGHT = 0xffff;
-
 	// Fill in cells and spans.
 	int currentCellIndex = 0;
 	const int numColumns = xSize * ySize;
@@ -470,8 +471,8 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 			if (span->area != RC_NULL_AREA)
 			{
 				const int bot = (int)span->smax;
-				const int top = span->next ? (int)span->next->smin : MAX_HEIGHT;
-				compactHeightfield.spans[currentCellIndex].z = (unsigned short)rdClamp(bot, 0, 0xffff);
+				const int top = span->next ? (int)span->next->smin : RC_SPAN_MAX_HEIGHT;
+				compactHeightfield.spans[currentCellIndex].z = (unsigned short)rdClamp(bot, 0, RC_SPAN_MAX_HEIGHT);
 				compactHeightfield.spans[currentCellIndex].h = (unsigned char)rdClamp(top - bot, 0, 0xff);
 				compactHeightfield.areas[currentCellIndex] = span->area;
 				currentCellIndex++;

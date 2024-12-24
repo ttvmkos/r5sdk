@@ -31,7 +31,6 @@ class NavMeshPruneTool : public EditorTool
 
 	float m_hitPos[3];
 	bool m_hitPosSet;
-	bool m_ranPruneTool;
 	
 public:
 	NavMeshPruneTool();
@@ -41,12 +40,14 @@ public:
 	virtual void init(Editor* editor);
 	virtual void reset();
 	virtual void handleMenu();
-	virtual void handleClick(const float* s, const float* p, bool shift);
+	virtual void handleClick(const float* s, const float* p, const int v, bool shift);
 	virtual void handleToggle();
 	virtual void handleStep();
 	virtual void handleUpdate(const float dt);
 	virtual void handleRender();
 	virtual void handleRenderOverlay(double* proj, double* model, int* view);
+
+	void pruneUnvisitedTilesAndPolys(dtNavMesh* nav, NavmeshFlags* flags);
 
 private:
 	// Explicitly disabled copy constructor and copy assignment operator.

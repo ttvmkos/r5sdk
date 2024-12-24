@@ -30,16 +30,20 @@
 
 struct dtMeshTile;
 
-struct hulldef
+struct NavMeshDefaults_s
 {
 	const char* name;
+
 	float radius;
 	float height;
 	float climbHeight;
-	int tileSize;
-	int cellResolution;
+
+	float cellSize;
+	float cellHeight;
+
+	int polyCellResolution;
 };
-extern const hulldef hulls[5];
+extern const NavMeshDefaults_s g_navMeshDefaults[NAVMESH_COUNT];
 
 struct TraverseType_s
 {
@@ -116,7 +120,7 @@ enum EditorToolType
 	TOOL_NAVMESH_PRUNE,
 	TOOL_OFFMESH_CONNECTION,
 	TOOL_TRAVERSE_LINK,
-	TOOL_CONVEX_VOLUME,
+	TOOL_SHAPE_VOLUME,
 	TOOL_CROWD,
 	MAX_TOOLS
 };
@@ -133,31 +137,6 @@ enum EditorToolType
 //	EDITOR_POLYAREA_WATER,
 //};
 
-#if DT_NAVMESH_SET_VERSION >= 9
-enum EditorPolyAreas
-{
-	EDITOR_POLYAREA_JUMP,
-	EDITOR_POLYAREA_GROUND,
-	EDITOR_POLYAREA_RESERVED,
-	EDITOR_POLYAREA_TRIGGER,
-};
-#else
-enum EditorPolyAreas
-{
-	EDITOR_POLYAREA_GROUND,
-	EDITOR_POLYAREA_JUMP,
-
-	// NOTE: not sure if anything beyond EDITOR_POLYAREA_JUMP belongs to MSET5,
-	// this needs to be confirmed, for now its been kept in for MSET5.
-	EDITOR_POLYAREA_JUMP_REVERSE,
-	EDITOR_POLYAREA_TRIGGER,
-	EDITOR_POLYAREA_WALLJUMP_LEFT,
-	EDITOR_POLYAREA_WALLJUMP_RIGHT,
-	EDITOR_POLYAREA_WALLJUMP_LEFT_REVERSE,
-	EDITOR_POLYAREA_WALLJUMP_RIGHT_REVERSE,
-};
-#endif
-
 //enum EditorPolyFlags // note: original poly flags for reference.
 //{
 //	// Most common polygon flags.
@@ -168,37 +147,6 @@ enum EditorPolyAreas
 //	EDITOR_POLYFLAGS_DISABLED	= 1<<4,		// Disabled polygon
 //	EDITOR_POLYFLAGS_ALL		= 0xffff	// All abilities.
 //};
-
-// Polygon surface area's that aren't larger than this amount will be flagged
-// as 'EDITOR_POLYFLAGS_TOO_SMALL'.
-static const unsigned short NAVMESH_SMALL_POLYGON_THRESHOLD = 120;
-
-enum EditorPolyFlags
-{
-	// Most common polygon flags.
-	EDITOR_POLYFLAGS_WALK				= 1<<0,		// Ability to walk (ground, grass, road).
-	EDITOR_POLYFLAGS_TOO_SMALL			= 1<<1,     // This polygon's surface area is too small; it will be ignored during AIN script nodes generation, NavMesh_RandomPositions, dtNavMeshQuery::findLocalNeighbourhood, etc.
-	EDITOR_POLYFLAGS_HAS_NEIGHBOUR		= 1<<2,     // This polygon is connected to a polygon on a neighbouring tile.
-
-	// Off-mesh connection flags
-	EDITOR_POLYFLAGS_JUMP				= 1<<3,		// Ability to jump (exclusively used on off-mesh connection polygons).
-	EDITOR_POLYFLAGS_JUMP_LINKED		= 1<<4,		// Off-mesh connections who's start and end verts link to other polygons need this flag.
-
-	EDITOR_POLYFLAGS_UNK2				= 1<<5,		// Unknown, no use cases found yet.
-
-	// Only used along with poly area 'EDITOR_POLYAREA_TRIGGER'.
-	EDITOR_POLYFLAGS_OBSTACLE			= 1<<6,		// Unknown, used for small road blocks and other small but easily climbable obstacles.
-	EDITOR_POLYFLAGS_UNK4				= 1<<7,		// Unknown, no use cases found yet.
-	EDITOR_POLYFLAGS_DISABLED			= 1<<8,		// Used for ToggleNPCPathsForEntity. Also, see [r5apex_ds + 0xC96EA8]. Used for toggling poly's when a door closes during runtime.
-													// Also used to disable poly's in the navmesh file itself when we do happen to build navmesh on lava or other very hazardous areas.
-	EDITOR_POLYFLAGS_HAZARD				= 1<<9,		// see [r5apex_ds + 0xC96ED0], used for hostile objects such as electric fences.
-	EDITOR_POLYFLAGS_DOOR				= 1<<10,	// See [r5apex_ds + 0xECBAE0], used for large bunker style doors (vertical and horizontal opening ones), perhaps also shooting cover hint?.
-	EDITOR_POLYFLAGS_UNK8				= 1<<11,	// Unknown, no use cases found yet.
-	EDITOR_POLYFLAGS_UNK9				= 1<<12,	// Unknown, no use cases found yet.
-	EDITOR_POLYFLAGS_DOOR_BREACHABLE	= 1<<13,	// Used for doors that need to be breached, such as the Explosive Holds doors.
-
-	EDITOR_POLYFLAGS_ALL				= 0xffff	// All abilities.
-};
 
 inline static const char* const g_navMeshPolyFlagNames[] =
 {
@@ -249,7 +197,8 @@ struct TraverseLinkPolyPair
 class EditorDebugDraw : public DebugDrawGL
 {
 public:
-	virtual unsigned int areaToCol(unsigned int area);
+	virtual unsigned int areaToFaceCol(const unsigned int area) const;
+	virtual unsigned int areaToEdgeCol(const unsigned int area) const;
 };
 
 enum EditorPartitionType
@@ -266,7 +215,7 @@ struct EditorTool
 	virtual void init(class Editor* editor) = 0;
 	virtual void reset() = 0;
 	virtual void handleMenu() = 0;
-	virtual void handleClick(const float* s, const float* p, bool shift) = 0;
+	virtual void handleClick(const float* s, const float* p, const int v, bool shift) = 0;
 	virtual void handleRender() = 0;
 	virtual void handleRenderOverlay(double* proj, double* model, int* view) = 0;
 	virtual void handleToggle() = 0;
@@ -291,10 +240,15 @@ protected:
 	class dtNavMeshQuery* m_navQuery;
 	class dtCrowd* m_crowd;
 
+	bool m_ignoreWindingOrder;
 	bool m_filterLowHangingObstacles;
 	bool m_filterLedgeSpans;
+	bool m_filterNeighborSlopes;
 	bool m_filterWalkableLowHeightSpans;
+	bool m_buildTraversePortals;
 	bool m_traverseRayDynamicOffset;
+	bool m_traverseLinkSinglePortalPerPolyPair;
+	bool m_collapseLinkedPolyGroups;
 	bool m_buildBvTree;
 
 	int m_minTileBits;
@@ -308,6 +262,7 @@ protected:
 	float m_agentMaxSlope;
 	float m_traverseRayExtraOffset;
 	float m_traverseEdgeMinOverlap;
+	float m_traversePortalMaxAlign;
 	int m_regionMinSize;
 	int m_regionMergeSize;
 	int m_edgeMaxLen;
@@ -362,7 +317,7 @@ public:
 	virtual void handleSettings();
 	virtual void handleTools();
 	virtual void handleDebugMode();
-	virtual void handleClick(const float* s, const float* p, bool shift);
+	virtual void handleClick(const float* s, const float* p, const int v, bool shift);
 	virtual void handleToggle();
 	virtual void handleStep();
 	virtual void handleRender();
@@ -379,6 +334,7 @@ public:
 	virtual float getAgentRadius() { return m_agentRadius; }
 	virtual float getAgentHeight() { return m_agentHeight; }
 	virtual float getAgentClimb() { return m_agentMaxClimb; }
+	virtual float getAgentSlope() { return m_agentMaxSlope; }
 
 	inline float getCellHeight() const { return m_cellHeight; }
 	
@@ -413,18 +369,14 @@ public:
 	void resetCommonSettings();
 	void handleCommonSettings();
 
-	void connectTileTraverseLinks(dtMeshTile* const baseTile, const bool linkToNeighbor); // Make private.
-	bool createTraverseLinks();
+	void updateTraverseLinkRenderParams();
 
 	void createTraverseLinkParams(dtTraverseLinkConnectParams& params);
 
-	void createTraverseTableParams(dtTraverseTableCreateParams* params);
-
+	bool createTraverseLinks();
 	void connectOffMeshLinks();
-	void buildStaticPathingData();
 
-	bool createStaticPathingData(const dtTraverseTableCreateParams* params);
-	bool updateStaticPathingData(const dtTraverseTableCreateParams* params);
+	bool createStaticPathingData();
 
 private:
 	// Explicitly disabled copy constructor and copy assignment operator.

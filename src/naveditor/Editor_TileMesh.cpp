@@ -27,7 +27,7 @@
 #include "NavEditor/Include/NavMeshTesterTool.h"
 #include "NavEditor/Include/NavMeshPruneTool.h"
 #include "NavEditor/Include/OffMeshConnectionTool.h"
-#include "NavEditor/Include/ConvexVolumeTool.h"
+#include "NavEditor/Include/ShapeVolumeTool.h"
 #include "NavEditor/Include/CrowdTool.h"
 #include "NavEditor/Include/InputGeom.h"
 #include "NavEditor/Include/Editor.h"
@@ -56,7 +56,10 @@ class NavMeshTileTool : public EditorTool
 	int m_selectedTraverseType;
 
 	dtTileRef m_markedTileRef;
+	dtTileRef m_lastMarkedTileRef;
+
 	dtPolyRef m_markedPolyRef;
+	dtPolyRef m_lastMarkedPolyRef;
 
 	enum TileToolCursorMode
 	{
@@ -96,7 +99,9 @@ public:
 		m_selectedSide(-1),
 		m_selectedTraverseType(-2),
 		m_markedTileRef(0),
+		m_lastMarkedTileRef(0),
 		m_markedPolyRef(0),
+		m_lastMarkedPolyRef(0),
 		m_cursorMode(TT_CURSOR_MODE_DEBUG),
 		m_textOverlayDrawMode(TO_DRAW_MODE_DISABLED),
 		m_textOverlayDrawFlags(TO_DRAW_FLAGS_NONE),
@@ -182,11 +187,11 @@ public:
 				char* pEnd = nullptr;
 				m_markedPolyRef = (dtPolyRef)STR_TO_ID(m_polyRefTextInput, &pEnd, 10);
 			}
-			ImGui::SliderInt("Tile Side", &m_selectedSide, -1, 8, "%d", ImGuiSliderFlags_NoInput);
+			ImGui::SliderInt("Tile Side", &m_selectedSide, -1, 7, "%d", ImGuiSliderFlags_NoInput);
 			ImGui::PopItemWidth();
 		}
 
-		ImGui::PushItemWidth(180);
+		ImGui::PushItemWidth(185);
 		ImGui::SliderFloat3("Cursor", m_hitPos, MIN_COORD_FLOAT, MAX_COORD_FLOAT);
 		ImGui::PopItemWidth();
 
@@ -236,7 +241,7 @@ public:
 		}
 	}
 
-	virtual void handleClick(const float* /*s*/, const float* p, bool shift)
+	virtual void handleClick(const float* /*s*/, const float* p, const int /*v*/, bool shift)
 	{
 		m_hitPosSet = true;
 		rdVcopy(m_hitPos,p);
@@ -304,19 +309,32 @@ public:
 
 			if (tile && tile->header)
 			{
+				const dtMeshHeader* header = tile->header;
+
+				if (m_markedTileRef != m_lastMarkedTileRef)
+				{
+					m_lastMarkedTileRef = m_markedTileRef;
+
+					float bmin[3];
+					float bmax[3];
+					tile->getTightBounds(bmin, bmax);
+
+					rdVsad(m_nearestPos, bmin, bmax, 0.5f);
+				}
+
 				duDrawTraverseLinkParams params;
 				duDebugDrawMeshTile(&m_editor->getDebugDraw(), *m_navMesh, 0, tile, debugDrawOffset, m_editor->getNavMeshDrawFlags(), params);
 
 				const int side = (m_selectedSide != -1) 
 					? m_selectedSide
-					: rdClassifyPointOutsideBounds(m_hitPos, tile->header->bmin, tile->header->bmax);
+					: rdClassifyPointOutsideBounds(m_hitPos, header->bmin, header->bmax);
 
 				if (side != 0xff)
 				{
 					const int MAX_NEIS = 32; // Max neighbors
 					dtMeshTile* neis[MAX_NEIS];
 
-					const int nneis = m_navMesh->getNeighbourTilesAt(tile->header->x, tile->header->y, side, neis, MAX_NEIS);
+					const int nneis = m_navMesh->getNeighbourTilesAt(header->x, header->y, side, neis, MAX_NEIS);
 
 					for (int i = 0; i < nneis; i++)
 					{
@@ -329,6 +347,17 @@ public:
 
 		if (m_markedPolyRef && m_editor && m_navMesh)
 		{
+			const dtMeshTile* tile;
+			const dtPoly* poly;
+			if (dtStatusSucceed(m_navMesh->getTileAndPolyByRef(m_markedPolyRef, &tile, &poly)))
+			{
+				if (m_markedPolyRef != m_lastMarkedPolyRef)
+				{
+					m_lastMarkedPolyRef = m_markedPolyRef;
+					rdVcopy(m_nearestPos, poly->center);
+				}
+			}
+
 			duDebugDrawNavMeshPoly(&m_editor->getDebugDraw(), *m_navMesh, m_markedPolyRef,
 				debugDrawOffset, m_editor->getNavMeshDrawFlags(), duRGBA(255, 0, 170, 190), false);
 		}
@@ -427,7 +456,7 @@ public:
 		}
 		
 		// Tool help
-		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(280, 40), 
+		ImGui_RenderText(ImGuiTextAlign_e::kAlignLeft, ImVec2(300, 40),
 			ImVec4(1.0f,1.0f,1.0f,0.75f), "LMB: Rebuild hit tile.  Shift+LMB: Clear hit tile.");
 	}
 
@@ -463,8 +492,6 @@ Editor_TileMesh::Editor_TileMesh() :
 Editor_TileMesh::~Editor_TileMesh()
 {
 	cleanup();
-	dtFreeNavMesh(m_navMesh);
-	m_navMesh = 0;
 }
 
 void Editor_TileMesh::handleSettings()
@@ -513,10 +540,10 @@ void Editor_TileMesh::handleTools()
 		setTool(new OffMeshConnectionTool);
 	}
 
-	isEnabled = type == TOOL_CONVEX_VOLUME;
-	if (ImGui::Checkbox("Create Convex Volumes", &isEnabled))
+	isEnabled = type == TOOL_SHAPE_VOLUME;
+	if (ImGui::Checkbox("Create Shape Volumes", &isEnabled))
 	{
-		setTool(new ConvexVolumeTool);
+		setTool(new ShapeVolumeTool);
 	}
 
 	isEnabled = type == TOOL_CROWD;
@@ -629,7 +656,7 @@ bool Editor_TileMesh::handleBuild()
 	params.traverseTableSize = 0;
 	params.traverseTableCount = 0;
 #if DT_NAVMESH_SET_VERSION >= 8
-	params.magicDataCount = 0;
+	params.hintCount = 0;
 #endif
 	
 	dtStatus status;
@@ -700,27 +727,24 @@ void Editor_TileMesh::buildTile(const float* pos)
 			failure = true;
 		}
 		else if (header->offMeshConCount)
-		{
-			m_navMesh->baseOffMeshLinks(tileRef);
-			m_navMesh->connectExtOffMeshLinks(tileRef);
-		}
+			m_navMesh->connectOffMeshLinks(tileRef);
 
 		if (!failure)
 		{
 			// If there are external off-mesh links landing on
 			// this tile, connect them.
-			for (int i = 0; i < m_navMesh->getTileCount(); i++)
+			for (int i = 0; i < m_navMesh->getMaxTiles(); i++)
 			{
 				dtMeshTile* target = m_navMesh->getTile(i);
+				const dtMeshHeader* targetHeader = target->header;
+
+				if (!targetHeader)
+					continue;
+
 				const dtTileRef targetRef = m_navMesh->getTileRef(target);
 
 				// Connection to self has already been done above.
 				if (targetRef == tileRef)
-					continue;
-
-				const dtMeshHeader* targetHeader = target->header;
-
-				if (!targetHeader)
 					continue;
 
 				for (int j = 0; j < targetHeader->offMeshConCount; j++)
@@ -731,20 +755,23 @@ void Editor_TileMesh::buildTile(const float* pos)
 					getTilePos(&con->pos[3], landTx, landTy);
 
 					if (landTx == tx && landTy == ty)
-						m_navMesh->connectExtOffMeshLinks(targetRef);
+						m_navMesh->connectOffMeshLinks(targetRef);
 				}
 			}
 
-			// Reconnect the traverse links.
-			dtTraverseLinkConnectParams params;
-			createTraverseLinkParams(params);
+			if (m_buildTraversePortals)
+			{
+				// Reconnect the traverse links.
+				dtTraverseLinkConnectParams params;
+				createTraverseLinkParams(params);
 
-			params.linkToNeighbor = false;
-			m_navMesh->connectTraverseLinks(tileRef, params);
-			params.linkToNeighbor = true;
-			m_navMesh->connectTraverseLinks(tileRef, params);
+				params.linkToNeighbor = false;
+				m_navMesh->connectTraverseLinks(tileRef, params);
+				params.linkToNeighbor = true;
+				m_navMesh->connectTraverseLinks(tileRef, params);
+			}
 
-			buildStaticPathingData();
+			createStaticPathingData();
 		}
 	}
 	
@@ -808,7 +835,7 @@ void Editor_TileMesh::removeTile(const float* pos)
 			++it;
 		}
 
-		buildStaticPathingData();
+		createStaticPathingData();
 	}
 }
 
@@ -853,9 +880,11 @@ void Editor_TileMesh::buildAllTiles()
 	}
 
 	connectOffMeshLinks();
-	createTraverseLinks();
 
-	buildStaticPathingData();
+	if (m_buildTraversePortals)
+		createTraverseLinks();
+
+	createStaticPathingData();
 	
 	// Start the build process.	
 	m_ctx->stopTimer(RC_TIMER_TEMP);
@@ -882,18 +911,19 @@ void Editor_TileMesh::removeAllTiles()
 			m_navMesh->removeTile(m_navMesh->getTileRefAt(x,y,0),0,0);
 
 	m_traverseLinkPolyMap.clear();
-	buildStaticPathingData();
+	createStaticPathingData();
 }
 
 void Editor_TileMesh::buildAllHulls()
 {
-	for (const hulldef& h : hulls)
+	for (const NavMeshDefaults_s& h : g_navMeshDefaults)
 	{
 		m_agentRadius = h.radius;
 		m_agentMaxClimb = h.climbHeight;
 		m_agentHeight = h.height;
 		m_navmeshName = h.name;
-		m_tileSize = h.tileSize;
+		m_cellSize = h.cellSize;
+		m_polyCellRes = h.polyCellResolution;
 
 		m_ctx->resetLog();
 
@@ -942,6 +972,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	m_cfg.height = m_cfg.tileSize + m_cfg.borderSize*2;
 	m_cfg.detailSampleDist = m_detailSampleDist < 0.9f ? 0 : m_cellSize * m_detailSampleDist;
 	m_cfg.detailSampleMaxError = m_cellHeight * m_detailSampleMaxError;
+	m_cfg.ignoreWindingOrder = m_ignoreWindingOrder;
 	
 	// Expand the heighfield bounding box by border size to find the extents of geometry we need to build this tile.
 	//
@@ -1027,7 +1058,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		
 		memset(m_triareas, 0, nctris*sizeof(unsigned char));
 		rcMarkWalkableTriangles(m_ctx, m_cfg.walkableSlopeAngle,
-								verts, nverts, ctris, nctris, m_triareas);
+								verts, nverts, ctris, nctris, m_triareas, m_cfg.ignoreWindingOrder);
 		
 		if (!rcRasterizeTriangles(m_ctx, verts, nverts, ctris, m_triareas, nctris, *m_solid, m_cfg.walkableClimb))
 			return 0;
@@ -1051,7 +1082,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 
 			memset(m_triareas, 0, nctris * sizeof(unsigned char));
 			rcMarkWalkableTriangles(m_ctx, m_cfg.walkableSlopeAngle,
-				verts, nverts, ctris, nctris, m_triareas);
+				verts, nverts, ctris, nctris, m_triareas, m_cfg.ignoreWindingOrder);
 
 			if (!rcRasterizeTriangles(m_ctx, verts, nverts, ctris, m_triareas, nctris, *m_solid, m_cfg.walkableClimb))
 				return 0;
@@ -1073,7 +1104,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	if (m_filterLowHangingObstacles)
 		rcFilterLowHangingWalkableObstacles(m_ctx, m_cfg.walkableClimb, *m_solid);
 	if (m_filterLedgeSpans)
-		rcFilterLedgeSpans(m_ctx, m_cfg.walkableHeight, m_cfg.walkableClimb, *m_solid);
+		rcFilterLedgeSpans(m_ctx, m_cfg.walkableHeight, m_cfg.walkableClimb, m_filterNeighborSlopes, *m_solid);
 	if (m_filterWalkableLowHeightSpans)
 		rcFilterWalkableLowHeightSpans(m_ctx, m_cfg.walkableHeight, *m_solid);
 	
@@ -1106,9 +1137,24 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	}
 
 	// (Optional) Mark areas.
-	const ConvexVolume* vols = m_geom->getConvexVolumes();
-	for (int i  = 0; i < m_geom->getConvexVolumeCount(); ++i)
-		rcMarkConvexPolyArea(m_ctx, vols[i].verts, vols[i].nverts, vols[i].hmin, vols[i].hmax, (unsigned short)vols[i].flags, (unsigned char)vols[i].area, *m_chf);
+	const ShapeVolume* vols = m_geom->getShapeVolumes();
+	for (int i = 0; i < m_geom->getShapeVolumeCount(); ++i)
+	{
+		const ShapeVolume& vol = vols[i];
+
+		switch (vol.type)
+		{
+		case VOLUME_BOX:
+			rcMarkBoxArea(m_ctx, &vol.verts[0], &vol.verts[3], vol.flags, vol.area, *m_chf);
+			break;
+		case VOLUME_CYLINDER:
+			rcMarkCylinderArea(m_ctx, &vol.verts[0], vol.verts[3], vol.verts[4], vol.flags, vol.area, *m_chf);
+			break;
+		case VOLUME_CONVEX:
+			rcMarkConvexPolyArea(m_ctx, vol.verts, vol.nverts, vol.hmin, vol.hmax, vol.flags, vol.area, *m_chf);
+			break;
+		}
+	}
 	
 	
 	// Partition the heightfield so that we can use simple algorithm later to triangulate the walkable areas.
@@ -1212,7 +1258,6 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		return 0;
 	}
 	
-	//rcFlipPolyMesh(*m_pmesh);
 	if (!rcBuildPolyMeshDetail(m_ctx, *m_pmesh, *m_chf,
 							   m_cfg.detailSampleDist, m_cfg.detailSampleMaxError,
 							   *m_dmesh))
@@ -1221,7 +1266,6 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		return 0;
 	}
 	
-	//rcFlipPolyMeshDetail(*m_dmesh,m_pmesh->nverts);
 	if (!m_keepInterResults)
 	{
 		rcFreeCompactHeightfield(m_chf);
@@ -1232,7 +1276,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	
 	unsigned char* navData = 0;
 	int navDataSize = 0;
-	if (m_cfg.maxVertsPerPoly <= DT_VERTS_PER_POLYGON)
+	if (m_cfg.maxVertsPerPoly <= RD_VERTS_PER_POLYGON)
 	{
 		if (m_pmesh->nverts >= 0xffff)
 		{
@@ -1245,27 +1289,14 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		for (int i = 0; i < m_pmesh->npolys; ++i)
 		{
 			if (m_pmesh->areas[i] == RC_WALKABLE_AREA)
-				m_pmesh->areas[i] = EDITOR_POLYAREA_GROUND;
-			
-			if (m_pmesh->areas[i] == EDITOR_POLYAREA_GROUND
-				//||
-				//m_pmesh->areas[i] == EDITOR_POLYAREA_GRASS ||
-				//m_pmesh->areas[i] == EDITOR_POLYAREA_ROAD
-				)
-			{
-				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_WALK;
-			}
-			//else if (m_pmesh->areas[i] == EDITOR_POLYAREA_WATER)
-			//{
-			//	m_pmesh->flags[i] = EDITOR_POLYFLAGS_SWIM;
-			//}
-			else if (m_pmesh->areas[i] == EDITOR_POLYAREA_TRIGGER)
-			{
-				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_WALK /*| EDITOR_POLYFLAGS_DOOR*/;
-			}
+				m_pmesh->areas[i] = DT_POLYAREA_GROUND;
+		
+			if (m_pmesh->areas[i] == DT_POLYAREA_GROUND ||
+				m_pmesh->areas[i] == DT_POLYAREA_TRIGGER)
+				m_pmesh->flags[i] |= DT_POLYFLAGS_WALK;
 
-			if (m_pmesh->surfa[i] <= NAVMESH_SMALL_POLYGON_THRESHOLD)
-				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_TOO_SMALL;
+			if (m_pmesh->surfa[i] <= RC_POLY_SURFAREA_TOO_SMALL_THRESHOLD)
+				m_pmesh->flags[i] |= DT_POLYFLAGS_TOO_SMALL;
 
 			const int nvp = m_pmesh->nvp;
 			const unsigned short* p = &m_pmesh->polys[i*nvp*2];
@@ -1280,7 +1311,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 				if ((p[nvp+j] & 0xf) == 0xf)
 					continue;
 
-				m_pmesh->flags[i] |= EDITOR_POLYFLAGS_HAS_NEIGHBOUR;
+				m_pmesh->flags[i] |= DT_POLYFLAGS_HAS_NEIGHBOUR;
 			}
 		}
 		
@@ -1333,7 +1364,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 			// without restoring this, the renderer will draw it as NULL area
 			// even though it's walkable. The other values will get color ID'd
 			// by the renderer so we don't need to check on those.
-			if (m_pmesh->areas[i] == EDITOR_POLYAREA_GROUND)
+			if (m_pmesh->areas[i] == DT_POLYAREA_GROUND)
 				m_pmesh->areas[i] = RC_WALKABLE_AREA;
 		}
 

@@ -76,6 +76,11 @@ void ConVar_Unregister()
 	s_bRegistered = false;
 }
 
+bool ConVar_IsRegistered()
+{
+	return s_bRegistered;
+}
+
 ConCommandBase::~ConCommandBase(void)
 {
 	if (m_pszCustomUsageString)
@@ -1020,7 +1025,7 @@ void ConVar::Create(const char* pName, const char* pDefaultValue, int flags /*= 
 	// Only 1 of the 2 can be set on a ConVar, both means there is a bug in
 	// your code, fix it!
 	const int nFlagsToCheck = (FCVAR_ARCHIVE | FCVAR_ARCHIVE_PLAYERPROFILE);
-	if ((m_nFlags & nFlagsToCheck) == nFlagsToCheck)
+	if ((flags & nFlagsToCheck) == nFlagsToCheck)
 	{
 		Error(eDLL_T::COMMON, EXIT_FAILURE,
 			"Convar '%s' is flagged as both FCVAR_ARCHIVE and FCVAR_ARCHIVE_PLAYERPROFILE.\n", pName);

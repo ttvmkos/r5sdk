@@ -15,6 +15,7 @@
 #include "engine/client/cl_main.h"
 #include "networksystem/pylon.h"
 #include "networksystem/listmanager.h"
+#include "networksystem/hostmanager.h"
 #include "game/shared/vscript_shared.h"
 
 #include "vscript/vscript.h"
@@ -81,6 +82,17 @@ static SQBool Script_CheckServerIndexAndFailure(HSQUIRRELVM v, SQInteger iServer
 namespace VScriptCode
 {
     namespace Client
+    {
+        //-----------------------------------------------------------------------------
+        // Purpose: checks whether this SDK build is a client dll
+        //-----------------------------------------------------------------------------
+        SQRESULT IsClientDLL(HSQUIRRELVM v)
+        {
+            sq_pushbool(v, ::IsClientDLL());
+            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+        }
+    }
+    namespace Ui
     {
         //-----------------------------------------------------------------------------
         // Purpose: refreshes the server list
@@ -436,11 +448,52 @@ namespace VScriptCode
         }
 
         //-----------------------------------------------------------------------------
-        // Purpose: checks whether this SDK build is a client dll
+        // Purpose: create server via native serverbrowser entries
+        // TODO: return a boolean on failure instead of raising an error, so we could
+        // determine from scripts whether or not to spin a local server, or connect
+        // to a dedicated server (for disconnecting and loading the lobby, for example)
         //-----------------------------------------------------------------------------
-        SQRESULT IsClientDLL(HSQUIRRELVM v)
+        SQRESULT CreateServer(HSQUIRRELVM v)
         {
-            sq_pushbool(v, ::IsClientDLL());
+            const SQChar* serverName = nullptr;
+            const SQChar* serverDescription = nullptr;
+            const SQChar* serverMapName = nullptr;
+            const SQChar* serverPlaylist = nullptr;
+
+            sq_getstring(v, 2, &serverName);
+            sq_getstring(v, 3, &serverDescription);
+            sq_getstring(v, 4, &serverMapName);
+            sq_getstring(v, 5, &serverPlaylist);
+
+            SQInteger serverVisibility = 0;
+            sq_getinteger(v, 6, &serverVisibility);
+
+            if (!VALID_CHARSTAR(serverName) ||
+                !VALID_CHARSTAR(serverMapName) ||
+                !VALID_CHARSTAR(serverPlaylist))
+            {
+                v_SQVM_ScriptError("Empty or null server criteria");
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+
+            hostname->SetValue(serverName);
+            hostdesc.SetValue(serverDescription);
+
+            // Launch server.
+            g_ServerHostManager.SetVisibility(ServerVisibility_e(serverVisibility));
+            g_ServerHostManager.LaunchServer(serverMapName, serverPlaylist);
+
+            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+        }
+
+        //-----------------------------------------------------------------------------
+        // Purpose: shuts the server down and disconnects all clients
+        //-----------------------------------------------------------------------------
+        SQRESULT DestroyServer(HSQUIRRELVM v)
+        {
+            if (g_pHostState->m_bActiveGame)
+                g_pHostState->m_iNextState = HostStates_t::HS_GAME_SHUTDOWN;
+
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
     }
@@ -457,6 +510,15 @@ void Script_RegisterClientFunctions(CSquirrelVM* s)
 }
 
 //---------------------------------------------------------------------------------
+// Purpose: core client script functions
+// Input  : *s - 
+//---------------------------------------------------------------------------------
+void Script_RegisterCoreClientFunctions(CSquirrelVM* s)
+{
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, IsClientDLL, "Returns whether this build is client only", "bool", "");
+}
+
+//---------------------------------------------------------------------------------
 // Purpose: registers script functions in UI context
 // Input  : *s - 
 //---------------------------------------------------------------------------------
@@ -465,37 +527,34 @@ void Script_RegisterUIFunctions(CSquirrelVM* s)
     Script_RegisterCommonAbstractions(s);
     Script_RegisterCoreClientFunctions(s);
 
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, RefreshServerList, "Refreshes the public server list and returns the count", "int", "");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerCount, "Gets the number of public servers", "int", "");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, RefreshServerList, "Refreshes the public server list and returns the count", "int", "");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCount, "Gets the number of public servers", "int", "");
 
     // Functions for retrieving server browser data
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetHiddenServerName, "Gets hidden server name by token", "string", "string");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerName, "Gets the name of the server at the specified index of the server list", "string", "int");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerDescription, "Gets the description of the server at the specified index of the server list", "string", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetHiddenServerName, "Gets hidden server name by token", "string", "string");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerName, "Gets the name of the server at the specified index of the server list", "string", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerDescription, "Gets the description of the server at the specified index of the server list", "string", "int");
 
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerMap, "Gets the map of the server at the specified index of the server list", "string", "int");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerPlaylist, "Gets the playlist of the server at the specified index of the server list", "string", "int");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerCurrentPlayers, "Gets the current player count of the server at the specified index of the server list", "int", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMap, "Gets the map of the server at the specified index of the server list", "string", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerPlaylist, "Gets the playlist of the server at the specified index of the server list", "string", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCurrentPlayers, "Gets the current player count of the server at the specified index of the server list", "int", "int");
 
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerMaxPlayers, "Gets the max player count of the server at the specified index of the server list", "int", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMaxPlayers, "Gets the max player count of the server at the specified index of the server list", "int", "int");
 
     // Misc main menu functions
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetPromoData, "Gets promo data for specified slot type", "string", "int");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetEULAContents, "Gets EULA contents from masterserver", "string", "");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetPromoData, "Gets promo data for specified slot type", "string", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetEULAContents, "Gets EULA contents from masterserver", "string", "");
 
     // Functions for connecting to servers
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, ConnectToServer, "Joins server by ip address and encryption key", "void", "string, string");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, ConnectToListedServer, "Joins listed server by index", "void", "int");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, ConnectToHiddenServer, "Joins hidden server by token", "void", "string");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToServer, "Joins server by ip address and encryption key", "void", "string, string");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToListedServer, "Joins listed server by index", "void", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToHiddenServer, "Joins hidden server by token", "void", "string");
 }
 
-//---------------------------------------------------------------------------------
-// Purpose: core client script functions
-// Input  : *s - 
-//---------------------------------------------------------------------------------
-void Script_RegisterCoreClientFunctions(CSquirrelVM* s)
+void Script_RegisterUIServerFunctions(CSquirrelVM* s)
 {
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, IsClientDLL, "Returns whether this build is client only", "bool", "");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, CreateServer, "Starts server with the specified settings", "void", "string, string, string, string, int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, DestroyServer, "Shuts the local server down", "void", "");
 }
 
 //---------------------------------------------------------------------------------
@@ -513,3 +572,106 @@ static ConVar promo_version_accepted("promo_version_accepted", "0", FCVAR_RELEAS
 
 static ConVar player_setting_damage_closes_deathbox_menu("player_setting_damage_closes_deathbox_menu", "1", FCVAR_ARCHIVE | FCVAR_RELEASE, "Controls whether death box automatically closes when taking damage (used for menus).");
 static ConVar show_motd_on_server_first_join("show_motd_on_server_first_join", "0", FCVAR_ARCHIVE | FCVAR_RELEASE, "Controls whether or not the server message of the day shows on first join for that server.");
+
+//---------------------------------------------------------------------------------
+// Purpose: script code class function registration
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientEntityClassFuncs()
+{
+    v_Script_RegisterClientEntityClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientPlayerClassFuncs()
+{
+    v_Script_RegisterClientPlayerClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientAIClassFuncs()
+{
+    v_Script_RegisterClientAIClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientWeaponClassFuncs()
+{
+    v_Script_RegisterClientWeaponClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientProjectileClassFuncs()
+{
+    v_Script_RegisterClientProjectileClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientTitanSoulClassFuncs()
+{
+    v_Script_RegisterClientTitanSoulClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientPlayerDecoyClassFuncs()
+{
+    v_Script_RegisterClientPlayerDecoyClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterClientFirstPersonProxyClassFuncs()
+{
+    v_Script_RegisterClientFirstPersonProxyClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+
+void VScriptClient::Detour(const bool bAttach) const
+{
+    DetourSetup(&v_Script_RegisterClientEntityClassFuncs, &Script_RegisterClientEntityClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterClientPlayerClassFuncs, &Script_RegisterClientPlayerClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterClientAIClassFuncs, &Script_RegisterClientAIClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterClientWeaponClassFuncs, &Script_RegisterClientWeaponClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterClientProjectileClassFuncs, &Script_RegisterClientProjectileClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterClientTitanSoulClassFuncs, &Script_RegisterClientTitanSoulClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterClientPlayerDecoyClassFuncs, &Script_RegisterClientPlayerDecoyClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterClientFirstPersonProxyClassFuncs, &Script_RegisterClientFirstPersonProxyClassFuncs, bAttach);
+}

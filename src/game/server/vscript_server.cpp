@@ -22,6 +22,8 @@
 
 #include "game/server/logger.h"
 #include "player.h"
+#include "player.h"
+#include <common/callback.h>
 
 /*
 =====================
@@ -44,61 +46,6 @@ namespace VScriptCode
 {
     namespace Server
     {
-        //-----------------------------------------------------------------------------
-        // Purpose: create server via native serverbrowser entries
-        // TODO: return a boolean on failure instead of raising an error, so we could
-        // determine from scripts whether or not to spin a local server, or connect
-        // to a dedicated server (for disconnecting and loading the lobby, for example)
-        //-----------------------------------------------------------------------------
-        SQRESULT CreateServer(HSQUIRRELVM v)
-        {
-            const SQChar* serverName = nullptr;
-            const SQChar* serverDescription = nullptr;
-            const SQChar* serverMapName = nullptr;
-            const SQChar* serverPlaylist = nullptr;
-
-            sq_getstring(v, 2, &serverName);
-            sq_getstring(v, 3, &serverDescription);
-            sq_getstring(v, 4, &serverMapName);
-            sq_getstring(v, 5, &serverPlaylist);
-
-            SQInteger serverVisibility = 0;
-            sq_getinteger(v, 6, &serverVisibility);
-
-            if (!VALID_CHARSTAR(serverName) ||
-                !VALID_CHARSTAR(serverMapName) ||
-                !VALID_CHARSTAR(serverPlaylist))
-            {
-                v_SQVM_ScriptError("Empty or null server criteria");
-                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-            }
-
-            // Adjust browser settings.
-            NetGameServer_t& details = g_ServerHostManager.GetDetails();
-
-            details.name = serverName;
-            details.description = serverDescription;
-            details.map = serverMapName;
-            details.playlist = serverPlaylist;
-
-            // Launch server.
-            g_ServerHostManager.SetVisibility(ServerVisibility_e(serverVisibility));
-            g_ServerHostManager.LaunchServer(g_pServer->IsActive());
-
-            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
-        }
-
-        //-----------------------------------------------------------------------------
-        // Purpose: shuts the server down and disconnects all clients
-        //-----------------------------------------------------------------------------
-        SQRESULT DestroyServer(HSQUIRRELVM v)
-        {
-            if (g_pHostState->m_bActiveGame)
-                g_pHostState->m_iNextState = HostStates_t::HS_GAME_SHUTDOWN;
-
-            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
-        }
-
         //-----------------------------------------------------------------------------
         // Purpose: sets whether the server could auto reload at this time (e.g. if
         // server admin has host_autoReloadRate AND host_autoReloadRespectGameState
@@ -309,13 +256,61 @@ namespace VScriptCode
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
+    }
 
+    namespace PlayerEntity
+    {
         //-----------------------------------------------------------------------------
-        // Purpose: checks whether this SDK build is a dedicated server
+        // Purpose: sets a class var on the server and each client
         //-----------------------------------------------------------------------------
-        SQRESULT IsDedicated(HSQUIRRELVM v)
+        SQRESULT ScriptSetClassVar(HSQUIRRELVM v)
         {
-            sq_pushbool(v, ::IsDedicated());
+            CPlayer* player = nullptr;
+
+            if (!v_sq_getentity(v, (SQEntity*)&player))
+                return SQ_ERROR;
+
+            const SQChar* key = nullptr;
+            sq_getstring(v, 2, &key);
+
+            if (!VALID_CHARSTAR(key))
+            {
+                v_SQVM_ScriptError("Empty or null class key");
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+
+            const SQChar* val = nullptr;
+            sq_getstring(v, 3, &val);
+
+            if (!VALID_CHARSTAR(val))
+            {
+                v_SQVM_ScriptError("Empty or null class var");
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+
+            CClient* const client = g_pServer->GetClient(player->GetEdict() - 1);
+            SVC_SetClassVar msg(key, val);
+
+            const bool success = client->SendNetMsgEx(&msg, false, true, false);
+
+            if (success)
+            {
+                const char* pArgs[3] = {
+                    "_setClassVarServer",
+                    key,
+                    val
+                };
+
+                const CCommand cmd((int)V_ARRAYSIZE(pArgs), pArgs, cmd_source_t::kCommandSrcCode);
+                const int oldIdx = *g_nCommandClientIndex;
+
+                *g_nCommandClientIndex = client->GetUserID();
+                v__setClassVarServer_f(cmd);
+
+                *g_nCommandClientIndex = oldIdx;
+            }
+
+            sq_pushbool(v, success);
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
@@ -1003,7 +998,7 @@ void Script_RegisterServerFunctions(CSquirrelVM* s)
 {
     Script_RegisterCommonAbstractions(s);
     Script_RegisterCoreServerFunctions(s);
-    Script_RegisterAdminPanelFunctions(s);
+    Script_RegisterAdminServerFunctions(s);
 
     Script_RegisterLiveAPIFunctions(s);
 }
@@ -1019,15 +1014,7 @@ void Script_RegisterServerEnums(CSquirrelVM* const s)
 //---------------------------------------------------------------------------------
 void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
 {
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, IsServerActive, "Returns whether the server is active", "bool", "");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, IsDedicated, "Returns whether this is a dedicated server", "bool", "");
-
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, CreateServer, "Starts server with the specified settings", "void", "string, string, string, string, int");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DestroyServer, "Shuts the local server down", "void", "");
-
-
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SetAutoReloadState, "Set whether we can auto-reload the server", "void", "bool");
-
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetServerID, "Gets the current server ID", "string", "");
 
     //for stat settings (api keys, discord webhooks, server identifiers, preferences))
@@ -1072,14 +1059,10 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
 }
 
 //---------------------------------------------------------------------------------
-// Purpose: admin panel script functions
+// Purpose: admin server script functions
 // Input  : *s - 
-// 
-// Ideally, these get dropped entirely in favor of remote functions. Currently,
-// the s3 build only supports remote function calls from server to client/ui.
-// Client/ui to server is all done through clientcommands.
 //---------------------------------------------------------------------------------
-void Script_RegisterAdminPanelFunctions(CSquirrelVM* s)
+void Script_RegisterAdminServerFunctions(CSquirrelVM* s)
 {
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetNumHumanPlayers, "Gets the number of human players on the server", "int", "");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetNumFakeClients, "Gets the number of bot players on the server", "int", "");
@@ -1093,4 +1076,127 @@ void Script_RegisterAdminPanelFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by ip & nucleus id, returns true for success", "bool", "string, string");
 
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string");
+}
+
+//---------------------------------------------------------------------------------
+// Purpose: script code class function registration
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerEntityClassFuncs()
+{
+    v_Script_RegisterServerEntityClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerPlayerClassFuncs()
+{
+    v_Script_RegisterServerPlayerClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+
+    g_serverScriptPlayerStruct->AddFunction("SetClassVar",
+        "ScriptSetClassVar",
+        "Change a variable in the player's class settings",
+        "bool",
+        "string, string",
+        5,
+        VScriptCode::PlayerEntity::ScriptSetClassVar);
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerAIClassFuncs()
+{
+    v_Script_RegisterServerAIClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerWeaponClassFuncs()
+{
+    v_Script_RegisterServerWeaponClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerProjectileClassFuncs()
+{
+    v_Script_RegisterServerProjectileClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerTitanSoulClassFuncs()
+{
+    v_Script_RegisterServerTitanSoulClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerPlayerDecoyClassFuncs()
+{
+    v_Script_RegisterServerPlayerDecoyClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerSpawnpointClassFuncs()
+{
+    v_Script_RegisterServerSpawnpointClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+//---------------------------------------------------------------------------------
+static void Script_RegisterServerFirstPersonProxyClassFuncs()
+{
+    v_Script_RegisterServerFirstPersonProxyClassFuncs();
+    static bool initialized = false;
+
+    if (initialized)
+        return;
+
+    initialized = true;
+}
+
+void VScriptServer::Detour(const bool bAttach) const
+{
+    DetourSetup(&v_Script_RegisterServerEntityClassFuncs, &Script_RegisterServerEntityClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerPlayerClassFuncs, &Script_RegisterServerPlayerClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerAIClassFuncs, &Script_RegisterServerAIClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerWeaponClassFuncs, &Script_RegisterServerWeaponClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerProjectileClassFuncs, &Script_RegisterServerProjectileClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerTitanSoulClassFuncs, &Script_RegisterServerTitanSoulClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerPlayerDecoyClassFuncs, &Script_RegisterServerPlayerDecoyClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerSpawnpointClassFuncs, &Script_RegisterServerSpawnpointClassFuncs, bAttach);
+    DetourSetup(&v_Script_RegisterServerFirstPersonProxyClassFuncs, &Script_RegisterServerFirstPersonProxyClassFuncs, bAttach);
 }

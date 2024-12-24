@@ -30,10 +30,18 @@ void CGame::PlayStartupVideos(void)
 //-----------------------------------------------------------------------------
 LRESULT CGame::WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	if (!ImguiSystem()->IsInitialized())
-		return CGame__WindowProc(hWnd, uMsg, wParam, lParam);
+	if (ImguiSystem()->IsInitialized())
+		ImguiWindowProc(hWnd, uMsg, wParam, lParam);
 
-	ImguiSystem()->MessageHandler(hWnd, uMsg, wParam, lParam);
+	return CGame__WindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: imgui windows procedure
+//-----------------------------------------------------------------------------
+LRESULT CGame::ImguiWindowProc(HWND hWnd, UINT& uMsg, WPARAM wParam, LPARAM lParam)
+{
+	LRESULT hr = NULL;
 
 	if (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN)
 	{
@@ -52,42 +60,40 @@ LRESULT CGame::WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		}
 	}
 
-	if (g_Console.IsActivated() || g_Browser.IsActivated())
+	if (ImguiSystem()->IsSurfaceActive())
 	{//////////////////////////////////////////////////////////////////////////////
-		g_bBlockInput = true;
+		hr = ImguiSystem()->MessageHandler(hWnd, uMsg, wParam, lParam);
 
 		switch (uMsg)
 		{
-		case WM_LBUTTONDOWN:
-		case WM_LBUTTONUP:
-		case WM_LBUTTONDBLCLK:
-		case WM_RBUTTONDOWN:
-		case WM_RBUTTONUP:
-		case WM_RBUTTONDBLCLK:
-		case WM_MBUTTONDOWN:
-		case WM_MBUTTONUP:
-		case WM_MBUTTONDBLCLK:
-		case WM_KEYDOWN:
-		case WM_KEYUP:
-		case WM_MOUSEACTIVATE:
-		case WM_MOUSEHOVER:
-		case WM_MOUSEHWHEEL:
-		case WM_MOUSELEAVE:
-		case WM_MOUSEMOVE:
-		case WM_MOUSEWHEEL:
+		// This is required as the game calls CInputStackSystem::SetCursorPosition(),
+		// which hides the cursor. It keeps calling it as the game window is the top
+		// most window, even when the ImGui window is enabled. We could in the future
+		// create a new input context for the imgui system, then push it to the stack
+		// after the game's context and call CInputStackSystem::EnableInputContext()
+		// on the new imgui context.
 		case WM_SETCURSOR:
 			uMsg = WM_NULL;
 			break;
 		default:
 			break;
 		}
+
+		g_bBlockInput = true;
 	}//////////////////////////////////////////////////////////////////////////////
 	else
 	{
-		g_bBlockInput = false;
+		if (g_bBlockInput.exchange(false))
+		{
+			// Dry run with kill focus msg to clear the keydown state, we have to do
+			// this as the menu's can be closed while still holding down a key. That
+			// key will remain pressed down so the next time a window is opened that
+			// key will be spammed, until that particular key msg is sent here again.
+			hr = ImguiSystem()->MessageHandler(hWnd, WM_KILLFOCUS, wParam, lParam);
+		}
 	}
 
-	return CGame__WindowProc(hWnd, uMsg, wParam, lParam);
+	return hr;
 }
 
 //-----------------------------------------------------------------------------
@@ -111,6 +117,24 @@ void CGame::GetWindowRect(int* const x, int* const y, int* const w, int* const h
 	{
 		*h = m_height;
 	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: sets the window position
+//-----------------------------------------------------------------------------
+void CGame::SetWindowPosition(const int x, const int y)
+{
+	m_x = x;
+	m_y = y;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: sets the window size
+//-----------------------------------------------------------------------------
+void CGame::SetWindowSize(const int w, const int h)
+{
+	m_width = w;
+	m_height = h;
 }
 
 //-----------------------------------------------------------------------------

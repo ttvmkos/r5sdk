@@ -73,9 +73,9 @@ class TestCase
 		dtPolyRef* polys;
 		int npolys;
 		
-		int findNearestPolyTime;
-		int findPathTime;
-		int findStraightPathTime;
+		rdTimeType findNearestPolyTime;
+		rdTimeType findPathTime;
+		rdTimeType findStraightPathTime;
 		
 		Test* next;
 	private:

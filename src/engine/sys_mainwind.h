@@ -6,6 +6,7 @@
 #ifndef SYS_MAINWIND_H
 #define SYS_MAINWIND_H
 #include "inputsystem/iinputsystem.h"
+#include "inputsystem/iinputstacksystem.h"
 
 inline void (*CGame__AttachToWindow)(void);
 inline void(*CGame__PlayStartupVideos)(void);
@@ -17,11 +18,15 @@ class CGame
 {
 public:
 	static void PlayStartupVideos(void);
-	static LRESULT WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
+	static LRESULT WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	static LRESULT ImguiWindowProc(HWND hWnd, UINT& uMsg, WPARAM wParam, LPARAM lParam);
 
 	inline HWND GetWindow() const { return m_hWindow; }
 	void GetWindowRect(int* const x, int* const y, int* const w, int* const h) const;
+
+	void SetWindowPosition(const int x, const int y);
+	void SetWindowSize(const int w, const int h);
 
 	inline int GetDesktopWidth() const { return m_iDesktopWidth; }
 	inline int GetDesktopHeight() const { return m_iDesktopHeight; }
@@ -46,7 +51,7 @@ private:
 	int m_iDesktopWidth;
 	int m_iDesktopHeight;
 	int m_iDesktopRefreshRate;
-	void* m_pInputContext_Maybe;
+	InputContextHandle_t m_hInputContext;
 }; static_assert(sizeof(CGame) == 64);
 
 inline CGame* g_pGame = nullptr;

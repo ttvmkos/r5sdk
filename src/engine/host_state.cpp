@@ -69,8 +69,9 @@ static ConVar host_autoReloadRate("host_autoReloadRate", "0", FCVAR_RELEASE, "Ti
 static ConVar host_autoReloadRespectGameState("host_autoReloadRespectGameState", "0", FCVAR_RELEASE, "Check the game state before proceeding to auto-reload (don't reload in the middle of a match).");
 #endif // !CLIENT_DLL
 
+ConVar hostdesc("hostdesc", "", FCVAR_RELEASE, "Host game server description.");
+
 #ifdef DEDICATED
-static ConVar hostdesc("hostdesc", "", FCVAR_RELEASE, "Host game server description.");
 //-----------------------------------------------------------------------------
 // Purpose: Send keep alive request to Pylon Master Server.
 // Output : Returns true on success, false otherwise.
@@ -449,6 +450,15 @@ void CHostState::LoadConfig(void) const
 #ifndef DEDICATED
 			Cbuf_AddText(Cbuf_GetCurrentPlayer(), "exec system/autoexec_client_dev.cfg\n", cmd_source_t::kCommandSrcCode);
 			Cbuf_AddText(Cbuf_GetCurrentPlayer(), "exec tools/rcon_client_dev.cfg\n", cmd_source_t::kCommandSrcCode);
+#endif // !DEDICATED
+		}
+		if (CommandLine()->CheckParm("-offline"))
+		{
+#ifndef CLIENT_DLL
+			Cbuf_AddText(Cbuf_GetCurrentPlayer(), "exec system/offline_server.cfg\n", cmd_source_t::kCommandSrcCode);
+#endif //!CLIENT_DLL
+#ifndef DEDICATED
+			Cbuf_AddText(Cbuf_GetCurrentPlayer(), "exec system/offline_client.cfg\n", cmd_source_t::kCommandSrcCode);
 #endif // !DEDICATED
 		}
 #ifndef CLIENT_DLL

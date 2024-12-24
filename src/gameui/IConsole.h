@@ -37,7 +37,6 @@ private:
     void DetermineAutoCompleteWindowRect(void);
 
     bool LoadFlagIcons(void);
-    int GetFlagTextureIndex(const int flags) const;
 
     int TextEditCallback(ImGuiInputTextCallbackData* pData);
     static int TextEditCallbackStub(ImGuiInputTextCallbackData* pData);
@@ -61,6 +60,9 @@ public:
     static void ClearHistory_f();
 
 private: // Internals.
+    void HandleCommand();
+    void HandleSuggest();
+
     void AddLog(const ImU32 color, const char* fmt, ...) /*IM_FMTARGS(2)*/;
 
     void ClampLogSize(void);
@@ -69,7 +71,8 @@ private: // Internals.
 private:
     enum ConAutoCompletePos_e
     {
-        // Park means the position is out of screen.
+        // Park means the auto complete position is out of screen and not
+        // indexing an item.
         kPark = -1,
     };
 

@@ -75,7 +75,7 @@ static ConVar sv_onlineAuthValidateIssuedAt("sv_onlineAuthValidateIssuedAt", "1"
 static ConVar sv_onlineAuthExpiryTolerance("sv_onlineAuthExpiryTolerance", "1", FCVAR_DEVELOPMENTONLY, "The online authentication token 'expiry' claim tolerance in seconds", true, 0.f, true, float(UINT8_MAX), "Must range between [0,255]");
 static ConVar sv_onlineAuthIssuedAtTolerance("sv_onlineAuthIssuedAtTolerance", "30", FCVAR_DEVELOPMENTONLY, "The online authentication token 'issued at' claim tolerance in seconds", true, 0.f, true, float(UINT8_MAX), "Must range between [0,255]");
 
-static ConVar sv_quota_stringCmdsPerSecond("sv_quota_stringCmdsPerSecond", "16", FCVAR_RELEASE, "How many string commands per second clients are allowed to submit, 0 to disallow all string commands", true, 0.f, false, 0.f);
+static ConVar sv_quota_stringCmdsPerSecond("sv_quota_stringCmdsPerSecond", "32", FCVAR_RELEASE, "How many string commands per second clients are allowed to submit, 0 to disallow all string commands", true, 0.f, false, 0.f);
 
 //---------------------------------------------------------------------------------
 // Purpose: check whether this client is authorized to join this server
@@ -265,6 +265,18 @@ bool CClient::VConnect(CClient* pClient, const char* szName, CNetChan* pNetChan,
 }
 
 //---------------------------------------------------------------------------------
+// Purpose: registers net messages
+// Input  : *pClient - 
+//			*pChan - 
+// Output : true if setup was successful, false otherwise
+//---------------------------------------------------------------------------------
+bool CClient::VConnectionStart(CClient* pClient, CNetChan* pChan)
+{
+	pClient->RegisterNetMsgs(pChan);
+	return CClient__ConnectionStart(pClient, pChan);
+}
+
+//---------------------------------------------------------------------------------
 // Purpose: disconnect client
 // Input  : nRepLvl - 
 //			*szReason - 
@@ -310,6 +322,14 @@ void CClient::VActivatePlayer(CClient* pClient)
 }
 
 //---------------------------------------------------------------------------------
+// Purpose: registers net messages
+// Input  : *chan
+//---------------------------------------------------------------------------------
+void CClient::RegisterNetMsgs(CNetChan* chan)
+{
+}
+
+//---------------------------------------------------------------------------------
 // Purpose: send a net message with replay.
 //			set 'CNetMessage::m_nGroup' to 'NoReplay' to disable replay.
 // Input  : *pMsg - 
@@ -319,7 +339,7 @@ void CClient::VActivatePlayer(CClient* pClient)
 //---------------------------------------------------------------------------------
 bool CClient::SendNetMsgEx(CNetMessage* pMsg, bool bLocal, bool bForceReliable, bool bVoice)
 {
-	if (!ShouldReplayMessage(pMsg))
+	if (!CanReplayMessage(pMsg))
 	{
 		// Don't copy the message into the replay buffer.
 		pMsg->m_nGroup = NetMessageGroup::NoReplay;
@@ -618,6 +638,7 @@ void VClient::Detour(const bool bAttach) const
 #ifndef CLIENT_DLL
 	DetourSetup(&CClient__Clear, &CClient::VClear, bAttach);
 	DetourSetup(&CClient__Connect, &CClient::VConnect, bAttach);
+	DetourSetup(&CClient__ConnectionStart, &CClient::VConnectionStart, bAttach);
 	DetourSetup(&CClient__ActivatePlayer, &CClient::VActivatePlayer, bAttach);
 	DetourSetup(&CClient__SendNetMsgEx, &CClient::VSendNetMsgEx, bAttach);
 	//DetourSetup(&CClient__SendSnapshot, &CClient::VSendSnapshot, bAttach);

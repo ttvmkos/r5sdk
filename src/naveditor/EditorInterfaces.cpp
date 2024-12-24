@@ -22,22 +22,22 @@ void BuildContext::doResetLog()
 	m_textPoolSize = 0;
 }
 
-void BuildContext::doLog(const rcLogCategory category, const char* msg, const int len)
+void BuildContext::doLog(const rcLogCategory category, const char* msg, const rdSizeType len)
 {
 	if (!len) return;
 	if (m_messageCount >= MAX_MESSAGES)
 		return;
 	char* dst = &m_textPool[m_textPoolSize];
-	int n = TEXT_POOL_SIZE - m_textPoolSize;
+	const rdSizeType n = TEXT_POOL_SIZE - m_textPoolSize;
 	if (n < 2)
 		return;
 	char* cat = dst;
 	char* text = dst+1;
-	const int maxtext = n-1;
+	const rdSizeType maxtext = n-1;
 	// Store category
 	*cat = (char)category;
 	// Store message
-	const int count = rdMin(len+1, maxtext);
+	const rdSizeType count = rdMin(len+1, maxtext);
 	memcpy(text, msg, count);
 	text[count-1] = '\0';
 	m_textPoolSize += 1 + count;
@@ -46,7 +46,7 @@ void BuildContext::doLog(const rcLogCategory category, const char* msg, const in
 
 void BuildContext::doResetTimers()
 {
-	for (int i = 0; i < RC_MAX_TIMERS; ++i)
+	for (rdSizeType i = 0; i < RC_MAX_TIMERS; ++i)
 		m_accTime[i] = -1;
 }
 
@@ -57,15 +57,15 @@ void BuildContext::doStartTimer(const rcTimerLabel label)
 
 void BuildContext::doStopTimer(const rcTimerLabel label)
 {
-	const TimeVal endTime = getPerfTime();
-	const TimeVal deltaTime = endTime - m_startTime[label];
+	const rdTimeType endTime = getPerfTime();
+	const rdTimeType deltaTime = endTime - m_startTime[label];
 	if (m_accTime[label] == -1)
 		m_accTime[label] = deltaTime;
 	else
 		m_accTime[label] += deltaTime;
 }
 
-int BuildContext::doGetAccumulatedTime(const rcTimerLabel label) const
+rdTimeType BuildContext::doGetAccumulatedTime(const rcTimerLabel label) const
 {
 	return getPerfTimeUsec(m_accTime[label]);
 }
@@ -80,16 +80,16 @@ void BuildContext::dumpLog(const char* format, ...)
 	printf("\n");
 	
 	// Print messages
-	const int TAB_STOPS[4] = { 28, 36, 44, 52 };
+	const rdSizeType TAB_STOPS[4] = { 28, 36, 44, 52 };
 	for (int i = 0; i < m_messageCount; ++i)
 	{
 		const char* msg = m_messages[i]+1;
-		int n = 0;
+		rdSizeType n = 0;
 		while (*msg)
 		{
 			if (*msg == '\t')
 			{
-				int count = 1;
+				rdSizeType count = 1;
 				for (int j = 0; j < 4; ++j)
 				{
 					if (n < TAB_STOPS[j])
@@ -120,7 +120,7 @@ int BuildContext::getLogCount() const
 	return m_messageCount;
 }
 
-const char* BuildContext::getLogText(const int i) const
+const char* BuildContext::getLogText(const rdSizeType i) const
 {
 	return m_messages[i]+1;
 }

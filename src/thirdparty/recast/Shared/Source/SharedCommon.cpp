@@ -120,13 +120,55 @@ void rdClosestPtPointTriangle(float* closest, const float* p,
 	closest[2] = a[2] + ab[2] * v + ac[2] * w;
 }
 
+// note(amos): based on the Möller–Trumbore algorithm, see:
+// https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
+bool rdIntersectSegmentTriangle(const float* sp, const float* sq,
+								const float* a, const float* b, const float* c, float& t)
+{
+	float ab[3], ac[3], qp[3];
+	rdVsub(ab, b, a);
+	rdVsub(ac, c, a);
+	rdVsub(qp, sq, sp);
+
+	float h[3];
+	rdVcross(h, qp, ac);
+
+	const float d = rdVdot(ab, h);
+
+	if (d > -RD_EPS && d < RD_EPS)
+		return false; // Ray is parallel to the triangle plane
+
+	float s[3];
+	rdVsub(s, sp, a);
+
+	const float id = 1.0f / d;
+	const float u = rdVdot(s, h) * id;
+
+	if (u < 0.0f || u > 1.0f)
+		return false;
+
+	float q[3];
+	rdVcross(q, s, ab);
+
+	const float v = rdVdot(qp, q) * id;
+
+	if (v < 0.0f || u+v > 1.0f)
+		return false;
+
+	t = rdVdot(ac, q)*id;
+
+	if (t < 0.0f || t > 1.0f)
+		return false;
+
+	// Segment/ray intersects triangle
+	return true;
+}
+
 bool rdIntersectSegmentPoly2D(const float* p0, const float* p1,
 							  const float* verts, int nverts,
 							  float& tmin, float& tmax,
 							  int& segMin, int& segMax)
 {
-	static const float EPS = 0.000001f;
-	
 	tmin = 0;
 	tmax = 1;
 	segMin = -1;
@@ -142,7 +184,7 @@ bool rdIntersectSegmentPoly2D(const float* p0, const float* p1,
 		rdVsub(diff, p0, &verts[j*3]);
 		const float n = rdVperp2D(edge, diff);
 		const float d = rdVperp2D(dir, edge);
-		if (rdMathFabsf(d) < EPS)
+		if (rdMathFabsf(d) < RD_EPS)
 		{
 			// S is nearly parallel to this edge
 			if (n < 0)
@@ -177,6 +219,164 @@ bool rdIntersectSegmentPoly2D(const float* p0, const float* p1,
 		}
 	}
 	
+	return true;
+}
+
+bool rdIntersectSegmentAABB(const float* sp, const float* sq,
+						 const float* amin, const float* amax,
+						 float& tmin, float& tmax)
+{
+	float d[3];
+	rdVsub(d, sq, sp);
+	tmin = 0; // set to 0 to get first hit on line
+	tmax = 1; // set to max distance ray can travel (for segment)
+	
+	// For all three slabs
+	for (int i = 0; i < 3; i++)
+	{
+		if (rdMathFabsf(d[i]) < RD_EPS)
+		{
+			// Ray is parallel to slab. No hit if origin not within slab
+			if (sp[i] < amin[i] || sp[i] > amax[i])
+				return false;
+		}
+		else
+		{
+			// Compute intersection t value of ray with near and far plane of slab
+			const float ood = 1.0f / d[i];
+			float t1 = (amin[i]-sp[i]) * ood;
+			float t2 = (amax[i]-sp[i]) * ood;
+			// Make t1 be intersection with near plane, t2 with far plane
+			if (t1 > t2) rdSwap(t1, t2);
+			// Compute the intersection of slab intersections intervals
+			if (t1 > tmin) tmin = t1;
+			if (t2 < tmax) tmax = t2;
+			// Exit with no collision as soon as slab intersection becomes empty
+			if (tmin > tmax) return false;
+		}
+	}
+	
+	return true;
+}
+
+bool rdIntersectSegmentCylinder(const float* sp, const float* sq, const float* position,
+								const float radius, const float height,
+								float& tmin, float& tmax)
+{
+	tmin = 0;
+	tmax = 1;
+
+	const float cx = position[0];
+	const float cy = position[1];
+	const float cz = position[2];
+	const float topZ = cz + height;
+
+	// Horizontal (x-y plane) intersection test with infinite cylinder
+	const float dx = sq[0]-sp[0];
+	const float dy = sq[1]-sp[1];
+
+	const float px = sp[0]-cx;
+	const float py = sp[1]-cy;
+
+	const float a = dx*dx + dy*dy;
+	const float b = 2.0f * (px*dx + py*dy);
+	const float c = px*px + py*py - radius*radius;
+
+	if (a > 0.0f)
+	{
+		// Discriminant for solving quadratic equation
+		float disc = b*b - 4.0f * a*c;
+
+		if (disc < RD_EPS)
+			return false; // No intersection in the horizontal plane
+
+		disc = rdMathSqrtf(disc);
+		float t0 = (-b-disc) / (2.0f*a);
+		float t1 = (-b+disc) / (2.0f*a);
+
+		if (t0 > t1) rdSwap(t0, t1);
+
+		tmin = rdMax(tmin, t0);
+		tmax = rdMin(tmax, t1);
+
+		if (tmin > tmax)
+			return false; // No intersection in the [tmin, tmax] range
+	}
+	else
+	{
+		// There is no shift in the start and end point on the x-y plane,
+		// ensure the starting point is within the radius of the cylinder
+		// before checking for vertical intersection
+		if (px*px + py*py > radius*radius) 
+			return false;
+	}
+
+	// Vertical (z-axis) intersection test
+	const float dz = sq[2]-sp[2];
+
+	if (dz != 0.0f)
+	{
+		float tCapMin = (cz-sp[2]) / dz;
+		float tCapMax = (topZ-sp[2]) / dz;
+
+		if (tCapMin > tCapMax) rdSwap(tCapMin, tCapMax);
+
+		// Update tmin and tmax for cap intersections
+		tmin = rdMax(tmin, tCapMin);
+		tmax = rdMin(tmax, tCapMax);
+
+		if (tmin > tmax)
+			return false;
+	}
+
+	const float z0 = sp[2] + tmin*dz;
+	const float z1 = sp[2] + tmax*dz;
+
+	if ((z0 < cz && z1 < cz) || (z0 > topZ && z1 > topZ))
+		return false; // No intersection with the vertical height of the cylinder
+
+	return true;
+}
+
+bool rdIntersectSegmentConvexHull(const float* sp, const float* sq,
+								  const float* verts, const int nverts,
+								  const float hmin, const float hmax,
+								  float& tmin, float& tmax)
+{
+	int segMin, segMax;
+	if (!rdIntersectSegmentPoly2D(sp, sq, verts, nverts, tmin, tmax, segMin, segMax))
+		return false; // No intersection with the polygon base
+
+	tmin = rdMax(0.0f, tmin);
+	tmax = rdMin(1.0f, tmax);
+
+	if (tmin > tmax)
+		return false; // No valid intersection range
+
+	// Vertical (z-axis) intersection test
+	const float dz = sq[2]-sp[2];
+
+	if (dz != 0.0f)
+	{
+		float tCapMin = (hmin-sp[2]) / dz;
+		float tCapMax = (hmax-sp[2]) / dz;
+
+		if (tCapMin > tCapMax) rdSwap(tCapMin, tCapMax);
+
+		// Update tmin and tmax for cap intersections
+		tmin = rdMax(tmin, tCapMin);
+		tmax = rdMin(tmax, tCapMax);
+
+		if (tmin > tmax)
+			return false;
+	}
+
+	const float z0 = sp[2] + tmin*dz;
+	const float z1 = sp[2] + tmax*dz;
+
+	if ((z0 < hmin && z1 < hmin) || (z0 > hmax && z1 > hmax))
+		return false; // No intersection within the vertical bounds
+
 	return true;
 }
 
@@ -241,6 +441,33 @@ bool rdClosestHeightPointTriangle(const float* p, const float* a, const float* b
 		h = a[2] + (v0[2] * u + v1[2] * v) / denom;
 		return true;
 	}
+	return false;
+}
+
+bool rdPointInAABB(const float* pt, const float* bmin, const float* bmax)
+{
+	if (pt[0] >= bmin[0] && pt[0] <= bmax[0] &&
+		pt[1] >= bmin[1] && pt[1] <= bmax[1] &&
+		pt[2] >= bmin[2] && pt[2] <= bmax[2])
+	{
+		return true;
+	}
+
+	return false;
+}
+
+bool rdPointInCylinder(const float* pt, const float* pos, const float radius, const float height)
+{
+	const float dx = pt[0] - pos[0];
+	const float dy = pt[1] - pos[1];
+	const float distSquared = dx*dx + dy*dy;
+
+	if (distSquared <= radius * radius &&
+		pt[2] >= pos[2] && pt[2] <= (pos[2] + height))
+	{
+		return true;
+	}
+
 	return false;
 }
 
@@ -423,26 +650,19 @@ void rdCalcEdgeNormalPt2D(const float* v1, const float* v2, float* out)
 	rdCalcEdgeNormal2D(dir, out);
 }
 
-bool rdCalcSubEdgeArea2D(const float* edgeStart, const float* edgeEnd, const float* subEdgeStart,
+void rdCalcSubEdgeArea2D(const float* edgeStart, const float* edgeEnd, const float* subEdgeStart,
 	const float* subEdgeEnd, float& tmin, float& tmax)
 {
 	const float edgeLen = rdVdist2D(edgeStart, edgeEnd);
 	const float subEdgeStartDist = rdVdist2D(edgeStart, subEdgeStart);
 	const float subEdgeEndDist = rdVdist2D(edgeStart, subEdgeEnd);
 
-	tmin = subEdgeStartDist / edgeLen;
-	tmax = subEdgeEndDist / edgeLen;
+	tmax = subEdgeStartDist / edgeLen;
+	tmin = subEdgeEndDist / edgeLen;
 
-	// note(amos): If the min is larger than the max, we most likely have a
-	// malformed detail polygon, e.g. a triangle that is flipped causing its
-	// boundary edge's start vert to be closer to the end vert of the polygon
-	// when comparing the distances in the same winding order. This can happen
-	// on more complex geometry or when the error tollerance is raised. Either
-	// way return false to notify caller that the calculation has failed.
+	// Can happen when the sub edge equals the main edge.
 	if (tmin > tmax)
-		return false;
-
-	return true;
+		rdSwap(tmin, tmax);
 }
 
 float rdCalcEdgeOverlap2D(const float* edge1Start, const float* edge1End,
@@ -534,32 +754,6 @@ unsigned char rdClassifyPointInsideBounds(const float* pt, const float* bmin, co
 	float newPt[2];
 	newPt[0] = center[0]+dir[0] * boxSize[0];
 	newPt[1] = center[1]+dir[1] * boxSize[1];
-
-	return rdClassifyPointOutsideBounds(newPt, bmin, bmax);
-}
-
-unsigned char rdClassifyDirection(const float* dir, const float* bmin, const float* bmax)
-{
-	const float len = rdMathSqrtf(dir[0]*dir[0] + dir[1]*dir[1]);
-	float dirNorm[2] = { 0.0f, 0.0f };
-
-	if (len > RD_EPS)
-	{
-		dirNorm[0] = dir[0] / len;
-		dirNorm[1] = dir[1] / len;
-	}
-
-	float center[2];
-	center[0] = (bmin[0]+bmax[0]) * 0.5f;
-	center[1] = (bmin[1]+bmax[1]) * 0.5f;
-
-	float boxSize[2];
-	boxSize[0] = bmax[0]-bmin[0];
-	boxSize[1] = bmax[1]-bmin[1];
-
-	float newPt[2];
-	newPt[0] = center[0]+dirNorm[0] * boxSize[0];
-	newPt[1] = center[1]+dirNorm[1] * boxSize[1];
 
 	return rdClassifyPointOutsideBounds(newPt, bmin, bmax);
 }

@@ -5,6 +5,7 @@
 //=============================================================================//
 #include "tier0/crashhandler.h"
 #include "tier0/cpu.h"
+#include "tier0/commandline.h"
 #include "tier2/curlutils.h"
 #include "tier2/crashreporter.h"
 
@@ -12,6 +13,39 @@ static ConVar backtrace_enabled("backtrace_enabled", "1", FCVAR_RELEASE, "Whethe
 static ConVar backtrace_hostname("backtrace_hostname", "submit.backtrace.io", FCVAR_RELEASE, "Holds the error collection server hostname");
 static ConVar backtrace_universe("backtrace_universe", "r5reloaded", FCVAR_RELEASE, "Holds the error collection server hosted instance");
 static ConVar backtrace_token("backtrace_token", "f178fd48d89c8fec7f8b6404ae6dae591c330fd3e2599cab888788033944ec98", FCVAR_RELEASE, "Holds the error collection server submission token");
+
+static inline bool CrashReporter_ShowMessageBox()
+{
+	if (MessageBoxA(NULL, 
+		"The program encountered a critical error and was terminated.\n"
+		"Would you like to send this report to help solve the problem?",
+		"Critical Error Detected", MB_ICONERROR | MB_YESNO) == IDYES)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool CrashReporter_ShouldSubmitReport()
+{
+	if (!ConVar_IsRegistered())
+	{
+		// Can't check if the user accepted the EULA or not, show a prompt instead.
+		if (!CrashReporter_ShowMessageBox())
+			return false;
+	}
+	else
+	{
+		if (!backtrace_enabled.GetBool())
+			return false;
+
+		if (!IsEULAUpToDate())
+			return false;
+	}
+
+	return true;
+}
 
 static inline string CrashReporter_FormatAttributes(const CCrashHandler* const handler)
 {
@@ -36,7 +70,10 @@ static inline string CrashReporter_FormatAttributes(const CCrashHandler* const h
 
 void CrashReporter_SubmitToCollector(const CCrashHandler* const handler)
 {
-	if (!backtrace_enabled.GetBool())
+	if (!CommandLine()->CheckParm("-nomessagebox"))
+		handler->CreateMessageProcess();
+
+	if (!CrashReporter_ShouldSubmitReport())
 		return;
 
 	curl_slist* slist = nullptr;

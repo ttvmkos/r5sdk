@@ -23,7 +23,7 @@ const char* HEbisuSDK_GetLanguage();
 bool IsOriginDisabled();
 bool IsOriginInitialized();
 
-bool IsValidPersonaName(const char* pszName, int nMinLen, int nMaxLen);
+bool IsValidPersonaName(const char* const pszName, const int nMinLen, const int nMaxLen);
 
 ///////////////////////////////////////////////////////////////////////////////
 class VEbisuSDK : public IDetour

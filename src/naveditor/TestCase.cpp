@@ -209,13 +209,13 @@ void TestCase::doTests(dtNavMesh* navmesh, dtNavMeshQuery* navquery)
 		filter.setExcludeFlags(iter->excludeFlags);
 	
 		// Find start points
-		TimeVal findNearestPolyStart = getPerfTime();
+		rdTimeType findNearestPolyStart = getPerfTime();
 		
 		dtPolyRef startRef, endRef;
 		navquery->findNearestPoly(iter->spos, polyPickExt, &filter, &startRef, iter->nspos);
 		navquery->findNearestPoly(iter->epos, polyPickExt, &filter, &endRef, iter->nepos);
 
-		TimeVal findNearestPolyEnd = getPerfTime();
+		rdTimeType findNearestPolyEnd = getPerfTime();
 		iter->findNearestPolyTime += getPerfTimeUsec(findNearestPolyEnd - findNearestPolyStart);
 
 		if (!startRef || ! endRef)
@@ -224,21 +224,21 @@ void TestCase::doTests(dtNavMesh* navmesh, dtNavMeshQuery* navquery)
 		if (iter->type == TEST_PATHFIND)
 		{
 			// Find path
-			TimeVal findPathStart = getPerfTime();
+			rdTimeType findPathStart = getPerfTime();
 
 			navquery->findPath(startRef, endRef, iter->spos, iter->epos, &filter, polys, &iter->npolys, MAX_POLYS);
 			
-			TimeVal findPathEnd = getPerfTime();
+			rdTimeType findPathEnd = getPerfTime();
 			iter->findPathTime += getPerfTimeUsec(findPathEnd - findPathStart);
 		
 			// Find straight path
 			if (iter->npolys)
 			{
-				TimeVal findStraightPathStart = getPerfTime();
+				rdTimeType findStraightPathStart = getPerfTime();
 				
 				navquery->findStraightPath(iter->spos, iter->epos, polys, jumps, iter->npolys,
 										   straight, 0, 0, 0, &iter->nstraight, MAX_POLYS);
-				TimeVal findStraightPathEnd = getPerfTime();
+				rdTimeType findStraightPathEnd = getPerfTime();
 				iter->findStraightPathTime += getPerfTimeUsec(findStraightPathEnd - findStraightPathStart);
 			}
 		
@@ -266,11 +266,11 @@ void TestCase::doTests(dtNavMesh* navmesh, dtNavMeshQuery* navquery)
 			iter->straight[1] = iter->spos[1];
 			iter->straight[2] = iter->spos[2];
 			
-			TimeVal findPathStart = getPerfTime();
+			rdTimeType findPathStart = getPerfTime();
 			
 			navquery->raycast(startRef, iter->spos, iter->epos, &filter, &t, hitNormal, polys, &iter->npolys, MAX_POLYS);
 
-			TimeVal findPathEnd = getPerfTime();
+			rdTimeType findPathEnd = getPerfTime();
 			iter->findPathTime += getPerfTimeUsec(findPathEnd - findPathStart);
 
 			if (t > 1)
@@ -302,14 +302,14 @@ void TestCase::doTests(dtNavMesh* navmesh, dtNavMeshQuery* navquery)
 
 
 	printf("Test Results:\n");
-	int n = 0;
+	rdSizeType n = 0;
 	for (Test* iter = m_tests; iter; iter = iter->next)
 	{
-		const int total = iter->findNearestPolyTime + iter->findPathTime + iter->findStraightPathTime;
-		printf(" - Path %02d:     %.4f ms\n", n, (float)total/1000.0f);
-		printf("    - poly:     %.4f ms\n", (float)iter->findNearestPolyTime/1000.0f);
-		printf("    - path:     %.4f ms\n", (float)iter->findPathTime/1000.0f);
-		printf("    - straight: %.4f ms\n", (float)iter->findStraightPathTime/1000.0f);
+		const rdTimeType total = iter->findNearestPolyTime + iter->findPathTime + iter->findStraightPathTime;
+		printf(" - Path %02zd:     %.4f ms\n", n, (double)total/1000.0);
+		printf("    - poly:     %.4f ms\n", (double)iter->findNearestPolyTime/1000.0);
+		printf("    - path:     %.4f ms\n", (double)iter->findPathTime/1000.0);
+		printf("    - straight: %.4f ms\n", (double)iter->findStraightPathTime/1000.0);
 		n++;
 	}
 }
@@ -421,7 +421,7 @@ bool TestCase::handleRenderOverlay(double* proj, double* model, int* view)
 		n = 0;
 		for (Test* iter = m_tests; iter; iter = iter->next)
 		{
-			const int total = iter->findNearestPolyTime + iter->findPathTime + iter->findStraightPathTime;
+			const rdTimeType total = iter->findNearestPolyTime + iter->findPathTime + iter->findStraightPathTime;
 			snprintf(text, sizeof(text), "Path %d %.4f ms", n, (float)total / 1000.0f);
 
 			if (ImGui::CollapsingHeader(text))

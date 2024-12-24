@@ -94,7 +94,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, rcCompactHeightfield& chf,
 	const int w = chf.width;
 	const int h = chf.height;
 	
-	rdScopedDelete<unsigned char> srcReg((unsigned char*)rdAlloc(sizeof(unsigned char)*chf.spanCount, RD_ALLOC_TEMP));
+	rdScopedDelete<unsigned char> srcReg(chf.spanCount);
 	if (!srcReg)
 	{
 		ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Out of memory 'srcReg' (%d).", chf.spanCount);
@@ -103,7 +103,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, rcCompactHeightfield& chf,
 	memset(srcReg,0xff,sizeof(unsigned char)*chf.spanCount);
 	
 	const int nsweeps = chf.width;
-	rdScopedDelete<rcLayerSweepSpan> sweeps((rcLayerSweepSpan*)rdAlloc(sizeof(rcLayerSweepSpan)*nsweeps, RD_ALLOC_TEMP));
+	rdScopedDelete<rcLayerSweepSpan> sweeps(nsweeps);
 	if (!sweeps)
 	{
 		ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Out of memory 'sweeps' (%d).", nsweeps);
@@ -144,8 +144,18 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, rcCompactHeightfield& chf,
 				if (sid == 0xff)
 				{
 					sid = sweepId++;
-					sweeps[sid].nei = 0xff;
-					sweeps[sid].ns = 0;
+
+					// If we have multiple spans in the X row, we might need more memory than initially allocated.
+					if (sweeps.grow(sid+1))
+					{
+						sweeps[sid].nei = 0xff;
+						sweeps[sid].ns = 0;
+					}
+					else
+					{
+						ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Out of memory 'sweeps.grow(%d)'.", sid+1);
+						return false;
+					}
 				}
 				
 				// -y
@@ -212,9 +222,16 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, rcCompactHeightfield& chf,
 		}
 	}
 
+	if (regId == 0)
+	{
+		// No regions generated, but without an error.
+		return true;
+	}
+
 	// Allocate and init layer regions.
 	const int nregs = (int)regId;
 	rdScopedDelete<rcLayerRegion> regs((rcLayerRegion*)rdAlloc(sizeof(rcLayerRegion)*nregs, RD_ALLOC_TEMP));
+
 	if (!regs)
 	{
 		ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Out of memory 'regs' (%d).", nregs);

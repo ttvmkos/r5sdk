@@ -43,12 +43,12 @@ static void SetName_f(const CCommand& args)
 
     const size_t nLen = strlen(pszName);
 
-    if (nLen > MAX_PERSONA_NAME_LEN)
+    if (nLen >= MAX_PERSONA_NAME_LEN)
         return;
 
     // Update nucleus name.
-    memset(g_PersonaName, '\0', MAX_PERSONA_NAME_LEN);
-    strncpy(g_PersonaName, pszName, nLen);
+    strncpy(g_PersonaName, pszName, nLen+1);
+    name_cvar->SetValue(pszName);
 }
 static void Reconnect_f(const CCommand& args)
 {
@@ -162,6 +162,18 @@ float CClientState::GetFrameTime() const
     return m_flFrameTime;
 }
 
+//---------------------------------------------------------------------------------
+// Purpose: registers net messages
+// Input  : *pClient - 
+//			*pChan - 
+// Output : true if setup was successful, false otherwise
+//---------------------------------------------------------------------------------
+bool CClientState::VConnectionStart(CClientState* pClient, CNetChan* pChan)
+{
+    pClient->RegisterNetMsgs(pChan);
+    return CClientState__ConnectionStart(pClient, pChan);
+}
+
 //------------------------------------------------------------------------------
 // Purpose: called when connection to the server has been closed
 //------------------------------------------------------------------------------
@@ -222,6 +234,7 @@ bool CClientState::_ProcessStringCmd(CClientState* thisptr, NET_StringCmd* msg)
 
     if (thisptr_ADJ->m_bRestrictServerCommands
 #ifndef CLIENT_DLL
+        // Don't restrict commands if we are on our own listen server
         && !g_pServer->IsActive()
 #endif // !CLIENT_DLL
         )
@@ -491,8 +504,18 @@ void CClientState::Reconnect()
     Cbuf_AddText(ECommandTarget_t::CBUF_FIRST_PLAYER, buf, cmd_source_t::kCommandSrcCode);
 }
 
+//---------------------------------------------------------------------------------
+// Purpose: registers net messages
+// Input  : *chan
+//---------------------------------------------------------------------------------
+void CClientState::RegisterNetMsgs(CNetChan* chan)
+{
+    REGISTER_SVC_MSG(SetClassVar);
+}
+
 void VClientState::Detour(const bool bAttach) const
 {
+    DetourSetup(&CClientState__ConnectionStart, &CClientState::VConnectionStart, bAttach);
     DetourSetup(&CClientState__ConnectionClosing, &CClientState::VConnectionClosing, bAttach);
     DetourSetup(&CClientState__ProcessStringCmd, &CClientState::_ProcessStringCmd, bAttach);
     DetourSetup(&CClientState__ProcessServerTick, &CClientState::VProcessServerTick, bAttach);

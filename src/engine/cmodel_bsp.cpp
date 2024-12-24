@@ -15,6 +15,7 @@
 #include "engine/host_cmd.h"
 #include "engine/cmodel_bsp.h"
 
+#include "rtech/rson.h"
 #include "rtech/pak/pakstate.h"
 #include "rtech/pak/pakparse.h"
 #include "rtech/pak/paktools.h"
@@ -40,13 +41,13 @@ PakHandle_t CustomPakData_t::LoadAndAddPak(const char* const pakFile)
 {
     if (numHandles >= MAX_CUSTOM_PAKS)
     {
-        Error(eDLL_T::ENGINE, NO_ERROR, "Tried to load pak '%s', but already reached the SDK's limit of %d!\n", pakFile, MAX_CUSTOM_PAKS);
+        Error(eDLL_T::ENGINE, NO_ERROR, "Tried to load pak '%s', but already reached the limit of %d!\n", pakFile, MAX_CUSTOM_PAKS);
         return PAK_INVALID_HANDLE;
     }
 
     const PakHandle_t pakId = g_pakLoadApi->LoadAsync(pakFile, AlignedMemAlloc(), 4, 0);
 
-    // failure, don't add and return the invalid handle.
+    // failure, don't add; return the invalid handle.
     if (pakId == PAK_INVALID_HANDLE)
         return pakId;
 
@@ -55,22 +56,68 @@ PakHandle_t CustomPakData_t::LoadAndAddPak(const char* const pakFile)
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: unloads all active custom pak handles
+// Purpose: unload a custom pak
+// NOTE   : the array must be kept contiguous; this means that the last pak in
+//          the array should always be unloaded fist!
 //-----------------------------------------------------------------------------
-void CustomPakData_t::UnloadAndRemoveAll()
+void CustomPakData_t::UnloadAndRemovePak(const int index)
 {
-    for (; numHandles-1 >= CustomPakData_t::PAK_TYPE_COUNT; numHandles--)
+    const PakHandle_t pakId = handles[index];
+    assert(pakId != PAK_INVALID_HANDLE); // invalid handles should not be inserted
+
+    g_pakLoadApi->UnloadAsync(pakId);
+    handles[index] = PAK_INVALID_HANDLE;
+
+    numHandles--;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: preload a custom pak; this keeps it available throughout the
+//          duration of the process, unless manually removed by user.
+//-----------------------------------------------------------------------------
+PakHandle_t CustomPakData_t::PreloadAndAddPak(const char* const pakFile)
+{
+    // this must never be called after a non-preloaded pak has been added!
+    // preloaded paks must always appear before custom user requested paks
+    // due to the unload order: user-requested -> preloaded -> sdk -> core.
+    assert(handles[CustomPakData_t::PAK_TYPE_COUNT+numPreload] == PAK_INVALID_HANDLE);
+
+    const PakHandle_t pakId = LoadAndAddPak(pakFile);
+
+    if (pakId != PAK_INVALID_HANDLE)
+        numPreload++;
+
+    return pakId;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: unloads all non-preloaded custom pak handles
+//-----------------------------------------------------------------------------
+void CustomPakData_t::UnloadAndRemoveNonPreloaded()
+{
+    // Preloaded paks should not be unloaded here, but only right before sdk /
+    // engine paks are unloaded. Only unload user requested and level settings
+    // paks from here. Also, the load and unload order here is FIFO, this is
+    // needed because when you load a pak, and then load another pak which
+    // happens to have an overlapping asset, the asset will be updated with
+    // that of the newer pak. If we remove the newer pak, the engine will try
+    // and revert the asset to its original state. However we asynchronously
+    // unload everything on a single FIFO lock so this is undefined behavior.
+    for (int i = CustomPakData_t::PAK_TYPE_COUNT+numPreload, n = numHandles; i < n; i++)
     {
-        const PakHandle_t pakId = handles[numHandles-1];
+        UnloadAndRemovePak(i);
+    }
+}
 
-        if (pakId == PAK_INVALID_HANDLE)
-        {
-            assert(0); // invalid handles should not be inserted
-            return;
-        }
-
-        g_pakLoadApi->UnloadAsync(pakId);
-        handles[numHandles-1] = PAK_INVALID_HANDLE;
+//-----------------------------------------------------------------------------
+// Purpose: unloads all preloaded custom pak handles
+//-----------------------------------------------------------------------------
+void CustomPakData_t::UnloadAndRemovePreloaded()
+{
+    for (int i = 0, n = numPreload; i < n; i++)
+    {
+        UnloadAndRemovePak(CustomPakData_t::PAK_TYPE_COUNT + i);
+        numPreload--;
     }
 }
 
@@ -227,8 +274,9 @@ void Mod_QueuedPakCacheFrame()
 
     const int numToProcess = startIndex;
 
-    if (startIndex <= 4)
+    if (startIndex <= CommonPakData_t::PAK_TYPE_LEVEL)
     {
+        bool keepLoaded = false;
         int numLeftToProcess = 4;
         CommonPakData_t* data = &g_commonPakData[4];
 
@@ -239,10 +287,6 @@ void Mod_QueuedPakCacheFrame()
                 PakLoadedInfo_s* const pakInfo = Pak_GetPakInfo(data->pakId);
                 PakStatus_e status;
 
-                // TODO: revisit this, this appears incorrect but also the way
-                // respawn does this. it this always supposed to be true on
-                // retail builds?
-                bool keepLoaded = true;
                 data->keepLoaded = true;
 
                 if (pakInfo->handle == data->pakId)
@@ -276,34 +320,27 @@ void Mod_QueuedPakCacheFrame()
                         s_customPakData.UnloadBasePak(CustomPakData_t::PAK_TYPE_COMMON_SDK);
                         break;
 
-                    case CommonPakData_t::PAK_TYPE_LOBBY:
-                        s_customPakData.basePaksLoaded = false;
-                        break;
-
                     default:
                         break;
                     }
 
-                    // The old gather props is set if a model couldn't be
-                    // loaded properly. If we unload level assets, we just
-                    // enable the new implementation again and re-evaluate
-                    // on the next level load. If we load a missing/bad
-                    // model again, we toggle the old implementation as
-                    // otherwise the fallback models won't render; the new
-                    // gather props solution does not attempt to obtain
-                    // studio hardware data on bad mdl handles. See
-                    // 'GatherStaticPropsSecondPass_PreInit()' for details.
-                    g_StudioMdlFallbackHandler.DisableLegacyGatherProps();
-
                     g_pakLoadApi->UnloadAsync(data->pakId);
 
-                    Mod_UnloadPakFile(); // Unload mod pak files.
-
-                    if (s_pLevelSetKV)
+                    if (numLeftToProcess == CommonPakData_t::PAK_TYPE_LEVEL)
                     {
-                        // Delete current level settings if we drop all paks..
-                        s_pLevelSetKV->DeleteThis();
-                        s_pLevelSetKV = nullptr;
+                        Mod_UnloadLevelPaks(); // Unload mod pak files.
+
+                        if (s_pLevelSetKV)
+                        {
+                            // Delete current level settings if we drop all paks..
+                            s_pLevelSetKV->DeleteThis();
+                            s_pLevelSetKV = nullptr;
+                        }
+                    }
+                    else if (numLeftToProcess == CommonPakData_t::PAK_TYPE_LOBBY)
+                    {
+                        Mod_UnloadPreloadedPaks();
+                        s_customPakData.basePaksLoaded = false;
                     }
                 }
 
@@ -380,9 +417,9 @@ void Mod_QueuedPakCacheFrame()
 
                             if (ThreadInMainThread())
                             {
-                                if (*g_bPakFifoLockAcquired)
+                                if (*g_bPakFifoLockAcquiredInMainThread)
                                 {
-                                    *g_bPakFifoLockAcquired = 0;
+                                    *g_bPakFifoLockAcquiredInMainThread = 0;
                                     JT_ReleaseFifoLock(pakFifoLock);
                                 }
                             }
@@ -402,11 +439,14 @@ void Mod_QueuedPakCacheFrame()
     }
 
     if (it == CommonPakData_t::PAK_TYPE_LOBBY)
+    {
+        Mod_PreloadPaks();
         s_customPakData.basePaksLoaded = true;
+    }
 
     if (s_customPakData.basePaksLoaded && !s_customPakData.levelResourcesLoaded)
     {
-        Mod_PreloadLevelPaks(s_CurrentLevelName.String());
+        Mod_LoadLevelPaks(s_CurrentLevelName.String());
         s_customPakData.levelResourcesLoaded = true;
     }
 
@@ -433,6 +473,57 @@ CHECK_FOR_FAILURE:
     }
 
     goto LOOP_AGAIN_OR_FINISH;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: preload paks in list and keeps them active throughout level changes
+//-----------------------------------------------------------------------------
+void Mod_PreloadPaks()
+{
+    static const char* const preloadFile = "paks/preload.rson";
+    bool parseFailure = false;
+
+    RSON::Node_t* const rson = RSON::LoadFromFile(preloadFile, "GAME", &parseFailure);
+
+    if (!rson)
+    {
+        if (parseFailure)
+            Error(eDLL_T::ENGINE, EXIT_FAILURE, "%s: failure parsing file '%s'\n", __FUNCTION__, preloadFile);
+        else
+        {
+            Warning(eDLL_T::ENGINE, "%s: could not load file '%s'\n", __FUNCTION__, preloadFile);
+            return; // No preload file, thus no error. Warn and return out.
+        }
+    }
+
+    static const char* const arrayName = "Paks";
+    const RSON::Field_t* const key = rson->FindKey(arrayName);
+
+    if (!key)
+        Error(eDLL_T::ENGINE, EXIT_FAILURE, "%s: missing array key \"%s\" in file '%s'\n", __FUNCTION__, arrayName, preloadFile);
+
+    if ((key->m_Node.m_Type != (RSON::eFieldType::RSON_ARRAY | RSON::eFieldType::RSON_STRING)) &&
+        (key->m_Node.m_Type != (RSON::eFieldType::RSON_ARRAY | RSON::eFieldType::RSON_VALUE)))
+    {
+        Error(eDLL_T::ENGINE, EXIT_FAILURE, "%s: expected an array of strings in file '%s'\n", __FUNCTION__, preloadFile);
+    }
+
+    for (int i = 0; i < key->m_Node.m_nValueCount; i++)
+    {
+        const RSON::Value_t* const value = key->m_Node.GetArrayValue(i);
+        s_customPakData.PreloadAndAddPak(value->pszString);
+    }
+
+    RSON_Free(rson, AlignedMemAlloc());
+    AlignedMemAlloc()->Free(rson);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: unloads all preloaded paks
+//-----------------------------------------------------------------------------
+void Mod_UnloadPreloadedPaks()
+{
+    s_customPakData.UnloadAndRemovePreloaded();
 }
 
 //-----------------------------------------------------------------------------
@@ -477,10 +568,10 @@ KeyValues* Mod_GetLevelSettings(const char* const pszLevelName)
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: loads required pakfile assets for specified BSP level
-// Input  : &svSetFile - 
+// Purpose: loads paks specified inside the level settings file
+// Input  : *pszLevelName - 
 //-----------------------------------------------------------------------------
-void Mod_PreloadLevelPaks(const char* const pszLevelName)
+void Mod_LoadLevelPaks(const char* const pszLevelName)
 {
     KeyValues* const pSettingsKV = Mod_GetLevelSettings(pszLevelName);
 
@@ -508,14 +599,25 @@ void Mod_PreloadLevelPaks(const char* const pszLevelName)
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: unloads all pakfiles loaded by the SDK
+// Purpose: unloads all paks loaded by the level settings file
 //-----------------------------------------------------------------------------
-void Mod_UnloadPakFile(void)
+void Mod_UnloadLevelPaks()
 {
-    s_customPakData.UnloadAndRemoveAll();
+    s_customPakData.UnloadAndRemoveNonPreloaded();
 
     g_StudioMdlFallbackHandler.ClearBadModelHandleCache();
     g_StudioMdlFallbackHandler.ClearSuppresionList();
+
+    // The old gather props is set if a model couldn't be
+    // loaded properly. If we unload level assets, we just
+    // enable the new implementation again and re-evaluate
+    // on the next level load. If we load a missing/bad
+    // model again, we toggle the old implementation as
+    // otherwise the fallback models won't render; the new
+    // gather props solution does not attempt to obtain
+    // studio hardware data on bad mdl handles. See
+    // 'GatherStaticPropsSecondPass_PreInit()' for details.
+    g_StudioMdlFallbackHandler.DisableLegacyGatherProps();
 }
 
 void VModel_BSP::Detour(const bool bAttach) const

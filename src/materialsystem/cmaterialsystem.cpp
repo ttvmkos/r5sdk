@@ -15,6 +15,7 @@
 #include "geforce/reflex.h"
 #include "radeon/antilag.h"
 #ifndef MATERIALSYSTEM_NODX
+#include "windows/id3dx.h"
 #include "gameui/imgui_system.h"
 #include "materialsystem/cmaterialglue.h"
 #endif // !MATERIALSYSTEM_NODX
@@ -47,8 +48,8 @@ InitReturnVal_t CMaterialSystem::Init(CMaterialSystem* thisptr)
 #ifdef MATERIALSYSTEM_NODX
 	// Only load the 'startup.rpak' file, as 'common_early.rpak' has assets
 	// that references assets in 'startup.rpak'.
-	PakHandle_t pakHandle = g_pakLoadApi->LoadAsync("startup.rpak", AlignedMemAlloc(), 5, 0);
-	g_pakLoadApi->WaitAsync(pakHandle, nullptr);
+	const PakHandle_t pakHandle = g_pakLoadApi->LoadAsync("startup.rpak", AlignedMemAlloc(), 5, 0);
+	g_pakLoadApi->WaitForAsyncLoad(pakHandle, nullptr);
 
 	// Trick: return INIT_FAILED to disable the loading of hardware
 	// configuration data, since we don't need it on the dedi.
@@ -139,7 +140,10 @@ void* __fastcall DispatchDrawCall(int64_t a1, uint64_t a2, int a3, int a4, int64
 //---------------------------------------------------------------------------------
 ssize_t SpinPresent(void)
 {
-	ImguiSystem()->RenderFrame();
+	CImguiSystem* const imguiSystem = ImguiSystem();
+
+	if (imguiSystem->IsInitialized())
+		imguiSystem->RenderFrame();
 
 	const ssize_t val = v_SpinPresent();
 	return val;
@@ -147,8 +151,16 @@ ssize_t SpinPresent(void)
 
 void* CMaterialSystem::SwapBuffers(CMaterialSystem* pMatSys)
 {
-	ImguiSystem()->SampleFrame();
-	ImguiSystem()->SwapBuffers();
+	CImguiSystem* const imguiSystem = ImguiSystem();
+
+	// See https://github.com/ocornut/imgui/issues/7615, looking for status msg
+	// DXGI_STATUS_OCCLUDED isn't compatible with DXGI_SWAP_EFFECT_FLIP_DISCARD.
+	// This engine however does not use the flip model.
+	if (imguiSystem->IsInitialized() && D3D11SwapChain()->Present(0, DXGI_PRESENT_TEST) != DXGI_STATUS_OCCLUDED)
+	{
+		imguiSystem->SampleFrame();
+		imguiSystem->SwapBuffers();
+	}
 
 	return CMaterialSystem__SwapBuffers(pMatSys);
 }

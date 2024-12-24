@@ -5,6 +5,11 @@
  * _basetypes
  *-----------------------------------------------------------------------------*/
 
+// This is a trick to get the DLL extension off the -D option on the command line.
+#define DLLExtTokenPaste(x) #x
+#define DLLExtTokenPaste2(x) DLLExtTokenPaste(x)
+#define DLL_EXT_STRING DLLExtTokenPaste2( _DLL_EXT )
+
 //-----------------------------------------------------------------------------
 // Set up platform defines.
 //-----------------------------------------------------------------------------
@@ -135,10 +140,11 @@
 #define MAX_MAP_NAME_HOST 64 // Max host BSP file name len.
 #define MAX_MAP_NAME      64 // Max BSP file name len.
 
-#define SDK_VERSION "VGameSDK010" // Increment this with every /breaking/ SDK change (i.e. security/backend changes breaking compatibility).
+#define SDK_VERSION "VGameSDK013" // Increment this with every /breaking/ SDK change (i.e. security/backend changes breaking compatibility).
 #define SDK_ARRAYSIZE(arr) ((sizeof(arr) / sizeof(*arr))) // Name due to IMGUI implementation and NT implementation that we shouldn't share across everywhere.
 
 #define SDK_SYSTEM_CFG_PATH "cfg/system/"
+#define SDK_USER_CFG_PATH "cfg/user/"
 
 #define VALID_CHARSTAR(star) (star && star[0]) // Check if char* is valid and not empty.
 

@@ -30,9 +30,9 @@ class VPlane
 public:
 	VPlane();
 	VPlane(const Vector3D& vNormal, vec_t dist);
-	VPlane(const Vector3D& vPoint, const QAngle& ang);
 
 	void		Init(const Vector3D& vNormal, vec_t dist);
+	void		Init(const Vector3D& vPoint, const QAngle& ang);
 
 	// Return the distance from the point to the plane.
 	vec_t		DistTo(const Vector3D& vVec) const;
@@ -87,16 +87,16 @@ inline VPlane::VPlane(const Vector3D& vNormal, vec_t dist)
 	m_Dist = dist;
 }
 
-inline VPlane::VPlane(const Vector3D& vPoint, const QAngle& ang)
-{
-	m_Normal = ang.GetNormal();
-	m_Dist = vPoint.x * m_Normal.x + vPoint.y * m_Normal.y + vPoint.z * m_Normal.z;
-}
-
 inline void	VPlane::Init(const Vector3D& vNormal, vec_t dist)
 {
 	m_Normal = vNormal;
 	m_Dist = dist;
+}
+
+inline void	VPlane::Init(const Vector3D& vPoint, const QAngle& ang)
+{
+	m_Normal = ang.GetNormal();
+	m_Dist = vPoint.x * m_Normal.x + vPoint.y * m_Normal.y + vPoint.z * m_Normal.z;
 }
 
 inline vec_t VPlane::DistTo(const Vector3D& vVec) const

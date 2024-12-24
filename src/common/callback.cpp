@@ -23,6 +23,7 @@
 #endif // !DEDICATED
 #include "engine/client/client.h"
 #include "engine/net.h"
+#include "engine/cmd.h"
 #include "engine/host_cmd.h"
 #include "engine/host_state.h"
 #include "engine/enginetrace.h"
@@ -230,32 +231,55 @@ void VPK_Unmount_f(const CCommand& args)
 
 void LanguageChanged_f(IConVar* pConVar, const char* pOldString, float flOldValue, ChangeUserData_t pUserData)
 {
-	if (ConVar* pConVarRef = g_pCVar->FindVar(pConVar->GetName()))
+	const char* pNewString = language_cvar->GetString();
+
+	if (strcmp(pOldString, pNewString) == NULL)
+		return; // Same language.
+
+	if (!Localize_IsLanguageSupported(pNewString))
 	{
-		const char* pNewString = pConVarRef->GetString();
-
-		if (strcmp(pOldString, pConVarRef->GetString()) == NULL)
-			return; // Same language.
-
-		if (!Localize_IsLanguageSupported(pNewString))
+		// if new text isn't valid but the old value is, reset the value
+		if (Localize_IsLanguageSupported(pOldString))
+			pNewString = pOldString;
+		else
 		{
-			// if new text isn't valid but the old value is, reset the value
-			if (Localize_IsLanguageSupported(pOldString))
-				pNewString = pOldString;
-			else
-			{
-				// this shouldn't really happen, but if neither the old nor new values are valid, set to english
-				Assert(0);
-				pNewString = g_LanguageNames[0];
-			}
+			// this shouldn't really happen, but if neither the old nor new values are valid, set to english
+			Assert(0);
+			pNewString = g_LanguageNames[0];
 		}
 
-		pConVarRef->SetValue(pNewString);
-		g_MasterServer.SetLanguage(pNewString);
+		language_cvar->SetValue(pNewString);
 	}
 }
 
 #ifndef DEDICATED
+void setClassVarClient_f(const CCommand& args)
+{
+	v__setClassVarClient_f(args);
+}
+
+static ConCommand _setClassVarClient("_setClassVarClient", setClassVarClient_f, "Set a class var on the client", FCVAR_DEVELOPMENTONLY|FCVAR_CLIENTDLL|FCVAR_CHEAT|FCVAR_SERVER_CAN_EXECUTE);
+
+/*
+=====================
+Set_f
+
+  Set a class var on the server & client.
+=====================
+*/
+void Set_f(const CCommand& args)
+{
+	v__setClassVarClient_f(args);
+
+	const char* key = args.Arg(1);
+	const char* val = args.Arg(2);
+
+	char buf[256];
+	V_snprintf(buf, sizeof(buf), "_setClassVarServer %s \"%s\"\n", key, val);
+
+	Cbuf_AddText(ECommandTarget_t::CBUF_FIRST_PLAYER, buf, cmd_source_t::kCommandSrcInvalid);
+}
+
 /*
 =====================
 Mat_CrossHair_f
@@ -582,7 +606,6 @@ void UIScript_Reset_f()
 	v__UIScript_Reset_f();
 }
 #endif // !DEDICATED
-
 
 void VCallback::Detour(const bool bAttach) const
 {
