@@ -227,21 +227,6 @@ void sq_pushuserpointer(HSQUIRRELVM v, void* p)
 
 //---------------------------------------------------------------------------------
 
-void sq_newclosure(HSQUIRRELVM v, SQFUNCTION func, SQUnsignedInteger nfreevars) {
-	SQNativeClosure* nc = SQNativeClosure::Create(_ss(v), func);
-	if (!nc) {
-		Msg(eDLL_T::SERVER, "sq_newclosure Creation Failed");
-		return;
-	}
-
-	nc->_outervalues.resize(nfreevars);
-	for (SQUnsignedInteger i = 0; i < nfreevars; ++i) {
-		nc->_outervalues[i] = v->Top();
-		v->Pop();
-	}
-
-	v->Push(SQObjectPtr(nc));
-}
 
 SQRESULT sq_setnativeclosurename(HSQUIRRELVM v, SQInteger idx, const SQChar* name) {
 	SQObject o = stack_get(v, idx);
