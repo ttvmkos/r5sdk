@@ -22,7 +22,6 @@
 
 #include "game/server/logger.h"
 #include "player.h"
-#include "player.h"
 #include <common/callback.h>
 
 /*
@@ -256,67 +255,10 @@ namespace VScriptCode
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
-    }
-
-    namespace PlayerEntity
-    {
-        //-----------------------------------------------------------------------------
-        // Purpose: sets a class var on the server and each client
-        //-----------------------------------------------------------------------------
-        SQRESULT ScriptSetClassVar(HSQUIRRELVM v)
-        {
-            CPlayer* player = nullptr;
-
-            if (!v_sq_getentity(v, (SQEntity*)&player))
-                return SQ_ERROR;
-
-            const SQChar* key = nullptr;
-            sq_getstring(v, 2, &key);
-
-            if (!VALID_CHARSTAR(key))
-            {
-                v_SQVM_ScriptError("Empty or null class key");
-                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-            }
-
-            const SQChar* val = nullptr;
-            sq_getstring(v, 3, &val);
-
-            if (!VALID_CHARSTAR(val))
-            {
-                v_SQVM_ScriptError("Empty or null class var");
-                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-            }
-
-            CClient* const client = g_pServer->GetClient(player->GetEdict() - 1);
-            SVC_SetClassVar msg(key, val);
-
-            const bool success = client->SendNetMsgEx(&msg, false, true, false);
-
-            if (success)
-            {
-                const char* pArgs[3] = {
-                    "_setClassVarServer",
-                    key,
-                    val
-                };
-
-                const CCommand cmd((int)V_ARRAYSIZE(pArgs), pArgs, cmd_source_t::kCommandSrcCode);
-                const int oldIdx = *g_nCommandClientIndex;
-
-                *g_nCommandClientIndex = client->GetUserID();
-                v__setClassVarServer_f(cmd);
-
-                *g_nCommandClientIndex = oldIdx;
-            }
-
-            sq_pushbool(v, success);
-            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
-        }
 
         //-----------------------------------------------------------------------------
-        // Generate / get usable matchID 
-        //-----------------------------------------------------------------------------
+       // Generate / get usable matchID 
+       //-----------------------------------------------------------------------------
 
         std::atomic<int64_t> g_MatchID{ 0 };
 
@@ -790,7 +732,7 @@ namespace VScriptCode
                 LOGGER::TaskManager::getInstance().ResetPlayerStats(player_oid);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
             }
-            
+
             SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
         }
 
@@ -808,10 +750,10 @@ namespace VScriptCode
 
                 std::string settings = LOGGER::FetchGlobalSettings(query);
                 sq_pushstring(v, settings.c_str(), -1);
-                
+
                 SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
             }
-            
+
             SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
         }
 
@@ -874,7 +816,7 @@ namespace VScriptCode
             if (!g_pServer->IsActive())
             {
                 SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
-                
+
                 //return array with -1 at element[0]
                 sq_newarray(v, 0);
                 sq_pushinteger(v, -1);
@@ -915,22 +857,22 @@ namespace VScriptCode
                 }
 
                 const CNetChan* pNetChan = pClient->GetNetChan();
-                
+
                 if (!pNetChan)
                 {
                     continue;
                 }
 
                 const char* clientName = pNetChan->GetName();
-                
+
                 if (!clientName)
                 {
                     continue;
                 }
 
                 std::string expectedBotName = "[" + std::string(ImmutableName) + "]";
-                
-                if ( strcmp( clientName, expectedBotName.c_str()) == 0 )
+
+                if (strcmp(clientName, expectedBotName.c_str()) == 0)
                 {
                     int ID = pClient->GetUserID();
                     if (ID >= 0 && ID <= 120)
@@ -985,8 +927,64 @@ namespace VScriptCode
 
             return SQ_OK;
         }
+    } //namespace Server
 
-    } //namespace SERVER
+    namespace PlayerEntity
+    {
+        //-----------------------------------------------------------------------------
+        // Purpose: sets a class var on the server and each client
+        //-----------------------------------------------------------------------------
+        SQRESULT ScriptSetClassVar(HSQUIRRELVM v)
+        {
+            CPlayer* player = nullptr;
+
+            if (!v_sq_getentity(v, (SQEntity*)&player))
+                return SQ_ERROR;
+
+            const SQChar* key = nullptr;
+            sq_getstring(v, 2, &key);
+
+            if (!VALID_CHARSTAR(key))
+            {
+                v_SQVM_ScriptError("Empty or null class key");
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+
+            const SQChar* val = nullptr;
+            sq_getstring(v, 3, &val);
+
+            if (!VALID_CHARSTAR(val))
+            {
+                v_SQVM_ScriptError("Empty or null class var");
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+
+            CClient* const client = g_pServer->GetClient(player->GetEdict() - 1);
+            SVC_SetClassVar msg(key, val);
+
+            const bool success = client->SendNetMsgEx(&msg, false, true, false);
+
+            if (success)
+            {
+                const char* pArgs[3] = {
+                    "_setClassVarServer",
+                    key,
+                    val
+                };
+
+                const CCommand cmd((int)V_ARRAYSIZE(pArgs), pArgs, cmd_source_t::kCommandSrcCode);
+                const int oldIdx = *g_nCommandClientIndex;
+
+                *g_nCommandClientIndex = client->GetUserID();
+                v__setClassVarServer_f(cmd);
+
+                *g_nCommandClientIndex = oldIdx;
+            }
+
+            sq_pushbool(v, success);
+            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+        }
+    } //namespace PlayerEntity
 }
 
 

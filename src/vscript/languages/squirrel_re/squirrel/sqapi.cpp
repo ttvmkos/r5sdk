@@ -227,7 +227,7 @@ void sq_pushuserpointer(HSQUIRRELVM v, void* p)
 
 //---------------------------------------------------------------------------------
 
-
+/*
 SQRESULT sq_setnativeclosurename(HSQUIRRELVM v, SQInteger idx, const SQChar* name) {
 	SQObject o = stack_get(v, idx);
 	if (sq_isnativeclosure(o)) {
@@ -245,6 +245,7 @@ SQRESULT sq_setnativeclosurename(HSQUIRRELVM v, SQInteger idx, const SQChar* nam
 	}
 	return SQ_ERROR;
 }
+*/
 
 //---------------------------------------------------------------------------------
 void sq_push(HSQUIRRELVM v, SQObject& obj)

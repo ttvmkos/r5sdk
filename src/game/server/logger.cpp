@@ -57,19 +57,6 @@ enum ServerData
     HOST_PLAYLIST,
 };
 
-std::string GetLocalServerData( ServerData dataType )
-{
-    const NetGameServer_t& server = g_ServerHostManager.GetDetails();
-
-    switch (dataType)
-    {
-        case HOST_NAME: return server.name;
-        case HOST_DESCRIPTION:return server.description;
-        case HOST_PLAYLIST: return server.playlist;  
-        default: return "";
-    }
-}
-
 
 //-----------------------------------------------------------------------------
 // string manipulation sanitize function
@@ -1007,7 +994,7 @@ namespace LOGGER
 
         std::string uniquekey = SanitizeString(GetSetting("uniquekey"));
         std::string identifier = SanitizeString(GetSetting("identifier"));
-        std::string serverName = ::IsDedicated() ? hostname->GetString() : GetLocalServerData( HOST_NAME );
+        std::string serverName = hostname->GetString();
 
         doc.AddMember("stats", stats, allocator);
         doc.AddMember("servername", rapidjson::Value(serverName.c_str(), allocator), allocator);
@@ -1082,7 +1069,7 @@ namespace LOGGER
 
 
         std::string postData = "servername=";
-        postData += ::IsDedicated() ? hostname->GetString() : GetLocalServerData(HOST_NAME);
+        postData += hostname->GetString();
         postData += "&action=";
         postData += action;
         postData += "&player_name=";
@@ -1166,7 +1153,7 @@ namespace LOGGER
             return;
         }
 
-        const std::string serverName = ::IsDedicated() ? hostname->GetString() : GetLocalServerData(HOST_NAME);
+        const std::string serverName = hostname->GetString();
 
         size_t recap_len = recap.length();
         if (recap_len > static_cast<size_t>(INT_MAX))
@@ -1692,9 +1679,9 @@ namespace LOGGER
         //DevMsg(eDLL_T::SERVER, "Curl initialized...\n");
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/tracker.php");
 
-        std::string serverName = ::IsDedicated() ? hostname->GetString() : GetLocalServerData(HOST_NAME);
+        std::string serverName = hostname->GetString();
         std::string serverMap = g_pHostState->m_levelName;
-        std::string gameType = GetLocalServerData(HOST_PLAYLIST);
+        std::string gameType = mp_gamemode->GetString();
         std::string identifier = GetSetting("identifier");
         std::string uniquekey = GetSetting("apikey");
 
@@ -2217,9 +2204,9 @@ namespace LOGGER
 
         std::vector<std::string> startLines;
 
-        std::string serverName = ::IsDedicated() ? hostname->GetString() : GetLocalServerData(HOST_NAME);
+        std::string serverName = hostname->GetString();
         std::string serverMap = g_pHostState->m_levelName;
-        std::string gameType = GetLocalServerData(HOST_PLAYLIST);
+        std::string gameType = mp_gamemode->GetString();
 
         startLines.push_back("|#MatchID:" + matchID);
         startLines.push_back("|#Gameversion:" + SERVER_V);

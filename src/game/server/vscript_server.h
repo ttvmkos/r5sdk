@@ -6,9 +6,6 @@ namespace VScriptCode
 {
 	namespace Server
 	{
-		SQRESULT CreateServer(HSQUIRRELVM v);
-		SQRESULT DestroyServer(HSQUIRRELVM v);
-
 		SQRESULT SetAutoReloadState(HSQUIRRELVM v);
 
 		SQRESULT KickPlayerByName(HSQUIRRELVM v);
@@ -24,7 +21,6 @@ namespace VScriptCode
 		SQRESULT GetServerID(HSQUIRRELVM v);
 
 		SQRESULT IsServerActive(HSQUIRRELVM v);
-		SQRESULT IsDedicated(HSQUIRRELVM v);
 
 		SQRESULT InitializeLogThread__internal(HSQUIRRELVM v);
 		SQRESULT LogEvent__internal(HSQUIRRELVM v);
