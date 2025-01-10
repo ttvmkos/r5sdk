@@ -3,8 +3,6 @@
 #include "cmaterialglue.h"
 #include "public/imaterialsystem.h"
 
-#define STREAM_DB_EXT "stbsp"
-
 class CMaterialSystem
 {
 public:
@@ -17,6 +15,9 @@ public:
 	static void* SwapBuffers(CMaterialSystem* pMatSys);
 	static CMaterialGlue* FindMaterialEx(CMaterialSystem* pMatSys, const char* pMaterialName, uint8_t nMaterialType, int nUnk, bool bComplain);
 	static Vector2D GetScreenSize(CMaterialSystem* pMatSys = nullptr);
+
+	static void CreditModelTextures(CMaterialSystem* const pMatSys, CMaterialGlue* const materialGlue, __int64 a3, __int64 a4, unsigned int a5, const Vector3D* const pViewOrigin, const float tanOfHalfFov, const float viewWidthPixels, int a9);
+	static void UpdateStreamCamera(CMaterialSystem* const pMatSys, const Vector3D* const camPos, const QAngle* const camAng, const float halfFovX, const float viewWidth);
 #endif // !MATERIALSYSTEM_NODX
 
 	// TODO: reverse the vftable!
@@ -75,20 +76,15 @@ inline void*(*CMaterialSystem__SwapBuffers)(CMaterialSystem* pMatSys);
 inline CMaterialGlue*(*CMaterialSystem__FindMaterialEx)(CMaterialSystem* pMatSys, const char* pMaterialName, uint8_t nMaterialType, int nUnk, bool bComplain);
 inline void(*CMaterialSystem__GetScreenSize)(CMaterialSystem* pMatSys, float* outX, float* outY);
 
+inline void(*CMaterialSystem__CreditModelTextures)(CMaterialSystem* const pMatSys, CMaterialGlue* const materialGlue, __int64 a3, __int64 a4, unsigned int a5, const Vector3D* const pViewOrigin, const float tanOfHalfFov, const float viewWidthPixels, int a9);
+inline void(*CMaterialSystem__UpdateStreamCamera)(CMaterialSystem* const pMatSys, const Vector3D* const camPos, const QAngle* const camAng, const float halfFovX, const float viewWidth);
+
 inline void*(*v_DispatchDrawCall)(int64_t a1, uint64_t a2, int a3, int a4, int64_t a5, int a6, uint8_t a7, int64_t a8, uint32_t a9, uint32_t a10, int a11, __m128* a12, int a13, int64_t a14);
 inline ssize_t(*v_SpinPresent)(void);
-inline void(*CMaterialSystem__GetStreamOverlay)(const char* mode, char* buf, size_t bufSize);
-inline const char*(*CMaterialSystem__DrawStreamOverlay)(void* thisptr, uint8_t* a2, void* unused, void* a4);
 #endif // !MATERIALSYSTEM_NODX
-
-inline void(*v_StreamDB_Init)(const char* const pszLevelName);
 
 #ifndef MATERIALSYSTEM_NODX
 inline void** s_pRenderContext; // NOTE: This is some CMaterial instance or array.
-
-inline ssize_t* g_nTotalStreamingTextureMemory    = nullptr;
-inline ssize_t* g_nUnfreeStreamingTextureMemory   = nullptr;
-inline ssize_t* g_nUnusableStreamingTextureMemory = nullptr;
 #endif // !MATERIALSYSTEM_NODX
 
 // TODO: move to materialsystem_global.h!
@@ -112,17 +108,13 @@ class VMaterialSystem : public IDetour
 		LogFunAdr("CMaterialSystem::SwapBuffers", CMaterialSystem__SwapBuffers);
 		LogFunAdr("CMaterialSystem::FindMaterialEx", CMaterialSystem__FindMaterialEx);
 		LogFunAdr("CMaterialSystem::GetScreenSize", CMaterialSystem__GetScreenSize);
-		LogFunAdr("CMaterialSystem::GetStreamOverlay", CMaterialSystem__GetStreamOverlay);
-		LogFunAdr("CMaterialSystem::DrawStreamOverlay", CMaterialSystem__DrawStreamOverlay);
+		LogFunAdr("CMaterialSystem::CreditModelTextures", CMaterialSystem__CreditModelTextures);
+		LogFunAdr("CMaterialSystem::UpdateStreamCamera", CMaterialSystem__UpdateStreamCamera);
 		LogFunAdr("DispatchDrawCall", v_DispatchDrawCall);
 		LogFunAdr("SpinPresent", v_SpinPresent);
 #endif // !MATERIALSYSTEM_NODX
-		LogFunAdr("StreamDB_Init", v_StreamDB_Init);
 
 #ifndef MATERIALSYSTEM_NODX
-		LogVarAdr("g_nTotalStreamingTextureMemory", g_nTotalStreamingTextureMemory);
-		LogVarAdr("g_nUnfreeStreamingTextureMemory", g_nUnfreeStreamingTextureMemory);
-		LogVarAdr("g_nUnusableStreamingTextureMemory", g_nUnusableStreamingTextureMemory);
 		LogVarAdr("s_pRenderContext", s_pRenderContext);
 		LogVarAdr("g_MaterialAdapterMgr", g_pMaterialAdapterMgr);
 #endif // !MATERIALSYSTEM_NODX
@@ -140,22 +132,17 @@ class VMaterialSystem : public IDetour
 
 		g_GameDll.FindPatternSIMD("44 89 4C 24 ?? 44 88 44 24 ?? 48 89 4C 24 ??").GetPtr(CMaterialSystem__FindMaterialEx);
 		g_GameDll.FindPatternSIMD("8B 05 ?? ?? ?? ?? 89 02 8B 05 ?? ?? ?? ?? 41 89 ?? C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC 8B 05 ?? ?? ?? ??").GetPtr(CMaterialSystem__GetScreenSize);
-		g_GameDll.FindPatternSIMD("E8 ?? ?? ?? ?? 80 7C 24 ?? ?? 0F 84 ?? ?? ?? ?? 48 89 9C 24 ?? ?? ?? ??").FollowNearCallSelf().GetPtr(CMaterialSystem__GetStreamOverlay);
-		g_GameDll.FindPatternSIMD("41 56 B8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 2B E0 C6 02 ??").GetPtr(CMaterialSystem__DrawStreamOverlay);
+
+		g_GameDll.FindPatternSIMD("48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B 02 48 8B CA 49 8B F9").GetPtr(CMaterialSystem__CreditModelTextures);
+		g_GameDll.FindPatternSIMD("48 83 EC ?? 48 8B 05 ?? ?? ?? ?? 44 0F 29 44 24").GetPtr(CMaterialSystem__UpdateStreamCamera);
 
 		g_GameDll.FindPatternSIMD("44 89 4C 24 ?? 44 89 44 24 ?? 48 89 4C 24 ?? 55 53 56").GetPtr(v_DispatchDrawCall);
 		g_GameDll.FindPatternSIMD("48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 8B 15 ?? ?? ?? ??").GetPtr(v_SpinPresent);
 #endif // !MATERIALSYSTEM_NODX
-
-		g_GameDll.FindPatternSIMD("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 54 41 56 41 57 48 83 EC 40 48 8B E9").GetPtr(v_StreamDB_Init);
 	}
 	virtual void GetVar(void) const
 	{
 #ifndef MATERIALSYSTEM_NODX
-		CMemory(CMaterialSystem__DrawStreamOverlay).Offset(0x1C).FindPatternSelf("48 8B 05", CMemory::Direction::DOWN).ResolveRelativeAddressSelf(0x3, 0x7).GetPtr(g_nTotalStreamingTextureMemory);
-		CMemory(CMaterialSystem__DrawStreamOverlay).Offset(0x2D).FindPatternSelf("48 8B 05", CMemory::Direction::DOWN).ResolveRelativeAddressSelf(0x3, 0x7).GetPtr(g_nUnfreeStreamingTextureMemory);
-		CMemory(CMaterialSystem__DrawStreamOverlay).Offset(0x50).FindPatternSelf("48 8B 05", CMemory::Direction::DOWN).ResolveRelativeAddressSelf(0x3, 0x7).GetPtr(g_nUnusableStreamingTextureMemory);
-
 		CMemory(v_DispatchDrawCall).FindPattern("48 8B ?? ?? ?? ?? 01").ResolveRelativeAddressSelf(0x3, 0x7).GetPtr(s_pRenderContext);
 		CMemory(CMaterialSystem__Disconnect).FindPattern("48 8D").ResolveRelativeAddressSelf(0x3, 0x7).GetPtr(g_pMaterialAdapterMgr);
 #endif // !MATERIALSYSTEM_NODX

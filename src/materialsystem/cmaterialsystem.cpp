@@ -18,6 +18,7 @@
 #include "windows/id3dx.h"
 #include "gameui/imgui_system.h"
 #include "materialsystem/cmaterialglue.h"
+#include "materialsystem/texturestreaming.h"
 #endif // !MATERIALSYSTEM_NODX
 #include "materialsystem/cmaterialsystem.h"
 
@@ -94,33 +95,6 @@ int CMaterialSystem::Shutdown(CMaterialSystem* thisptr)
 }
 
 #ifndef MATERIALSYSTEM_NODX
-//---------------------------------------------------------------------------------
-// Purpose: loads and processes STBSP files
-// (overrides level name if stbsp field has value in prerequisites file)
-// Input  : *pszLevelName - 
-//---------------------------------------------------------------------------------
-void StreamDB_Init(const char* pszLevelName)
-{
-	KeyValues* pSettingsKV = Mod_GetLevelSettings(pszLevelName);
-
-	if (pSettingsKV)
-	{
-		KeyValues* pStreamKV = pSettingsKV->FindKey("StreamDB");
-
-		if (pStreamKV)
-		{
-			const char* pszColumnName = pStreamKV->GetString();
-			Msg(eDLL_T::MS, "StreamDB_Init: Loading override STBSP file '%s.stbsp'\n", pszColumnName);
-
-			v_StreamDB_Init(pszColumnName);
-			return;
-		}
-	}
-
-	Msg(eDLL_T::MS, "StreamDB_Init: Loading STBSP file '%s.stbsp'\n", pszLevelName);
-	v_StreamDB_Init(pszLevelName);
-}
-
 //---------------------------------------------------------------------------------
 // Purpose: draw frame
 //---------------------------------------------------------------------------------
@@ -200,6 +174,57 @@ Vector2D CMaterialSystem::GetScreenSize(CMaterialSystem* pMatSys)
 
 	return vecScreenSize;
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: same as StreamDB_CreditWorldTextures, but also takes the coverage
+//          of the dynamic model into account.
+// Input  : *pMatSys - 
+//			*materialGlue - 
+//			a3 - 
+//			a4 - 
+//			a5 - 
+//			*pViewOrigin - 
+//			tanOfHalfFov - 
+//			viewWidthPixels - 
+//			a9 - 
+//-----------------------------------------------------------------------------
+void CMaterialSystem::CreditModelTextures(CMaterialSystem* const pMatSys, CMaterialGlue* const materialGlue, __int64 a3, __int64 a4, unsigned int a5, const Vector3D* const pViewOrigin, const float tanOfHalfFov, const float viewWidthPixels, int a9)
+{
+	if (!materialGlue->CanCreditModelTextures())
+		return;
+
+	// If we use the GPU driven texture streaming system, do not run this code
+	// as the compute shaders deals with both static and dynamic model textures.
+	if (gpu_driven_tex_stream->GetBool())
+		return;
+
+	MaterialGlue_s* const material = materialGlue->Get();
+	material->lastFrame = s_textureStreamMgr->thisFrame;
+
+	v_StreamDB_CreditModelTextures(material->streamingTextureHandles, material->streamingTextureHandleCount, a3, a4, a5, pViewOrigin, tanOfHalfFov, viewWidthPixels, a9);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: updates the stream camera used for getting the column from the STBSP
+// Input  : *pMatSys - 
+//			*camPos - 
+//			*camAng - 
+//			halfFovX - 
+//			viewWidth - 
+//-----------------------------------------------------------------------------
+void CMaterialSystem::UpdateStreamCamera(CMaterialSystem* const pMatSys, const Vector3D* const camPos, 
+	const QAngle* const camAng, const float halfFovX, const float viewWidth)
+{
+	// The stream camera is only used for the STBSP. If we use the GPU feedback
+	// driven texture streaming system instead, do not run this code.
+	if (gpu_driven_tex_stream->GetBool())
+		return;
+
+	// NOTE: 'camAng' is set and provided to the function below, but the actual
+	// function that updates the global state (StreamDB_SetCameraPosition)
+	// isn't using it. The parameter is unused.
+	CMaterialSystem__UpdateStreamCamera(pMatSys, camPos, camAng, halfFovX, viewWidth);
+}
 #endif // !MATERIALSYSTEM_NODX
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -215,7 +240,9 @@ void VMaterialSystem::Detour(const bool bAttach) const
 	DetourSetup(&CMaterialSystem__SwapBuffers, &CMaterialSystem::SwapBuffers, bAttach);
 	DetourSetup(&CMaterialSystem__FindMaterialEx, &CMaterialSystem::FindMaterialEx, bAttach);
 
-	DetourSetup(&v_StreamDB_Init, &StreamDB_Init, bAttach);
+	DetourSetup(&CMaterialSystem__CreditModelTextures, &CMaterialSystem::CreditModelTextures, bAttach);
+	DetourSetup(&CMaterialSystem__UpdateStreamCamera, &CMaterialSystem::UpdateStreamCamera, bAttach);
+
 	DetourSetup(&v_DispatchDrawCall, &DispatchDrawCall, bAttach);
 	DetourSetup(&v_SpinPresent, &SpinPresent, bAttach);
 #endif // !MATERIALSYSTEM_NODX

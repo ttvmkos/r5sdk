@@ -10,6 +10,7 @@
 #include "geforce/reflex.h"
 #include "gameui/IConsole.h"
 #include "gameui/IBrowser.h"
+#include "gameui/IStreamOverlay.h"
 #include "gameui/imgui_system.h"
 #include "engine/framelimit.h"
 #include "engine/sys_mainwind.h"
@@ -116,96 +117,108 @@ HRESULT __stdcall ResizeBuffers(IDXGISwapChain* pSwapChain, UINT nBufferCount, U
 // Disable stack warning, tells us to move more data to the heap instead. Not really possible with 'initialData' here. Since its parallel processed.
 // Also disable 6378, complains that there is no control path where it would use 'nullptr', if that happens 'Error' will be called though.
 #pragma warning( disable : 6262 6387)
-void(*v_CreateTextureResource)(TextureHeader_t*, INT_PTR);
+void(*v_CreateTextureResource)(TextureAsset_s*, INT_PTR);
 constexpr uint32_t ALIGNMENT_SIZE = 15; // Creates 2D texture and shader resource from textureHeader and imageData.
-void CreateTextureResource(TextureHeader_t* textureHeader, INT_PTR imageData)
+void CreateTextureResource(TextureAsset_s* textureHeader, INT_PTR imageData)
 {
-	if (textureHeader->m_nDepth && !textureHeader->m_nHeight) // Return never gets hit. Maybe its some debug check?
+	if (textureHeader->depth && !textureHeader->height) // Return never gets hit. Maybe its some debug check?
 		return;
 
-	__int64 initialData[4096]{};
-	textureHeader->m_nTextureMipLevels = textureHeader->m_nPermanentMipCount;
+	i64 initialData[4096]{};
+	textureHeader->textureMipLevels = textureHeader->permanentMipLevels;
 
-	const int totalStreamedMips = textureHeader->m_nOptStreamedMipCount + textureHeader->m_nStreamedMipCount;
-	int mipLevel = textureHeader->m_nPermanentMipCount + totalStreamedMips;
+	const int totalStreamedMips = textureHeader->optStreamedMipLevels + textureHeader->streamedMipLevels;
+	int mipLevel = textureHeader->permanentMipLevels + totalStreamedMips;
 	if (mipLevel != totalStreamedMips)
 	{
 		do
 		{
 			--mipLevel;
-			if (textureHeader->m_nArraySize)
+			if (textureHeader->arraySize)
 			{
 				int mipWidth = 0;
-				if (textureHeader->m_nWidth >> mipLevel > 1)
-					mipWidth = (textureHeader->m_nWidth >> mipLevel) - 1;
+				if (textureHeader->width >> mipLevel > 1)
+					mipWidth = (textureHeader->width >> mipLevel) - 1;
 
 				int mipHeight = 0;
-				if (textureHeader->m_nHeight >> mipLevel > 1)
-					mipHeight = (textureHeader->m_nHeight >> mipLevel) - 1;
+				if (textureHeader->height >> mipLevel > 1)
+					mipHeight = (textureHeader->height >> mipLevel) - 1;
 
-				uint8_t x = s_pBytesPerPixel[textureHeader->m_nImageFormat].first;
-				uint8_t y = s_pBytesPerPixel[textureHeader->m_nImageFormat].second;
+				const TextureBytesPerPixel_s& perPixel = s_pBytesPerPixel[textureHeader->imageFormat];
 
-				uint32_t bppWidth = (y + mipWidth) >> (y >> 1);
-				uint32_t bppHeight = (y + mipHeight) >> (y >> 1);
-				uint32_t sliceWidth = x * (y >> (y >> 1));
+				const u8 x = perPixel.x;
+				const u8 y = perPixel.y;
 
-				uint32_t rowPitch = sliceWidth * bppWidth;
-				uint32_t slicePitch = x * bppWidth * bppHeight;
+				const u32 bppWidth = (y + mipWidth) >> (y >> 1);
+				const u32 bppHeight = (y + mipHeight) >> (y >> 1);
+				const u32 sliceWidth = x * (y >> (y >> 1));
 
-				uint32_t subResourceEntry = mipLevel;
-				for (int i = 0; i < textureHeader->m_nArraySize; i++)
+				const u32 rowPitch = sliceWidth * bppWidth;
+				const u32 slicePitch = x * bppWidth * bppHeight;
+
+				u32 subResourceEntry = mipLevel;
+				for (int i = 0; i < textureHeader->arraySize; i++)
 				{
-					uint32_t offsetCurrentResourceData = subResourceEntry << 4u;
+					const u32 offsetCurrentResourceData = subResourceEntry << 4u;
 
-					*(int64_t*)((uint8_t*)initialData + offsetCurrentResourceData) = imageData;
-					*(uint32_t*)((uint8_t*)&initialData[1] + offsetCurrentResourceData) = rowPitch;
-					*(uint32_t*)((uint8_t*)&initialData[1] + offsetCurrentResourceData + 4) = slicePitch;
+					*(s64*)((u8*)initialData + offsetCurrentResourceData) = imageData;
+					*(u32*)((u8*)&initialData[1] + offsetCurrentResourceData) = rowPitch;
+					*(u32*)((u8*)&initialData[1] + offsetCurrentResourceData + 4) = slicePitch;
 
 					imageData += (slicePitch + ALIGNMENT_SIZE) & ~ALIGNMENT_SIZE;
-					subResourceEntry += textureHeader->m_nPermanentMipCount;
+					subResourceEntry += textureHeader->permanentMipLevels;
 				}
 			}
 		} while (mipLevel != totalStreamedMips);
 	}
 
-	const DXGI_FORMAT dxgiFormat = g_TxtrAssetToDxgiFormat[textureHeader->m_nImageFormat]; // Get dxgi format
+	const DXGI_FORMAT dxgiFormat = g_TxtrAssetToDxgiFormat[textureHeader->imageFormat]; // Get dxgi format
 
 	D3D11_TEXTURE2D_DESC textureDesc{};
-	textureDesc.Width = textureHeader->m_nWidth >> mipLevel;
-	textureDesc.Height = textureHeader->m_nHeight >> mipLevel;
-	textureDesc.MipLevels = textureHeader->m_nPermanentMipCount;
-	textureDesc.ArraySize = textureHeader->m_nArraySize;
+	textureDesc.Width = textureHeader->width >> mipLevel;
+	textureDesc.Height = textureHeader->height >> mipLevel;
+	textureDesc.MipLevels = textureHeader->permanentMipLevels;
+	textureDesc.ArraySize = textureHeader->arraySize;
 	textureDesc.Format = dxgiFormat;
 	textureDesc.SampleDesc.Count = 1;
 	textureDesc.SampleDesc.Quality = 0;
-	textureDesc.Usage = textureHeader->m_nCPUAccessFlag != 2 ? D3D11_USAGE_IMMUTABLE : D3D11_USAGE_DEFAULT;
+	textureDesc.Usage = textureHeader->usageFlags != 2 ? D3D11_USAGE_IMMUTABLE : D3D11_USAGE_DEFAULT;
 	textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-	textureDesc.MiscFlags = 0;
+	textureDesc.MiscFlags = 2 * (textureHeader->layerCount & 2);
 
-	const uint32_t offsetStartResourceData = mipLevel << 4u;
+	const u32 offsetStartResourceData = mipLevel << 4u;
 	const D3D11_SUBRESOURCE_DATA* subResData = (D3D11_SUBRESOURCE_DATA*)((uint8_t*)initialData + offsetStartResourceData);
-	const HRESULT createTextureRes = D3D11Device()->CreateTexture2D(&textureDesc, subResData, &textureHeader->m_ppTexture);
+
+	const HRESULT createTextureRes = D3D11Device()->CreateTexture2D(&textureDesc, subResData, &textureHeader->pInputTexture);
 	if (createTextureRes < S_OK)
-		Error(eDLL_T::RTECH, EXIT_FAILURE, "Couldn't create texture \"%s\": error code = %08x\n", textureHeader->m_pDebugName, createTextureRes);
+		Error(eDLL_T::RTECH, EXIT_FAILURE, "Couldn't create texture \"%s\": error code = %08x\n", textureHeader->debugName, createTextureRes);
 
 	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResource{};
 	shaderResource.Format = dxgiFormat;
-	shaderResource.Texture2D.MipLevels = textureHeader->m_nTextureMipLevels;
-	if (textureHeader->m_nArraySize > 1) // Do we have a texture array?
+	shaderResource.Texture2D.MipLevels = textureHeader->textureMipLevels;
+
+	if (textureHeader->arraySize > 1) // Do we have a texture array?
 	{
-		shaderResource.Texture2DArray.FirstArraySlice = 0;
-		shaderResource.Texture2DArray.ArraySize = textureHeader->m_nArraySize;
-		shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2DARRAY;
+		const bool isCubeMap = (textureHeader->layerCount & 2);
+
+		if (!isCubeMap)
+		{
+			shaderResource.Texture2DArray.FirstArraySlice = 0;
+			shaderResource.Texture2DArray.ArraySize = textureHeader->arraySize;
+			shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2DARRAY;
+		}
+		else
+			shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURECUBE;
 	}
 	else
 	{
 		shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2D;
 	}
 
-	const HRESULT createShaderResourceRes = D3D11Device()->CreateShaderResourceView(textureHeader->m_ppTexture, &shaderResource, &textureHeader->m_ppShaderResourceView);
+	const HRESULT createShaderResourceRes = D3D11Device()->CreateShaderResourceView(textureHeader->pInputTexture, &shaderResource, &textureHeader->pShaderResourceView);
 	if (createShaderResourceRes < S_OK)
-		Error(eDLL_T::RTECH, EXIT_FAILURE, "Couldn't create shader resource view for texture \"%s\": error code = %08x\n", textureHeader->m_pDebugName, createShaderResourceRes);
+		Error(eDLL_T::RTECH, EXIT_FAILURE, "Couldn't create shader resource view for texture \"%s\" (%llX): error code = %08x\n", 
+			textureHeader->debugName, textureHeader->assetGuid, createShaderResourceRes);
 }
 #pragma warning( pop )
 
@@ -318,6 +331,7 @@ void DirectX_Init()
 		{
 			ImguiSystem()->AddSurface(&g_Console);
 			ImguiSystem()->AddSurface(&g_Browser);
+			ImguiSystem()->AddSurface(&g_streamOverlay);
 		}
 		else
 		{
@@ -350,9 +364,6 @@ void DirectX_Shutdown()
 	if (ImguiSystem()->IsInitialized())
 	{
 		ImguiSystem()->Shutdown();
-
-		ImguiSystem()->RemoveSurface(&g_Browser);
-		ImguiSystem()->RemoveSurface(&g_Console);
 	}
 }
 

@@ -129,8 +129,6 @@ void CConsole::RunFrame(void)
     if (m_surfaceStyle == ImGuiStyle_t::MODERN)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 8.f, 10.f }); baseWindowStyleVars++;
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, m_fadeAlpha);                 baseWindowStyleVars++;
-
         minBaseWindowRect = ImVec2(621.f, 532.f);
     }
     else
@@ -140,9 +138,9 @@ void CConsole::RunFrame(void)
             : ImVec2(618.f, 524.f);
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 6.f, 6.f });  baseWindowStyleVars++;
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, m_fadeAlpha);                 baseWindowStyleVars++;
     }
 
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, m_fadeAlpha);                     baseWindowStyleVars++;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, minBaseWindowRect);       baseWindowStyleVars++;
 
     const bool drawn = DrawSurface();
@@ -188,6 +186,9 @@ void CConsole::RunFrame(void)
 //-----------------------------------------------------------------------------
 bool CConsole::DrawSurface(void)
 {
+    if (!IsVisible())
+        return false;
+
     if (!ImGui::Begin(m_surfaceLabel, &m_activated, ImGuiWindowFlags_None, &ResetInput))
     {
         ImGui::End();
@@ -664,7 +665,7 @@ bool CConsole::RunAutoComplete(void)
         {
             const char c = m_inputTextBuf[i];
 
-            if (c == '\0' || isspace(c))
+            if (c == '\0' || V_isspace(c))
             {
                 break;
             }

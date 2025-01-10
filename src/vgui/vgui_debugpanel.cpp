@@ -14,6 +14,7 @@
 #include <vgui/vgui_debugpanel.h>
 #include <vguimatsurface/MatSystemSurface.h>
 #include <materialsystem/cmaterialsystem.h>
+#include <materialsystem/texturestreaming.h>
 #ifndef CLIENT_DLL
 #include <engine/server/server.h>
 #endif // !CLIENT_DLL
@@ -104,10 +105,6 @@ void CTextOverlay::Update(void)
 	if (cl_showmaterialinfo.GetBool())
 	{
 		DrawCrosshairMaterial();
-	}
-	if (stream_overlay->GetBool())
-	{
-		DrawStreamOverlay();
 	}
 }
 
@@ -288,7 +285,7 @@ void CTextOverlay::DrawGPUStats(void) const
 	static const Color c = { 255, 255, 255, 255 };
 
 	DrawFormat(nWidth, nHeight, c, "%8zd/%8zd/%8zdkiB unusable/unfree/total GPU Streaming Texture memory\n",
-		*g_nUnusableStreamingTextureMemory / 1024, *g_nUnfreeStreamingTextureMemory / 1024, *g_nTotalStreamingTextureMemory / 1024);
+		g_textureStreamMemoryUsed[TML_TRACKER_UNUSABE] / 1024, g_textureStreamMemoryUsed[TML_TRACKER_UNFREE] / 1024, *g_textureStreamMemoryTarget / 1024);
 }
 
 //-----------------------------------------------------------------------------
@@ -296,30 +293,21 @@ void CTextOverlay::DrawGPUStats(void) const
 //-----------------------------------------------------------------------------
 void CTextOverlay::DrawCrosshairMaterial(void) const
 {
-	CMaterialGlue* pMaterialGlue = v_GetMaterialAtCrossHair();
-	if (!pMaterialGlue)
+	const CMaterialGlue* const materialGlue = v_GetMaterialAtCrossHair();
+
+	if (!materialGlue)
 		return;
 
+	const MaterialGlue_s* const material = materialGlue->Get();
 	static const Color c = { 255, 255, 255, 255 };
-	DrawFormat(cl_materialinfo_offset_x.GetInt(), cl_materialinfo_offset_y.GetInt(), c, "name: %s\nguid: %llx\ndimensions: %d x %d\nsurface: %s/%s\nstc: %i\ntc: %i",
-		pMaterialGlue->name,
-		pMaterialGlue->assetGuid,
-		pMaterialGlue->width, pMaterialGlue->height,
-		pMaterialGlue->surfaceProp, pMaterialGlue->surfaceProp2,
-		pMaterialGlue->numStreamingTextureHandles,
-		pMaterialGlue->shaderset->m_nTextureInputCount);
-}
 
-//-----------------------------------------------------------------------------
-// Purpose: draws the stream overlay on screen.
-//-----------------------------------------------------------------------------
-void CTextOverlay::DrawStreamOverlay(void) const
-{
-	static char szLogbuf[4096];
-	static const Color c = { 255, 255, 255, 255 };
-	
-	CMaterialSystem__GetStreamOverlay(stream_overlay_mode->GetString(), szLogbuf, sizeof(szLogbuf));
-	CMatSystemSurface__DrawColoredText(g_pMatSystemSurface, v_Rui_GetFontFace(), m_nFontHeight, 20, 300, c.r(), c.g(), c.b(), c.a(), "%s", szLogbuf);
+	DrawFormat(cl_materialinfo_offset_x.GetInt(), cl_materialinfo_offset_y.GetInt(), c, "name: %s\nguid: %llx\ndimensions: %hu x %hu\nsurface: %s/%s\nstc: %hu\ntc: %hu",
+		material->name,
+		material->guid,
+		material->width, material->height,
+		material->surfaceProp, material->surfaceProp2,
+		material->streamingTextureHandleCount,
+		material->shaderset->m_nTextureInputCount);
 }
 
 //-----------------------------------------------------------------------------
