@@ -356,14 +356,14 @@ namespace LOGGER
         {
             if (!poolCond.wait_for(lock, handleWaitTimeout, [this] { return !pool.empty(); }))
             {
-                if (pool.size() < maxPoolSize)
+                if ( pool.size() < maxPoolSize )
                 {
                     return CreateHandle();
                 }
                 else
                 {
                     Error(eDLL_T::SERVER, NO_ERROR, "Timeout waiting for CURL handle and pool is full. \n");
-                    return nullptr;
+                    return CreateHandle();
                 }
             }
         }
@@ -464,6 +464,7 @@ namespace LOGGER
         if (handle)
         {
             curl_easy_cleanup(handle);
+            handle = nullptr;
         }
     }
 
@@ -961,11 +962,11 @@ namespace LOGGER
     /********************************/
 
     //separate thread
-    void RunUpdateLiveStats(std::string stats_json_copy)
+    void RunUpdateLiveStats( std::string stats_json_copy )
     {
         const char* stats_json = stats_json_copy.c_str();
 
-        if (!stats_json)
+        if ( !stats_json )
         {
             Error(eDLL_T::SERVER, NO_ERROR, "[RunUpdateLiveStats] Failed: Nullptr\n");
             return;
@@ -973,7 +974,7 @@ namespace LOGGER
 
         CURL* curl = CURLConnectionPool::GetInstance().GetHandle();
 
-        if (!curl)
+        if ( !curl )
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
             return;
@@ -1540,10 +1541,10 @@ namespace LOGGER
     {
         switch (flag)
         {
-        case 1: return Logger::LogState::Ready;
-        case 2: return Logger::LogState::Busy;
-        case 3: return Logger::LogState::Safe;
-        default: return Logger::LogState::None;
+            case 1: return Logger::LogState::Ready;
+            case 2: return Logger::LogState::Busy;
+            case 3: return Logger::LogState::Safe;
+            default: return Logger::LogState::None;
         }
     }
 
