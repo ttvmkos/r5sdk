@@ -22,7 +22,7 @@ static void Pak_ListPaks_f()
 
 	uint32_t numLoaded = 0;
 
-	for (int16_t i = 0, n = g_pakGlobals->loadedPakCount; i < n; ++i)
+	for (uint16_t i = 0, n = PAK_MAX_LOADED_PAKS; i < n; ++i)
 	{
 		const PakLoadedInfo_s& info = g_pakGlobals->loadedPaks[i];
 
@@ -35,7 +35,7 @@ static void Pak_ListPaks_f()
 		numLoaded++;
 	}
 	Msg(eDLL_T::RTECH, "|------|----------------------------------------------------|--------------------------------------|-------------|\n");
-	Msg(eDLL_T::RTECH, "| %18i loaded paks.                                                                                |\n", numLoaded);
+	Msg(eDLL_T::RTECH, "| %18u loaded paks.                                                                                |\n", numLoaded);
 	Msg(eDLL_T::RTECH, "|------|----------------------------------------------------|--------------------------------------|-------------|\n");
 }
 
@@ -46,12 +46,12 @@ Pak_ListTypes_f
 */
 static void Pak_ListTypes_f()
 {
-	Msg(eDLL_T::RTECH, "| ext  | description               | version | alignment | header size | native size |\n");
+	Msg(eDLL_T::RTECH, "| ext  | description               | version | alignment | header size | struct size |\n");
 	Msg(eDLL_T::RTECH, "|------|---------------------------|---------|-----------|-------------|-------------|\n");
 
 	uint32_t numRegistered = 0;
 
-	for (int8_t i = 0; i < PAK_MAX_TRACKED_TYPES; ++i)
+	for (uint8_t i = 0; i < PAK_MAX_TRACKED_TYPES; ++i)
 	{
 		const PakAssetBinding_s& type = g_pakGlobals->assetBindings[i];
 
@@ -62,12 +62,12 @@ static void Pak_ListTypes_f()
 		FourCCToString(assetExtension, type.extension);
 
 		Msg(eDLL_T::RTECH, "| %-4s | %-25s | %7u | %9u | %11u | %11u |\n", 
-			assetExtension, type.description, type.version, type.headerAlignment, type.headerSize, type.nativeClassSize);
+			assetExtension, type.description, type.version, type.headerAlignment, type.headerSize, type.structSize);
 
 		numRegistered++;
 	}
 	Msg(eDLL_T::RTECH, "|------|---------------------------|---------|-----------|-------------|-------------|\n");
-	Msg(eDLL_T::RTECH, "| %18i registered types.                                               |\n", numRegistered);
+	Msg(eDLL_T::RTECH, "| %18u registered types.                                               |\n", numRegistered);
 	Msg(eDLL_T::RTECH, "|------|---------------------------|---------|-----------|-------------|-------------|\n");
 }
 

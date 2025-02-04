@@ -647,7 +647,9 @@ void ConVar::InternalSetValue(const char* value)
 		if (g_pCVar && !g_pCVar->IsMaterialThreadSetAllowed())
 		{
 			g_pCVar->QueueMaterialThreadSetValue(this, value);
-			return;
+
+			if (!IsFlagSet(FCVAR_STUDIO_SYSTEM))
+				return;
 		}
 	}
 
@@ -659,13 +661,13 @@ void ConVar::InternalSetValue(const char* value)
 	if (!newVal)
 		newVal = "";
 
-	if (!InternalSetColorFromString(value))
+	if (!InternalSetColorFromString(newVal))
 	{
 		// Not a color, do the standard thing
-		float fNewValue = (float)atof(value);
+		float fNewValue = (float)atof(newVal);
 		if (!IsFinite(fNewValue))
 		{
-			DevWarning(eDLL_T::COMMON, "Warning: %s = '%s' is infinite, clamping value.\n", GetName(), value);
+			DevWarning(eDLL_T::COMMON, "Warning: %s = '%s' is infinite, clamping value.\n", GetName(), newVal);
 			fNewValue = FLT_MAX;
 		}
 
@@ -679,6 +681,10 @@ void ConVar::InternalSetValue(const char* value)
 		m_Value.m_fValue = fNewValue;
 		m_Value.m_nValue = (int)(m_Value.m_fValue);
 	}
+
+	// Note(amos): send the value that can potentially be null,
+	// since we want to track those too
+	TrackValueChange(value);
 
 	if (!(m_nFlags & FCVAR_NEVER_AS_STRING))
 	{
@@ -1020,7 +1026,7 @@ void ConVar::Create(const char* pName, const char* pDefaultValue, int flags /*= 
 	}
 
 
-	TrackDefaultValue(m_Value.m_pszString);
+	TrackValueChange(m_Value.m_pszString);
 
 	// Only 1 of the 2 can be set on a ConVar, both means there is a bug in
 	// your code, fix it!

@@ -191,24 +191,42 @@ void CreateTextureResource(TextureAsset_s* textureHeader, INT_PTR imageData)
 
 	const HRESULT createTextureRes = D3D11Device()->CreateTexture2D(&textureDesc, subResData, &textureHeader->pInputTexture);
 	if (createTextureRes < S_OK)
-		Error(eDLL_T::RTECH, EXIT_FAILURE, "Couldn't create texture \"%s\": error code = %08x\n", textureHeader->debugName, createTextureRes);
+		Error(eDLL_T::RTECH, EXIT_FAILURE, "Couldn't create texture \"%s\" (%llX): error code = %08x\n",
+			textureHeader->debugName, textureHeader->assetGuid, createTextureRes);
 
 	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResource{};
 	shaderResource.Format = dxgiFormat;
 	shaderResource.Texture2D.MipLevels = textureHeader->textureMipLevels;
 
-	if (textureHeader->arraySize > 1) // Do we have a texture array?
+	const u8 arraySize = textureHeader->arraySize;
+
+	if (arraySize > 1) // Do we have a texture array?
 	{
 		const bool isCubeMap = (textureHeader->layerCount & 2);
 
 		if (!isCubeMap)
 		{
-			shaderResource.Texture2DArray.FirstArraySlice = 0;
-			shaderResource.Texture2DArray.ArraySize = textureHeader->arraySize;
 			shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2DARRAY;
+			shaderResource.Texture2DArray.FirstArraySlice = 0;
+			shaderResource.Texture2DArray.ArraySize = arraySize;
 		}
 		else
-			shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURECUBE;
+		{
+			// Cube textures have 6 faces to form the cube; one texture per
+			// cube face. If we have more, we have a cube map array.
+			if (arraySize == 6)
+				shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURECUBE;
+			else
+			{
+				// Must have a multiple of 6 textures per cube in the array,
+				// else we have one or more cubes with missing faces.
+				Assert(arraySize % 6 == 0);
+
+				shaderResource.ViewDimension = D3D_SRV_DIMENSION_TEXTURECUBEARRAY;
+				shaderResource.Texture2DArray.FirstArraySlice = 0;
+				shaderResource.Texture2DArray.ArraySize = arraySize / 6;
+			}
+		}
 	}
 	else
 	{

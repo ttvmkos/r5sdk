@@ -25,6 +25,24 @@
 
 #include "thirdparty/curl/include/curl/curl.h"
 
+// RapidJSON uses 32 bit size types. Size types are
+// 64 bit wide on our target. Override it with ours.
+// this must be done before the rapidjson.h include.
+#define RAPIDJSON_NO_SIZETYPEDEFINE
+namespace rapidjson { typedef ::std::size_t SizeType; }
+
+#include "rapidjson/rapidjson.h"
+
+#ifdef RAPIDJSON_USE_CUSTOM_ALLOCATOR
+// Must be included before the RapidJSON includes
+// as this replaces the default allocator. The new
+// allocator takes SIMD alignment into account, but
+// isn't strictly necessary when using RAPIDJSON_SIMD.
+#include "tier2/jsonalloc.h"
+#define RAPIDJSON_DEFAULT_ALLOCATOR ::RAPIDJSON_NAMESPACE::MemoryPoolAllocator<JSONAllocator>
+#define RAPIDJSON_DEFAULT_STACK_ALLOCATOR ::RAPIDJSON_NAMESPACE::MemoryPoolAllocator<JSONAllocator>
+#endif // RAPIDJSON_USE_CUSTOM_ALLOCATOR
+
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
