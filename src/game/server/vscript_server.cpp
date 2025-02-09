@@ -536,6 +536,7 @@ namespace VScriptCode
                     g_TaskQueue.Dispatch([command] {
                         g_pServerScript->Run(command.c_str());
                         }, 0);
+                        }, 0); //maybe 1
                 }
             );
 

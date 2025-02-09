@@ -51,44 +51,6 @@ std::vector<std::string> split(const std::string& str, char delimiter)
 
 
 //-----------------------------------------------------------------------------
-// access non-dedi data
-//-----------------------------------------------------------------------------
-
-enum ServerData
-{
-    HOST_NAME,
-    HOST_DESCRIPTION,
-    HOST_PLAYLIST,
-};
-
-std::string GetServerData(ServerData dataType)
-{
-    if ( ::IsDedicated() )
-    {
-        switch (dataType)
-        {
-            case HOST_NAME: return hostname->GetString();
-            case HOST_PLAYLIST: return v_Playlists_GetCurrent();
-            default: return "";
-        }
-    }
-    else
-    {
-        const NetGameServer_t& server = g_ServerHostManager.GetDetails();
-
-        switch (dataType)
-        {
-            case HOST_NAME: return server.name;
-            case HOST_DESCRIPTION:return server.description;
-            case HOST_PLAYLIST: return server.playlist;
-            default: return "";
-        }
-    }
-    
-}
-
-
-//-----------------------------------------------------------------------------
 // string manipulation sanitize function
 //-----------------------------------------------------------------------------
 
@@ -1072,7 +1034,7 @@ namespace LOGGER
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
-        std::string serverName = GetServerData(HOST_NAME);
+        std::string serverName = hostname->GetString();
 
         doc.AddMember("stats", stats, allocator);
         doc.AddMember("servername", rapidjson::Value(serverName.c_str(), allocator), allocator);
@@ -1922,7 +1884,7 @@ namespace LOGGER
 
         try
         {
-            while (true)
+            for( ; ; )
             {
                 {
                     std::unique_lock<std::mutex> lock(mtx);
