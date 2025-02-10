@@ -1,7 +1,7 @@
 #pragma once
 #ifndef CLIENT_DLL
 
-#include <tiny-aes/aes.hpp>
+#include <mbedtls/aes.h>
 #include "engine/server/server.h"
 #include <engine/host_state.h>
 #include <game/server/vscript_server.h>
@@ -1437,31 +1437,49 @@ namespace LOGGER
 
 
     // created with eObj && only encryption bool true
-    std::string LOGGER::Encryption::doEncrypt(const std::string& plainText, const std::vector<uint8_t>& keyBytes, const std::vector<uint8_t>& ivBytes) {
-        // PKCS7 padding
+    std::string LOGGER::Encryption::doEncrypt(const std::string& plainText, const std::vector<uint8_t>& keyBytes, const std::vector<uint8_t>& ivBytes)
+    {
         std::vector<uint8_t> plainTextBytes(plainText.begin(), plainText.end());
         size_t length = plainTextBytes.size();
-        size_t padded_length = length + AES_BLOCKLEN - length % AES_BLOCKLEN;
+        const size_t AES_BLOCKLEN = 16;
+        size_t padded_length = length + AES_BLOCKLEN - (length % AES_BLOCKLEN);
         plainTextBytes.resize(padded_length);
 
         int padding = static_cast<int>(padded_length - length);
-        for (int i = 0; i < padding; i++) {
-            plainTextBytes[length + i] = static_cast<uint8_t>(padding);
+        for (size_t i = length; i < padded_length; i++)
+        {
+            plainTextBytes[i] = static_cast<uint8_t>(padding);
         }
 
-        // encrypt - initialize here
-        struct AES_ctx ctx;
+        std::vector<uint8_t> cipherTextBytes(padded_length);
 
-        AES_init_ctx_iv(&ctx, keyBytes.data(), ivBytes.data());
-        if (padded_length > UINT32_MAX) {
-            throw std::runtime_error("padded_length is too large to be safely cast to uint32_t");
+        mbedtls_aes_context aes;
+        mbedtls_aes_init(&aes);
+
+        int ret = mbedtls_aes_setkey_enc(&aes, keyBytes.data(), static_cast<unsigned int>(keyBytes.size() * 8));
+        if (ret != 0)
+        {
+            mbedtls_aes_free(&aes);
+            throw std::runtime_error("Failed to set encryption key, error code: " + std::to_string(ret));
         }
 
-        AES_CBC_encrypt_buffer(&ctx, plainTextBytes.data(), static_cast<uint32_t>(padded_length));
+        unsigned char iv[16];
+        if (ivBytes.size() < 16)
+        {
+            mbedtls_aes_free(&aes);
+            throw std::runtime_error("IV is too short");
+        }
 
-        // convert to base64
-        std::string cipherTextBase64 = bbase64Encode(plainTextBytes);
+        std::copy(ivBytes.begin(), ivBytes.begin() + 16, iv);
 
+        ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, padded_length, iv, plainTextBytes.data(), cipherTextBytes.data());
+        mbedtls_aes_free(&aes);
+        if (ret != 0)
+        {
+            throw std::runtime_error("AES CBC encryption failed, error code: " + std::to_string(ret));
+        }
+
+        std::string cipherTextBase64 = bbase64Encode(cipherTextBytes);
         return cipherTextBase64;
     }
 

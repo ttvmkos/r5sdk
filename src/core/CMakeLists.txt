@@ -94,7 +94,6 @@ target_link_libraries( ${PROJECT_NAME} PRIVATE
     "RDSDK"
 
     "localize"
-    "tiny-aes"
 
     "vscript"
     "game_shared_static"

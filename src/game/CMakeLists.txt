@@ -301,7 +301,6 @@ endif()
 target_include_directories( ${PROJECT_NAME} PRIVATE
     "${ENGINE_SOURCE_DIR}/tier0/"
     "${ENGINE_SOURCE_DIR}/tier1/"
-   "${ENGINE_SOURCE_DIR}/tiny-aes"
     "${THIRDPARTY_SOURCE_DIR}/mbedtls/include"
 )
 
