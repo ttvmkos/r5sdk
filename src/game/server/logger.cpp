@@ -12,6 +12,7 @@
 #include <stack>
 #include "rtech/playlists/playlists.h"
 #include <string_view>
+#include <tier1\fmtstr.h>
 
 //-----------------------------------------------------------------------------
 // POINTERS
@@ -208,7 +209,11 @@ namespace LOGGER
 
         for (rapidjson::Value::ConstMemberIterator itr = value.MemberBegin(); itr != value.MemberEnd(); ++itr)
         {
-            std::string key = parentKey.empty() ? itr->name.GetString() : parentKey + "." + itr->name.GetString();
+            std::string key;
+            if (parentKey.empty())
+                key = itr->name.GetString();
+            else
+                key = CFmtStr("%s.%s", parentKey.c_str(), itr->name.GetString()).Get();
 
             if (itr->value.IsObject())
             {
@@ -769,11 +774,14 @@ namespace LOGGER
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
-        std::string url = STATS_API + "?TYPE=batch&KEY=" + API_KEY + "&identifier=" + identifier + "&requestedStats=" + requestedStats + "&requestedSettings=" + requestedSettings;
-
+        CFmtStr urlBase("%s?TYPE=batch&KEY=%s&identifier=%s&requestedStats=%s&requestedSettings=%s",
+            STATS_API.c_str(), API_KEY.c_str(), identifier.c_str(), requestedStats.c_str(), requestedSettings.c_str());
+        std::string url = urlBase.Get();
+        
         for (const std::string& oid : player_oids)
         {
-            url += "&player_oid[]=" + oid;
+            CFmtStr extra("&player_oid[]=%s", oid.c_str());
+            url.append(extra.Get());
         }
 
         curl_easy_setopt(easy_handle, CURLOPT_URL, url.c_str());
@@ -891,9 +899,10 @@ namespace LOGGER
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
-        std::string url = STATS_API + "?KEY=" + API_KEY + "&requestedStats=" + requestedStats + "&player_oid=" + player_oid + "&identifier=" + identifier + "&requestedSettings=" + requestedSettings;
+        CFmtStr urlStr("%s?KEY=%s&requestedStats=%s&player_oid=%s&identifier=%s&requestedSettings=%s",
+            STATS_API.c_str(), API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings);
 
-        curl_easy_setopt(easy_handle, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(easy_handle, CURLOPT_URL, urlStr.Get());
         curl_easy_setopt(easy_handle, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(easy_handle, CURLOPT_WRITEDATA, &readBuffer);
         curl_easy_setopt(easy_handle, CURLOPT_TIMEOUT, 3L);
@@ -944,12 +953,11 @@ namespace LOGGER
                     }
                 }
 
-                std::string command = "CodeCallback_PlayerStatsReady(\"" + Sanitize_NumbersOnly(playerOidStr) + "\")";
-
-                //always call
-                g_TaskQueue.Dispatch([command] {
-                    g_pServerScript->Run(command.c_str());
+                CFmtStr command("CodeCallback_PlayerStatsReady(\"%s\")", Sanitize_NumbersOnly(playerOidStr).c_str());
+                g_TaskQueue.Dispatch([cmd = std::string(command.Get())] {
+                    g_pServerScript->Run(cmd.c_str());
                     }, 0);
+
             });
     }
 
@@ -1071,23 +1079,11 @@ namespace LOGGER
         }
 
 
-        std::string postData = "servername=";
-        postData += hostname->GetString();
-        postData += "&action=";
-        postData += action;
-        postData += "&player_name=";
-        postData += player;
-        postData += "&OID=";
-        postData += oid;
-        postData += "&current_count=";
-        postData += count;
-        postData += "&DISCORD_HOOK=";
-        postData += DISCORD_HOOK;
-        postData += "&KEY=";
-        postData += API_KEY;
-
+        CFmtStr postData("servername=%s&action=%s&player_name=%s&OID=%s&current_count=%s&DISCORD_HOOK=%s&KEY=%s",
+            GetServerData(HOST_NAME).c_str(), action, player, oid, count, DISCORD_HOOK, API_KEY.c_str());
+        
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
         curl_easy_setopt( curl, CURLOPT_URL, PLAYER_COUNT_ENDPOINT );
-        curl_easy_setopt( curl, CURLOPT_POSTFIELDS, postData.c_str() );
         curl_easy_setopt( curl, CURLOPT_TIMEOUT, 5L );
         curl_easy_setopt( curl, CURLOPT_POST, 1L );
 
@@ -1183,14 +1179,10 @@ namespace LOGGER
             return;
         }
 
-        std::string postData = "servername=" + serverName +
-            "&matchID=" + matchID +
-            "&recap=" + std::string(escaped_recap) +
-            "&DISCORD_HOOK=" + discord_hook +
-            "&KEY=" + API_KEY;
-
+        CFmtStr postData("servername=%s&matchID=%s&recap=%s&DISCORD_HOOK=%s&KEY=%s",
+            serverName.c_str(), matchID.c_str(), escaped_recap, discord_hook.c_str(), API_KEY.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/endmatch.php");
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
 
         CURLcode res = curl_easy_perform(curl);
@@ -1247,17 +1239,15 @@ namespace LOGGER
             return "8";
         }
 
-        std::string postData =
-            "token=" + token +
-            "&ea_acc=" + ea_name +
-            "&OID=" + OID +
-            "&KEY=" + API_KEY;
+        CFmtStr postData("token=%s&ea_acc=%s&OID=%s&KEY=%s",
+            token.c_str(), ea_name.c_str(), OID.c_str(), API_KEY.c_str());
+
 
         std::string readBuffer;
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/verify.php");
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
 
         CURLcode res = curl_easy_perform(curl);
@@ -1282,7 +1272,6 @@ namespace LOGGER
    // returns response settings based on query
     std::string FetchGlobalSettings(const char* query)
     {
-
         if (!query)
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Error: query parameter pointed to a nullptr\n");
@@ -1297,15 +1286,15 @@ namespace LOGGER
             return "";
         }
 
-
-        std::string identifier = GetSetting("identifier");
-        std::string postfields = "KEY=" + API_KEY + "&query=" + query + "&identifier=" + identifier;
-
         std::string readBuffer;
+        std::string identifier = GetSetting("identifier");
+
+        CFmtStr postfields("KEY=%s&query=%s&identifier=%s", API_KEY.c_str(), query, identifier.c_str());
+        
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields.Get());   
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/globalsettings.php");
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields.c_str());
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
 
         CURLcode res = curl_easy_perform(curl);
@@ -2118,7 +2107,8 @@ namespace LOGGER
                 return nullptr;
             }
 
-            filePath = dirPath / (currentMatchId + ".json");
+            CFmtStr filename("%s.json", currentMatchId.c_str());
+            filePath = dirPath / filename.Get();
             pCurrentLogPath = &filePath;
         }
         else
@@ -2237,11 +2227,11 @@ namespace LOGGER
         std::string serverMap = g_pHostState->m_levelName;
         std::string gameType = mp_gamemode->GetString();
 
-        startLines.push_back("|#MatchID:" + matchID);
-        startLines.push_back("|#Gameversion:" + SERVER_V);
-        startLines.push_back("|#Gametype:" + gameType);
-        startLines.push_back("|#ServerName:" + serverName);
-        startLines.push_back("|#ServerMAP:" + serverMap);
+        startLines.push_back(CFmtStr("|#MatchID:%s", matchID.c_str()).Get());
+        startLines.push_back(CFmtStr("|#Gameversion:%s", SERVER_V.c_str()).Get());
+        startLines.push_back(CFmtStr("|#Gametype:%s", gameType.c_str()).Get());
+        startLines.push_back(CFmtStr("|#ServerName:%s", serverName.c_str()).Get());
+        startLines.push_back(CFmtStr("|#ServerMAP:%s", serverMap.c_str()).Get());
 
         if (encrypt)
         {

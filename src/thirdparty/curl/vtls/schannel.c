@@ -1441,6 +1441,9 @@ int Curl_schannel_shutdown(struct connectdata *conn, int sockindex)
   infof(data, "schannel: shutting down SSL/TLS connection with %s port %hu\n",
         hostname, conn->remote_port);
 
+  if (!s_pSecFn)
+      return CURLE_OK; //mkos extra safeguard #2
+
   if(connssl->cred && connssl->ctxt) {
     SecBufferDesc BuffDesc;
     SecBuffer Buffer;
