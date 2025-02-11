@@ -11,6 +11,7 @@
 #include "engine/cmd.h"
 #include <stack>
 #include "rtech/playlists/playlists.h"
+#include <string_view>
 
 //-----------------------------------------------------------------------------
 // POINTERS
@@ -49,12 +50,11 @@ std::vector<std::string> split(const std::string& str, char delimiter)
     return result;
 }
 
-
 //-----------------------------------------------------------------------------
 // string manipulation sanitize function
 //-----------------------------------------------------------------------------
 
-void Sanitize_AlphaNumHyphenUnderscore(std::string& input)
+static void Sanitize_AlphaNumHyphenUnderscore(std::string& input)
 {
     input.erase
     (
@@ -70,7 +70,7 @@ void Sanitize_AlphaNumHyphenUnderscore(std::string& input)
     );
 }
 
-std::string Sanitize_NumbersOnly(const std::string& input)
+static std::string Sanitize_NumbersOnly(const std::string& input)
 {
     std::string sanitized = input;
     sanitized.erase
@@ -89,7 +89,7 @@ std::string Sanitize_NumbersOnly(const std::string& input)
     return sanitized;
 }
 
-void Script_CodeCallback_BatchStatsLoaded()
+static void Script_CodeCallback_BatchStatsLoaded()
 {
     g_pServerScript->ExecuteCodeCallback("CodeCallback_BatchStatsLoaded");
 }
@@ -237,7 +237,7 @@ namespace LOGGER
                 if (!valueStr.empty())
                 {
                     std::lock_guard<std::shared_timed_mutex> lock(g_configMapMutex);
-                    g_configMap[key] = valueStr;
+                    g_configMap[key] = std::move(valueStr); //don't make a copy
                 }
             }
         }
@@ -488,7 +488,12 @@ namespace LOGGER
         std::lock_guard<std::mutex> lock(poolMutex);
         while (!pool.empty())
         {
-            curl_easy_cleanup(pool.front());
+            CURL* handle = pool.front();
+            if ( handle )
+            {
+                curl_easy_cleanup( handle );
+                handle = nullptr;
+            }
             pool.pop();
         }
     }
@@ -546,61 +551,21 @@ namespace LOGGER
 
 
 
-    std::string LOGGER::replace_all(std::string str, const std::string& from, const std::string& to)
+    inline static std::string replace_all(std::string_view str, std::string_view from, std::string_view to)
     {
+        std::string result(str);
         size_t start_pos = 0;
-        while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
-            str.replace(start_pos, from.length(), to);
-            start_pos += to.length();
+        while ((start_pos = result.find(from, start_pos)) != std::string::npos) {
+            result.replace(start_pos, from.size(), to);
+            start_pos += to.size();
         }
-        return str;
-    }
-
-    std::stack<CURL*> curlStack;
-    const size_t threshold = 10;
-
-    void cleanupStack() {
-        while (!curlStack.empty()) {
-            curl_easy_cleanup(curlStack.top());
-            curlStack.pop();
-        }
+        return result;
     }
 
 
     std::string url_encode(const std::string& value) 
     {
-        CURL* curl = nullptr;
-
-        if ( curlStack.empty() ) 
-            curl = curl_easy_init();
-        else
-        {
-            curl = curlStack.top();
-            curlStack.pop();
-        }
-
-        std::string retStr;
-        if ( curl ) 
-        {
-            std::string new_value = replace_all( value, "\n", "<br/>" );
-            char* output = curl_easy_escape( curl, new_value.c_str(), static_cast<int>( new_value.length() ) );
-            
-            if ( output ) 
-            {
-                retStr = std::string( output );
-                curl_free( output );
-            }
-
-            curlStack.push( curl );
-
-            if ( curlStack.size() >= threshold )
-            {
-                Error( eDLL_T::SERVER, NO_ERROR, "Threshold was reached for curlstack: %zu", threshold );
-                cleanupStack();
-            }
-        }
-
-        return retStr;
+        return replace_all( value, "\n", "<br/>" );
     }
 
 
@@ -964,7 +929,6 @@ namespace LOGGER
             {
 
                 std::string stats = FetchPlayerStats(playerOidStr.c_str(), requestedStatsStr.c_str(), requestedSettingsStr.c_str());
-
                 bool has_lock = false;
 
                 {
@@ -1549,6 +1513,11 @@ namespace LOGGER
     Logger::~Logger()
     {
         stopLoggingThread();
+
+        if ( apiThread.joinable() )
+            apiThread.join();
+
+        pMkosLogger = nullptr;
     }
 
     // one instance only
@@ -1657,7 +1626,7 @@ namespace LOGGER
 
 
     // function to split a string
-    std::vector<std::string> LOGGER::Logger::splitString(std::string str, const std::string& delimiter)
+    std::vector<std::string> Logger::splitString(std::string str, const std::string& delimiter)
     {
         std::vector<std::string> lines;
         size_t pos = 0;
@@ -1670,6 +1639,7 @@ namespace LOGGER
         lines.push_back(str);
         return lines;
     }
+
 
 
 
@@ -2033,7 +2003,10 @@ namespace LOGGER
     void LOGGER::Logger::stopLogging(bool sendToAPI)
     {
         std::thread stopThread(&LOGGER::Logger::stopLogging_Async, this, sendToAPI);
-        stopThread.detach();
+        if (stopThread.joinable())
+        {
+            stopThread.join();
+        }
     }
 
 
@@ -2276,7 +2249,7 @@ namespace LOGGER
             for (std::string& line : startLines)
             {
                 line = this->eObj.doEncrypt(line, keyHex, ivHex);
-                logQueue.push(line);
+                logQueue.push(std::move(line));
             }
         }
         else
@@ -2284,7 +2257,7 @@ namespace LOGGER
             std::lock_guard<std::mutex> lock(mtx);
             for (std::string& line : startLines)
             {
-                logQueue.push(line);
+                logQueue.push(std::move(line));
             }
         }
 
@@ -2306,7 +2279,6 @@ namespace LOGGER
 
     void LOGGER::Logger::LogEvent(const char* logString, bool encrypt)
     {
-
         if (!getLogState(LogState::Safe) || finished)
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Tried to queue to log but logthread is not fully initialized. \n");
@@ -2327,7 +2299,7 @@ namespace LOGGER
             for (std::string& line : lines)
             {
                 line = this->eObj.doEncrypt(line, keyHex, ivHex);
-                logQueue.push(line);
+                logQueue.push(std::move(line));
             }
         }
         else
@@ -2335,7 +2307,7 @@ namespace LOGGER
             std::lock_guard<std::mutex> lock(mtx);
             for (std::string& line : lines)
             {
-                logQueue.push(line);
+                logQueue.push(std::move(line));
             }
         }
 

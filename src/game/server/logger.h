@@ -195,7 +195,6 @@ namespace LOGGER
 
     // Functions for sendtoapi
     std::string url_encode(const std::string& value);
-    std::string replace_all(std::string str, const std::string& from, const std::string& to);
 
     //Funciton for verify
     const std::string VERIFY_EA_ACCOUNT(const std::string& token, const std::string& OID, const std::string& ea_name);
@@ -217,7 +216,6 @@ namespace LOGGER
     void RunUpdateLiveStats(std::string stats_json); //onshutdown dispatch thread
     void UpdateLiveStats(std::string stats_json); //onshutdown 
     std::string FetchGlobalSettings(const char* query);//on startup init
-
 }
 
 #endif // !CLIENT.DLL
