@@ -12,6 +12,7 @@
 #include <stack>
 #include "rtech/playlists/playlists.h"
 #include <string_view>
+#include <tier1\fmtstr.h>
 
 //-----------------------------------------------------------------------------
 // POINTERS
