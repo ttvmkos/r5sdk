@@ -213,7 +213,7 @@ namespace LOGGER
             if (parentKey.empty())
                 key = itr->name.GetString();
             else
-                key = CFmtStr("%s.%s", parentKey.c_str(), itr->name.GetString()).Get();
+                key = CFmtStrN<128>("%s.%s", parentKey.c_str(), itr->name.GetString()).Get();
 
             if (itr->value.IsObject())
             {
@@ -774,13 +774,13 @@ namespace LOGGER
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
-        CFmtStr urlBase("%s?TYPE=batch&KEY=%s&identifier=%s&requestedStats=%s&requestedSettings=%s",
+        CFmtStrMax urlBase("%s?TYPE=batch&KEY=%s&identifier=%s&requestedStats=%s&requestedSettings=%s",
             STATS_API.c_str(), API_KEY.c_str(), identifier.c_str(), requestedStats.c_str(), requestedSettings.c_str());
         std::string url = urlBase.Get();
         
         for (const std::string& oid : player_oids)
         {
-            CFmtStr extra("&player_oid[]=%s", oid.c_str());
+            CFmtStrN<32> extra("&player_oid[]=%s", oid.c_str());
             url.append(extra.Get());
         }
 
@@ -899,7 +899,7 @@ namespace LOGGER
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
-        CFmtStr urlStr("%s?KEY=%s&requestedStats=%s&player_oid=%s&identifier=%s&requestedSettings=%s",
+        CFmtStrMax urlStr("%s?KEY=%s&requestedStats=%s&player_oid=%s&identifier=%s&requestedSettings=%s",
             STATS_API.c_str(), API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings);
 
         curl_easy_setopt(easy_handle, CURLOPT_URL, urlStr.Get());
@@ -953,7 +953,7 @@ namespace LOGGER
                     }
                 }
 
-                CFmtStr command("CodeCallback_PlayerStatsReady(\"%s\")", Sanitize_NumbersOnly(playerOidStr).c_str());
+                CFmtStrN<128> command("CodeCallback_PlayerStatsReady(\"%s\")", Sanitize_NumbersOnly(playerOidStr).c_str());
                 g_TaskQueue.Dispatch([cmd = std::string(command.Get())] {
                     g_pServerScript->Run(cmd.c_str());
                     }, 0);
@@ -2107,7 +2107,7 @@ namespace LOGGER
                 return nullptr;
             }
 
-            CFmtStr filename("%s.json", currentMatchId.c_str());
+            CFmtStrN<128> filename("%s.json", currentMatchId.c_str());
             filePath = dirPath / filename.Get();
             pCurrentLogPath = &filePath;
         }
@@ -2227,11 +2227,11 @@ namespace LOGGER
         std::string serverMap = g_pHostState->m_levelName;
         std::string gameType = mp_gamemode->GetString();
 
-        startLines.push_back(CFmtStr("|#MatchID:%s", matchID.c_str()).Get());
-        startLines.push_back(CFmtStr("|#Gameversion:%s", SERVER_V.c_str()).Get());
-        startLines.push_back(CFmtStr("|#Gametype:%s", gameType.c_str()).Get());
+        startLines.push_back(CFmtStrN<128>("|#MatchID:%s", matchID.c_str()).Get());
+        startLines.push_back(CFmtStrN<128>("|#Gameversion:%s", SERVER_V.c_str()).Get());
+        startLines.push_back(CFmtStrN<128>("|#Gametype:%s", gameType.c_str()).Get());
         startLines.push_back(CFmtStr("|#ServerName:%s", serverName.c_str()).Get());
-        startLines.push_back(CFmtStr("|#ServerMAP:%s", serverMap.c_str()).Get());
+        startLines.push_back(CFmtStrN<128>("|#ServerMAP:%s", serverMap.c_str()).Get());
 
         if (encrypt)
         {

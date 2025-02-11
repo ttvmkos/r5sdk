@@ -795,14 +795,14 @@ namespace VScriptCode
         SQRESULT SQ_GetSetting__internal(HSQUIRRELVM v)
         {
             const SQChar* setting_key = nullptr;
-            if (SQ_SUCCEEDED(sq_getstring(v, 2, &setting_key)) && setting_key)
+            if (!SQ_SUCCEEDED(sq_getstring(v, 2, &setting_key)) || !setting_key)
             {
-                const char* setting_value = LOGGER::GetSetting(setting_key);
-                sq_pushstring(v, setting_value, -1);
-                SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
-            SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            const char* setting_value = LOGGER::GetSetting(setting_key);
+            sq_pushstring(v, setting_value, -1);
+            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
 
@@ -859,8 +859,7 @@ namespace VScriptCode
             }
 
             std::vector<std::string> args = { "sv_addbot", "[" + std::string(ImmutableName) + "]", "1" };
-
-            const char* c_args[3];
+            const char* c_args[3]{};
 
             for (size_t i = 0; i < args.size(); ++i)
             {
