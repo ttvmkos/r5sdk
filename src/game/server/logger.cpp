@@ -27,7 +27,7 @@ const std::string SERVER_V = "rc_2.5";
 const std::string API_KEY = "tMcLsTYqcraC7K2j"; //public
 constexpr const char* R5RDEV_CONFIG = "r5rdev_config.json";
 constexpr const char* PLAYER_COUNT_ENDPOINT = "https://r5r.dev/api/playercount.php";
-const std::string STATS_API = "https://r5r.dev/api/stats7.php";
+const std::string STATS_API = "https://r5r.dev/api/stats8.php";
 
 //-----------------------------------------------------------------------------
 // string manipulation split function
@@ -718,7 +718,7 @@ namespace LOGGER
     /// STAT FUNCTIONS FOR SQVM ///////////////////////////////////////////////////////////
     //////////////////////////////
 
-     //input: oid, output: player stats if available in the playerstatsmap comma separated string
+     //input: oid, output: player stats if available in the playerstatsmap
     const char* GetPlayerJsonData(const char* player_oid)
     {
         if (!player_oid)
@@ -728,15 +728,14 @@ namespace LOGGER
         }
 
         std::shared_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
+        std::string safeOid( player_oid );
 
         if (lock.try_lock_for(std::chrono::milliseconds(500)))
         {
-            std::unordered_map<std::string, std::string>::iterator it = playerStatsMap.find(std::string(player_oid));
+            std::unordered_map<std::string, std::string>::iterator it = playerStatsMap.find( safeOid );
 
             if (it != playerStatsMap.end())
-            {
                 return it->second.c_str();
-            }
         }
         else
         {
@@ -766,7 +765,7 @@ namespace LOGGER
 
         if (!easy_handle)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Error: Failed to acquire curl handle from pool\n");
             return "NA";
         }
 
@@ -794,7 +793,8 @@ namespace LOGGER
         const char* info;
         const int max_attempts = 3;
 
-        do {
+        do 
+        {
             res = curl_easy_perform(easy_handle);
 
             if (res == CURLE_OK)
@@ -803,14 +803,13 @@ namespace LOGGER
             }
 
             info = (retry >= max_attempts) ? "Connection failed. Stats not loaded." : "- Retrying connection...";
-            Error(eDLL_T::SERVER, NO_ERROR, "Batch stats-fetch: curl_easy_perform() failed: %s %s\n", curl_easy_strerror(res), info);
+            Error(eDLL_T::SERVER, NO_ERROR, "Error: Batch stats-fetch: curl_easy_perform() failed: %s %s\n", curl_easy_strerror(res), info);
             retry++;
 
         } while (retry < max_attempts);
 
 
         bool check = CURLConnectionPool::GetInstance().HandleCurlResult(easy_handle, res, "FetchBatchPlayerStats");
-
         return check == true ? readBuffer : "NA";
     }
 
@@ -850,7 +849,8 @@ namespace LOGGER
                 {
                     std::string player_oid = itr->name.GetString();
 
-                    if (!itr->value.IsObject()) continue;
+                    if (!itr->value.IsObject()) 
+                        continue;
 
                     rapidjson::StringBuffer buffer;
                     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -914,7 +914,6 @@ namespace LOGGER
         }
 
         bool check = CURLConnectionPool::GetInstance().HandleCurlResult(easy_handle, res, "FetchPlayerStats");
-
         return check == true ? readBuffer : "NA";
     }
 
@@ -1179,7 +1178,7 @@ namespace LOGGER
             return;
         }
 
-        CFmtStr postData("servername=%s&matchID=%s&recap=%s&DISCORD_HOOK=%s&KEY=%s",
+        CFmtStrN<648> postData("servername=%s&matchID=%s&recap=%s&DISCORD_HOOK=%s&KEY=%s",
             serverName.c_str(), matchID.c_str(), escaped_recap, discord_hook.c_str(), API_KEY.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/endmatch.php");
@@ -1209,11 +1208,12 @@ namespace LOGGER
         std::string recap_string(recap);
         std::string discord_hook(DISCORD_HOOK);
 
-        std::thread endMatchThread([recap_string, discord_hook]() {
+        std::thread endMatchThread([recap_string, discord_hook]() 
+        {
             EndMatchUpdate(recap_string, discord_hook);
-            });
-        endMatchThread.detach();
+        });
 
+        endMatchThread.detach();
     }
 
 
@@ -1224,7 +1224,7 @@ namespace LOGGER
     /********************************/
 
     // returns api response status for website ea account verification from r5r.dev
-    const std::string VERIFY_EA_ACCOUNT(const std::string& token, const std::string& OID, const std::string& ea_name)
+    const std::string VerifyEaAccount(const std::string& token, const std::string& OID, const std::string& ea_name)
     {
         if (token.empty() || ea_name.empty())
         {
@@ -1252,14 +1252,11 @@ namespace LOGGER
 
         CURLcode res = curl_easy_perform(curl);
 
-        CURLConnectionPool::GetInstance().ReturnHandle(curl);
-
         bool check = CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, "VERIFY_EA_ACCOUNT");
 
         Warning(eDLL_T::SERVER, "Response for %s: %s\n", ea_name.c_str(), readBuffer.c_str());
 
         return check == true ? readBuffer : "8";
-
     }
 
 

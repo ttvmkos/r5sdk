@@ -502,25 +502,32 @@ namespace VScriptCode
 
         SQRESULT EA_Verify__internal(HSQUIRRELVM v)
         {
-            const SQChar* token = nullptr;
-            const SQChar* OID = nullptr;
-            const SQChar* ea_name = nullptr;
+            const SQChar* pToken = nullptr;
+            const SQChar* pOID = nullptr;
+            const SQChar* pEAName = nullptr;
 
-            if (SQ_FAILED(sq_getstring(v, 2, &token)) || !token ||
-                SQ_FAILED(sq_getstring(v, 3, &OID)) || !OID ||
-                SQ_FAILED(sq_getstring(v, 4, &ea_name)) || !ea_name)
+            if (SQ_FAILED(sq_getstring(v, 2, &pToken)) || !pToken ||
+                SQ_FAILED(sq_getstring(v, 3, &pOID)) || !pOID ||
+                SQ_FAILED(sq_getstring(v, 4, &pEAName)) || !pEAName)
             {
                 Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve parameters.");
                 v_SQVM_ScriptError("Failed to retrieve parameters.");
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
+            //We must make a copy here, because we are passing it to another thread, getting the stack object will not
+            //matter even if we ref count it. This is because the server can reload / mapchange freeing the object
+            //regardless of our ref counting.
+            std::string token(pToken);
+            std::string oid(pOID);
+            std::string ea_name(pEAName);
+
             LOGGER::TaskManager::getInstance().AddTask
             (
-                [ token, OID, ea_name ]() //ref counted?
+                [ token, oid, ea_name ]()
                 {
                     int32_t status_num = 0;
-                    std::string status = LOGGER::VERIFY_EA_ACCOUNT(token, OID, ea_name);
+                    std::string status = LOGGER::VerifyEaAccount(token, oid, ea_name);
 
                     try {
                         status_num = std::stoi(status);
@@ -531,12 +538,23 @@ namespace VScriptCode
                     catch (const std::out_of_range& e) {
                         Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s\n", e.what());
                     }
+                    catch (...)
+                    {
+                        Msg(eDLL_T::SERVER, "Unknown error in ea_verify\n");
+                    }
 
-                    std::string command = "CodeCallback_VerifyEaAccount(\"" + Sanitize_NumbersOnly(OID) + "\", " + status + ")";
-                    g_TaskQueue.Dispatch([command] {
-                        g_pServerScript->Run(command.c_str());
-                        }, 0);
-                        }, 0); //maybe 1
+                    if (!g_pServer->IsActive())
+                    {
+                        std::string command = "CodeCallback_VerifyEaAccount(\"" + Sanitize_NumbersOnly(oid) + "\", " + status + ")";
+                        g_TaskQueue.Dispatch
+                        (
+                            [command]
+                            {
+                                g_pServerScript->Run(command.c_str());
+                            }
+                            ,1 //delayed
+                        );
+                    }
                 }
             );
 
@@ -674,6 +692,7 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
             }
 
+            //Msg(eDLL_T::SERVER, "Received JSON: %s\n", statsJson);
             rapidjson::Document document;
             if (document.Parse(statsJson).HasParseError())
             {
@@ -690,45 +709,143 @@ namespace VScriptCode
             }
 
             sq_newtable(v);
-
             for (rapidjson::Value::ConstMemberIterator itr = document.MemberBegin(); itr != document.MemberEnd(); ++itr)
             {
                 const char* key = itr->name.GetString();
-                const rapidjson::Value& value = itr->value;
+                if (!key || key[0] == '\0')
+                {
+                    Msg(eDLL_T::SERVER, "Empty key in stats skipped\n");
+                    continue;
+                }
 
                 sq_pushstring(v, key, -1);
+                const rapidjson::Value& value = itr->value;
 
-                if (value.IsInt())
+                if ( strcmp( key, "settings" ) == 0 && value.IsObject())
                 {
-                    sq_pushinteger(v, value.GetInt());
-                }
-                else if (value.IsString())
-                {
-                    sq_pushstring(v, value.GetString(), -1);
-                }
-                else if (value.IsBool())
-                {
-                    sq_pushbool(v, value.GetBool());
-                }
-                else if (value.IsFloat())
-                {
-                    sq_pushfloat(v, value.GetFloat());
-                }
-                else if (value.IsObject() && strcmp(key, "settings") == 0) //don't want to deal with recursion yet
-                {
-                    std::string settings_str;
-                    for (rapidjson::Value::ConstMemberIterator m = value.MemberBegin(); m != value.MemberEnd(); ++m)
+                    //Msg(eDLL_T::SERVER, "Settings found. Iterating.\n");     
+                    sq_newtable(v);
+                    for (auto m = value.MemberBegin(); m != value.MemberEnd(); ++m)
                     {
-                        if (!settings_str.empty())
+                        const char* subKey = m->name.GetString();
+                        sq_pushstring(v, subKey, -1);
+                        const rapidjson::Value& subVal = m->value;
+                        if (subVal.IsString())
                         {
-                            settings_str += ",";
+                            //Msg(eDLL_T::SERVER, "settings[%s] = %s\n", subKey, subVal.GetString());
+                            sq_pushstring(v, subVal.GetString(), -1);
                         }
-                        settings_str += std::string(m->name.GetString()) + ":" + m->value.GetString();
-                    }
-                    sq_pushstring(v, settings_str.c_str(), -1);
-                }
+                        else if (subVal.IsInt())
+                            sq_pushinteger(v, subVal.GetInt());
+                        else if (subVal.IsBool())
+                            sq_pushbool(v, subVal.GetBool());
+                        else if (subVal.IsFloat() || subVal.IsDouble())
+                            sq_pushfloat(v, static_cast<float>(subVal.GetDouble()));
+                        else
+                        {
+                            Msg(eDLL_T::SERVER, "Unknown value type in settings table. Skipping\n");
+                            continue;
+                        }
 
-                sq_newslot(v, -3);
+                        sq_newslot(v, -3);
+                    }
+
+                    sq_newslot(v, -3);
+                }
+                else if (value.IsArray())
+                {
+                    sq_newarray(v, 0);
+                    int arrayType = -1;
+                    auto getTypeName = [](int type) -> const char*
+                        {
+                            switch (type)
+                            {
+                            case 0: return "int";
+                            case 1: return "string";
+                            case 2: return "bool";
+                            case 3: return "float";
+                            case 4: return "object";
+                            case 5: return "unknown";
+                            default: return "none";
+                            }
+                        };
+
+                    for (rapidjson::SizeType i = 0; i < value.Size(); i++)
+                    {
+                        const rapidjson::Value& elem = value[i];
+                        int currentType = -1;
+                        if (elem.IsInt())
+                            currentType = 0;
+                        else if (elem.IsString())
+                            currentType = 1;
+                        else if (elem.IsBool())
+                            currentType = 2;
+                        else if (elem.IsFloat() || elem.IsDouble())
+                            currentType = 3;
+                        else if (elem.IsObject())
+                            currentType = 4;
+                        else
+                            currentType = 5;
+
+                        if (arrayType == -1)
+                            arrayType = currentType;
+                        else if (currentType != arrayType)
+                        {
+                            Warning(eDLL_T::SERVER, "Key '%s': Cannot add element of type '%s' to array of type '%s'",
+                                key, getTypeName(currentType), getTypeName(arrayType));
+                            continue;
+                        }
+
+                        if (elem.IsInt())
+                            sq_pushinteger(v, elem.GetInt());
+                        else if (elem.IsString())
+                            sq_pushstring(v, elem.GetString(), -1);
+                        else if (elem.IsBool())
+                            sq_pushbool(v, elem.GetBool());
+                        else if (elem.IsFloat() || elem.IsDouble())
+                            sq_pushfloat(v, static_cast<float>(elem.GetDouble()));
+                        else if (elem.IsObject())
+                        {
+                            sq_newtable(v);
+                            for (auto objItr = elem.MemberBegin(); objItr != elem.MemberEnd(); ++objItr)
+                            {
+                                const char* objKey = objItr->name.GetString();
+                                if (!objKey || objKey[0] == '\0')
+                                    continue;
+                                sq_pushstring(v, objKey, -1);
+                                const rapidjson::Value& objVal = objItr->value;
+                                if (objVal.IsInt())
+                                    sq_pushinteger(v, objVal.GetInt());
+                                else if (objVal.IsString())
+                                    sq_pushstring(v, objVal.GetString(), -1);
+                                else if (objVal.IsBool())
+                                    sq_pushbool(v, objVal.GetBool());
+                                else if (objVal.IsFloat() || objVal.IsDouble())
+                                    sq_pushfloat(v, static_cast<float>(objVal.GetDouble()));
+                                else
+                                    sq_pushstring(v, "Invalid Stat Array Value", -1);
+                                sq_newslot(v, -3);
+                            }
+                        }
+                        sq_arrayappend(v, -2);
+                    }
+                    sq_newslot(v, -3);
+                }
+                else
+                {
+                    if (value.IsInt())
+                        sq_pushinteger(v, value.GetInt());
+                    else if (value.IsString())
+                        sq_pushstring(v, value.GetString(), -1);
+                    else if (value.IsBool())
+                        sq_pushbool(v, value.GetBool());
+                    else if (value.IsFloat() || value.IsDouble())
+                        sq_pushfloat(v, static_cast<float>(value.GetDouble()));
+                    else
+                        sq_pushstring(v, "Invalid value type", -1);
+
+                    sq_newslot(v, -3);
+                }
             }
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -745,8 +862,9 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
-            LOGGER::UpdateLiveStats(stats_json);
+            std::string copyStatsJson(stats_json); //we must do this, as a thread is spawned to ship livestats
 
+            LOGGER::UpdateLiveStats( copyStatsJson );
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
@@ -832,7 +950,8 @@ namespace VScriptCode
 
             const std::string msg(inMsg);
 
-            CServerGameDLL::OnReceivedSayTextMessage(g_pServerGameDLL, static_cast<int>(senderId), msg.c_str(), false);
+            if( g_pServer->IsActive() )
+                CServerGameDLL::OnReceivedSayTextMessage(g_pServerGameDLL, static_cast<int>(senderId), msg.c_str(), false);
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
@@ -897,7 +1016,7 @@ namespace VScriptCode
                     continue;
                 }
 
-                std::string expectedBotName = "[" + std::string(ImmutableName) + "]";
+                std::string expectedBotName = "[" + std::string(ImmutableName) + "]"; //heaaaap
 
                 if (strcmp(clientName, expectedBotName.c_str()) == 0)
                 {

@@ -196,7 +196,7 @@ namespace LOGGER
     std::string url_encode(const std::string& value);
 
     //Funciton for verify
-    const std::string VERIFY_EA_ACCOUNT(const std::string& token, const std::string& OID, const std::string& ea_name);
+    const std::string VerifyEaAccount(const std::string& token, const std::string& OID, const std::string& ea_name);
 
     //Api call to player count
     void PlayerCountUpdate(const char* action, const char* player, const char* OID, const char* count, const char* DISCORD_HOOK);
