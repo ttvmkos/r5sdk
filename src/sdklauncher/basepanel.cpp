@@ -760,37 +760,40 @@ void CSurface::ParseMaps()
 	}
 
 	fs::directory_iterator directoryIterator(vpkPath);
-	std::cmatch regexMatches;
+	boost::cmatch regexMatches;
 
 	for (const fs::directory_entry& directoryEntry : directoryIterator)
 	{
-		std::string fileName = directoryEntry.path().u8string();
-		std::regex_search(fileName.c_str(), regexMatches, g_VpkDirFileRegex);
+		const std::string fileName = directoryEntry.path().u8string();
+		const char* const pFileName = fileName.c_str();
 
-		if (!regexMatches.empty())
+		const bool result = boost::regex_search(pFileName, &pFileName[fileName.length()], regexMatches, g_VpkDirFileRegex);
+
+		if (!result || regexMatches.empty())
 		{
-			const std::sub_match<const char*>& match = regexMatches[2];
+			continue;
+		}
 
-			if (match.compare("frontend") == 0)
-			{
-				continue;
-			}
-			else if (match.compare("mp_common") == 0)
-			{
-				if (!this->m_MapCombo->Items.Contains("mp_lobby"))
-				{
-					this->m_MapCombo->Items.Add("mp_lobby");
-				}
-				continue;
-			}
-			else
-			{
-				const string mapName = match.str();
+		const boost::sub_match<const char*>& match = regexMatches[2];
+		const std::string mapName = match.str();
 
-				if (!this->m_MapCombo->Items.Contains(match.str().c_str()))
-				{
-					this->m_MapCombo->Items.Add(match.str().c_str());
-				}
+		if (mapName.compare("frontend") == 0)
+		{
+			continue;
+		}
+		else if (mapName.compare("mp_common") == 0)
+		{
+			if (!this->m_MapCombo->Items.Contains("mp_lobby"))
+			{
+				this->m_MapCombo->Items.Add("mp_lobby");
+			}
+			continue;
+		}
+		else
+		{
+			if (!this->m_MapCombo->Items.Contains(mapName.c_str()))
+			{
+				this->m_MapCombo->Items.Add(mapName.c_str());
 			}
 		}
 	}
@@ -871,7 +874,7 @@ void CSurface::ReloadPlaylists(Forms::Control* pSender)
 //-----------------------------------------------------------------------------
 void CSurface::AddLog(const LogType_t type, const char* const pszText)
 {
-	m_LogList.push_back(LogList_t(type, pszText));
+	m_LogList.emplace_back(type, pszText);
 
 	// Clamp the log list size, as we cannot fit more elements than
 	// 8 in the console window.
@@ -1109,7 +1112,7 @@ void CSurface::AppendHostParameters(string& svParameters)
 		}
 		}
 
-		AppendParameterInternal(svParameters, "+sv_pylonVisibility", szMode);
+		AppendParameterInternal(svParameters, "+pylon_host_visibility", szMode);
 	}
 }
 

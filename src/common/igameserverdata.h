@@ -4,10 +4,11 @@
 //
 //===========================================================================//
 #pragma once
+#include "netcon/INetCon.h"
 
 typedef int SocketHandle_t;
 
-enum class ServerDataRequestType_t : int
+enum class ServerDataRequestType_e : int
 {
 	SERVERDATA_REQUEST_VALUE = 0,
 	SERVERDATA_REQUEST_SETVALUE,
@@ -17,7 +18,7 @@ enum class ServerDataRequestType_t : int
 	SERVERDATA_REQUEST_SEND_REMOTEBUG,
 };
 
-enum class ServerDataResponseType_t : int
+enum class ServerDataResponseType_e : int
 {
 	SERVERDATA_RESPONSE_VALUE = 0,
 	SERVERDATA_RESPONSE_UPDATE,
@@ -27,20 +28,20 @@ enum class ServerDataResponseType_t : int
 	SERVERDATA_RESPONSE_REMOTEBUG,
 };
 
-class CConnectedNetConsoleData
+struct ConnectedNetConsoleData_s
 {
-public:
 	SocketHandle_t m_hSocket;
-	int  m_nPayloadLen;     // Num bytes for this message.
-	int  m_nPayloadRead;    // Num read bytes from input buffer.
-	int  m_nFailedAttempts; // Num failed authentication attempts.
-	int  m_nIgnoredMessage; // Count how many times client ignored the no-auth message.
+	u32  m_nPayloadLen;     // Num bytes for this message.
+	u32  m_nPayloadRead;    // Num read bytes from input buffer.
+	s32  m_nFailedAttempts; // Num failed authentication attempts.
+	s32  m_nIgnoredMessage; // Count how many times client ignored the no-auth message.
 	bool m_bValidated;      // Revalidates netconsole if false.
 	bool m_bAuthorized;     // Set to true after successful netconsole auth.
 	bool m_bInputOnly;      // If set, don't send spew to this netconsole.
-	vector<uint8_t> m_RecvBuffer;
+	NetConFrameHeader_s m_FrameHeader; // Current frame header.
+	vector<byte> m_RecvBuffer;
 
-	CConnectedNetConsoleData(SocketHandle_t hSocket = -1)
+	ConnectedNetConsoleData_s(SocketHandle_t hSocket = -1)
 	{
 		m_hSocket = hSocket;
 		m_nPayloadLen = 0;
@@ -50,22 +51,19 @@ public:
 		m_bValidated = false;
 		m_bAuthorized = false;
 		m_bInputOnly = true;
-		m_RecvBuffer.resize(sizeof(u_long)); // Reserve enough for length-prefix.
+		m_FrameHeader.magic = 0;
+		m_FrameHeader.length = 0;
 	}
 };
 
 /* PACKET FORMAT **********************************
 
 REQUEST:
-  int requestID;
-  int ServerDataRequestType_t;
-  NullTerminatedString (variable or command)
-  NullTerminatedString (value)
+  NetConFrameHeader_s header;
+  byte* data;
 
 RESPONSE:
-  int requestID;
-  int ServerDataResponseType_t;
-  NullTerminatedString (variable)
-  NullTerminatedString (value)
+  NetConFrameHeader_s header;
+  byte* data;
 
 ***************************************************/

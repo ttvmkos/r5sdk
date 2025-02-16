@@ -15,10 +15,10 @@ public:
 	void RunFrame(void);
 
 	virtual void Disconnect(const char* szReason = nullptr) override;
-	virtual bool ProcessMessage(const char* pMsgBuf, const int nMsgLen) override;
+	virtual bool ProcessMessage(const byte* pMsgBuf, const u32 nMsgLen, const u32 nMaxLen) override;
 
-	bool Serialize(vector<char>& vecBuf, const char* szReqBuf,
-		const char* szReqVal, const netcon::request_e requestType) const;
+	bool Serialize(vector<byte>& vecBuf, const char* szReqBuf, const size_t nReqMsgLen,
+		const char* szReqVal, const size_t nReqValLen, const netcon::request_e requestType) const;
 
 	void RequestConsoleLog(const bool bWantLog);
 	bool ShouldReceive(void);
@@ -27,7 +27,7 @@ public:
 	bool IsInitialized(void) const;
 	bool IsConnected(void);
 
-	CConnectedNetConsoleData* GetData(void);
+	ConnectedNetConsoleData_s* GetData(void);
 	SocketHandle_t GetSocket(void);
 
 private:

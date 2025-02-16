@@ -15,7 +15,7 @@
 #ifndef _TOOLS
 #include "vscript/languages/squirrel_re/include/sqstdaux.h"
 #endif // !_TOOLS
-static const std::regex s_AnsiRowRegex("\\\033\\[.*?m");
+static const boost::regex s_AnsiRowRegex(R"(\x1b\[[\d;]+m)");
 static std::mutex s_LogMutex;
 
 #if !defined (DEDICATED) && !defined (_TOOLS)
@@ -155,6 +155,7 @@ void EngineLoggerSink(LogType_t logType, LogLevel_t logLevel, eDLL_T context,
 	const char* pszUpTime = pszUptimeOverride ? pszUptimeOverride : Plat_GetProcessUpTime();
 	string message(pszUpTime);
 
+	// Also represents the length of the up time string (the "[0.000] " prefix before each log).
 	const size_t contextTextStartIndex = message.length();
 
 	const bool bToConsole = (logLevel >= LogLevel_t::LEVEL_CONSOLE);
@@ -319,7 +320,7 @@ void EngineLoggerSink(LogType_t logType, LogLevel_t logLevel, eDLL_T context,
 			}
 
 			// Remove anything else that was passed in as a format argument.
-			message = std::regex_replace(message, s_AnsiRowRegex, "");
+			message = boost::regex_replace(message, s_AnsiRowRegex, "");
 		}
 	}
 
@@ -340,7 +341,7 @@ void EngineLoggerSink(LogType_t logType, LogLevel_t logLevel, eDLL_T context,
 #ifndef CLIENT_DLL
 		if (!LoggedFromClient(context) && RCONServer()->ShouldSend(netcon::response_e::SERVERDATA_RESPONSE_CONSOLE_LOG))
 		{
-			RCONServer()->SendEncoded(formatted.c_str(), pszUpTime, netcon::response_e::SERVERDATA_RESPONSE_CONSOLE_LOG,
+			RCONServer()->SendEncoded(formatted.c_str(), formatted.length(), pszUpTime, contextTextStartIndex, netcon::response_e::SERVERDATA_RESPONSE_CONSOLE_LOG,
 				int(context), int(logType));
 		}
 #endif // !CLIENT_DLL
@@ -352,7 +353,7 @@ void EngineLoggerSink(LogType_t logType, LogLevel_t logLevel, eDLL_T context,
 		if (g_bSdkInitialized && logLevel >= LogLevel_t::LEVEL_NOTIFY)
 		{
 			// Draw to mini console.
-			g_TextOverlay.AddLog(overlayContext, message.c_str());
+			g_TextOverlay.AddLog(overlayContext, message.c_str(), (ssize_t)message.length());
 		}
 #endif // !DEDICATED
 	}

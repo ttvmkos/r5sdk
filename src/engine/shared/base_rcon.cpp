@@ -144,72 +144,87 @@ bool CNetConBase::Connect(const char* pHostName, const int nPort)
 //			nMaxLen - 
 // Output: true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetConBase::ProcessBuffer(CConnectedNetConsoleData& data, 
-	const char* pRecvBuf, int nRecvLen, const int nMaxLen)
+bool CNetConBase::ProcessBuffer(ConnectedNetConsoleData_s& data, const byte* pRecvBuf, u32 nRecvLen, const u32 nMaxLen)
 {
-	bool bSuccess = true;
-
 	while (nRecvLen > 0)
 	{
+		// Read payload if it's already in progress.
 		if (data.m_nPayloadLen)
 		{
-			if (data.m_nPayloadRead < data.m_nPayloadLen)
-			{
-				data.m_RecvBuffer[data.m_nPayloadRead++] = *pRecvBuf;
+			const u32 bytesToCopy = Min(nRecvLen, data.m_nPayloadLen - data.m_nPayloadRead);
+			memcpy(&data.m_RecvBuffer[data.m_nPayloadRead], pRecvBuf, bytesToCopy);
 
-				pRecvBuf++;
-				nRecvLen--;
-			}
+			data.m_nPayloadRead += bytesToCopy;
+
+			pRecvBuf += bytesToCopy;
+			nRecvLen -= bytesToCopy;
+
 			if (data.m_nPayloadRead == data.m_nPayloadLen)
 			{
-				if (!ProcessMessage(
-					reinterpret_cast<const char*>(data.m_RecvBuffer.data()), data.m_nPayloadLen)
-					&& bSuccess)
-				{
-					bSuccess = false;
-				}
+				if (!ProcessMessage(data.m_RecvBuffer.data(), data.m_nPayloadLen, nMaxLen))
+					return false;
 
+				// Reset state.
 				data.m_nPayloadLen = 0;
 				data.m_nPayloadRead = 0;
 			}
 		}
-		else if (data.m_nPayloadRead < sizeof(int)) // Read size field.
+		else if (data.m_nPayloadRead < sizeof(NetConFrameHeader_s)) // Read the header if we haven't fully recv'd it.
 		{
-			data.m_RecvBuffer[data.m_nPayloadRead++] = *pRecvBuf;
+			const u32 bytesToCopy = Min(nRecvLen, int(sizeof(NetConFrameHeader_s)) - data.m_nPayloadRead);
+			memcpy(reinterpret_cast<char*>(&data.m_FrameHeader) + data.m_nPayloadRead, pRecvBuf, bytesToCopy);
 
-			pRecvBuf++;
-			nRecvLen--;
-		}
-		else // Build prefix.
-		{
-			data.m_nPayloadLen = int(ntohl(*reinterpret_cast<u_long*>(&data.m_RecvBuffer[0])));
-			data.m_nPayloadRead = 0;
+			data.m_nPayloadRead += bytesToCopy;
 
-			if (!data.m_bAuthorized && nMaxLen > -1)
+			pRecvBuf += bytesToCopy;
+			nRecvLen -= bytesToCopy;
+
+			if (data.m_nPayloadRead == sizeof(NetConFrameHeader_s))
 			{
-				if (data.m_nPayloadLen > nMaxLen)
+				NetConFrameHeader_s& header = data.m_FrameHeader;
+
+				// Convert byte order and check for desync.
+				header.magic = ntohl(header.magic);
+				const char* desyncReason = nullptr;
+
+				if (header.magic != RCON_FRAME_MAGIC)
 				{
-					Disconnect("overflow"); // Sending large messages while not authenticated.
+					desyncReason = "invalid magic";
+				}
+
+				if (!desyncReason)
+				{
+					header.length = ntohl(header.length);
+
+					if (header.length == 0)
+					{
+						desyncReason = "empty frame";
+					}
+				}
+
+				if (desyncReason)
+				{
+					Error(eDLL_T::ENGINE, NO_ERROR, "RCON Cmd: sync error (%s)\n", desyncReason);
+					Disconnect("desync");
+
 					return false;
 				}
-			}
 
-			if (data.m_nPayloadLen < 0 ||
-				data.m_nPayloadLen > data.m_RecvBuffer.max_size())
-			{
-				Error(eDLL_T::ENGINE, NO_ERROR, "RCON Cmd: sync error (%d)\n", data.m_nPayloadLen);
-				Disconnect("desync"); // Out of sync (irrecoverable).
+				if (header.length > nMaxLen)
+				{
+					Disconnect("overflow");
+					return false;
+				}
 
-				return false;
-			}
-			else
-			{
-				data.m_RecvBuffer.resize(data.m_nPayloadLen);
+				data.m_nPayloadLen = header.length;
+				data.m_nPayloadRead = 0;
+
+				data.m_RecvBuffer.resize(header.length);
 			}
 		}
 	}
 
-	return bSuccess;
+	return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -220,13 +235,12 @@ bool CNetConBase::ProcessBuffer(CConnectedNetConsoleData& data,
 //			nDataLen - 
 // Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetConBase::Encrypt(CryptoContext_s& ctx, const char* pInBuf, 
-	char* pOutBuf, const size_t nDataLen) const
+bool CNetConBase::Encrypt(CryptoContext_s& ctx, const byte* pInBuf, byte* pOutBuf, const u32 nDataLen) const
 {
-	if (Crypto_GenerateIV(ctx, reinterpret_cast<const unsigned char*>(pInBuf), nDataLen))
-		return Crypto_CTREncrypt(ctx, reinterpret_cast<const unsigned char*>(pInBuf),
-			reinterpret_cast<unsigned char*>(pOutBuf), m_NetKey, nDataLen);
+	if (Crypto_GenerateIV(ctx, pInBuf, nDataLen))
+		return Crypto_CTREncrypt(ctx, pInBuf, pOutBuf, m_NetKey, nDataLen);
 
+	Assert(0);
 	return false; // failure
 }
 
@@ -238,11 +252,9 @@ bool CNetConBase::Encrypt(CryptoContext_s& ctx, const char* pInBuf,
 //			nDataLen - 
 // Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetConBase::Decrypt(CryptoContext_s& ctx, const char* pInBuf,
-	char* pOutBuf, const size_t nDataLen) const
+bool CNetConBase::Decrypt(CryptoContext_s& ctx, const byte* pInBuf, byte* pOutBuf, const u32 nDataLen) const
 {
-	return Crypto_CTRDecrypt(ctx, reinterpret_cast<const unsigned char*>(pInBuf), 
-		reinterpret_cast<unsigned char*>(pOutBuf), m_NetKey, nDataLen);
+	return Crypto_CTRDecrypt(ctx, pInBuf, pOutBuf, m_NetKey, nDataLen);
 }
 
 //-----------------------------------------------------------------------------
@@ -252,10 +264,9 @@ bool CNetConBase::Decrypt(CryptoContext_s& ctx, const char* pInBuf,
 //			nMsgLen - 
 // Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetConBase::Encode(google::protobuf::MessageLite* pMsg,
-	char* pMsgBuf, const size_t nMsgLen) const
+bool CNetConBase::Encode(google::protobuf::MessageLite* pMsg, byte* pMsgBuf, const u32 nMsgLen) const
 {
-	return pMsg->SerializeToArray(pMsgBuf, int(nMsgLen));
+	return pMsg->SerializeToArray(pMsgBuf, (i32)nMsgLen);
 }
 
 //-----------------------------------------------------------------------------
@@ -265,10 +276,9 @@ bool CNetConBase::Encode(google::protobuf::MessageLite* pMsg,
 //			nMsgLen - 
 // Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetConBase::Decode(google::protobuf::MessageLite* pMsg,
-	const char* pMsgBuf, const size_t nMsgLen) const
+bool CNetConBase::Decode(google::protobuf::MessageLite* pMsg, const byte* pMsgBuf, const u32 nMsgLen) const
 {
-	return pMsg->ParseFromArray(pMsgBuf, int(nMsgLen));
+	return pMsg->ParseFromArray(pMsgBuf, (i32)nMsgLen);
 }
 
 //-----------------------------------------------------------------------------
@@ -278,18 +288,9 @@ bool CNetConBase::Decode(google::protobuf::MessageLite* pMsg,
 //			nMsgLen - 
 // Output: true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetConBase::Send(const SocketHandle_t hSocket, const char* pMsgBuf,
-	const int nMsgLen) const
+bool CNetConBase::Send(const SocketHandle_t hSocket, const byte* pMsgBuf, const u32 nMsgLen) const
 {
-	std::ostringstream sendbuf;
-	const u_long nLen = htonl(u_long(nMsgLen));
-
-	sendbuf.write(reinterpret_cast<const char*>(&nLen), sizeof(u_long));
-	sendbuf.write(pMsgBuf, nMsgLen);
-
-	int ret = ::send(hSocket, sendbuf.str().data(), int(sendbuf.str().size()),
-		MSG_NOSIGNAL);
-
+	const int ret = ::send(hSocket, (char*)pMsgBuf, (i32)nMsgLen, MSG_NOSIGNAL);
 	return (ret != SOCKET_ERROR);
 }
 
@@ -299,19 +300,19 @@ bool CNetConBase::Send(const SocketHandle_t hSocket, const char* pMsgBuf,
 //			nMaxLen - 
 // Output: true on success, false otherwise
 //-----------------------------------------------------------------------------
-void CNetConBase::Recv(CConnectedNetConsoleData& data, const int nMaxLen)
+void CNetConBase::Recv(ConnectedNetConsoleData_s& data, const u32 nMaxLen)
 {
 	static char szRecvBuf[1024];
 
 	{//////////////////////////////////////////////
-		const int nPendingLen = ::recv(data.m_hSocket, szRecvBuf, sizeof(char), MSG_PEEK);
+		const int nPendingLen = ::recv(data.m_hSocket, szRecvBuf, sizeof(szRecvBuf), MSG_PEEK);
 		if (nPendingLen == SOCKET_ERROR && m_Socket.IsSocketBlocking())
 		{
 			return;
 		}
 		else if (nPendingLen == 0) // Socket was closed.
 		{
-			Disconnect("remote closed socket");
+			Disconnect("socket closed prematurely");
 			return;
 		}
 		else if (nPendingLen < 0)
@@ -321,8 +322,8 @@ void CNetConBase::Recv(CConnectedNetConsoleData& data, const int nMaxLen)
 		}
 	}//////////////////////////////////////////////
 
-	int nReadLen = 0; // Find out how much we have to read.
-	int iResult = ::ioctlsocket(data.m_hSocket, FIONREAD, reinterpret_cast<u_long*>(&nReadLen));
+	u_long nReadLen = 0; // Find out how much we have to read.
+	const int iResult = ::ioctlsocket(data.m_hSocket, FIONREAD, &nReadLen);
 
 	if (iResult == SOCKET_ERROR)
 	{
@@ -344,8 +345,10 @@ void CNetConBase::Recv(CConnectedNetConsoleData& data, const int nMaxLen)
 			break;
 		}
 
-		nReadLen -= nRecvLen; // Process what we've got.
-		ProcessBuffer(data, szRecvBuf, nRecvLen, nMaxLen);
+		nReadLen -= static_cast<u_long>(nRecvLen); // Process what we've got.
+
+		if (!ProcessBuffer(data, reinterpret_cast<byte*>(&szRecvBuf), static_cast<u32>(nRecvLen), nMaxLen))
+			break;
 	}
 
 	return;

@@ -15,10 +15,11 @@
 //-----------------------------------------------------------------------------
 // Console variables
 //-----------------------------------------------------------------------------
-ConVar pylon_matchmaking_enabled("pylon_matchmaking_enabled", "1", FCVAR_RELEASE | FCVAR_ACCESSIBLE_FROM_THREADS, "Whether to use the pylon matchmaking server");
-ConVar pylon_matchmaking_hostname("pylon_matchmaking_hostname", "r5r.org", FCVAR_RELEASE | FCVAR_ACCESSIBLE_FROM_THREADS, "Holds the pylon matchmaking hostname");
-ConVar pylon_host_update_interval("pylon_host_update_interval", "5", FCVAR_RELEASE | FCVAR_ACCESSIBLE_FROM_THREADS, "Length of time in seconds between each status update interval to master server", true, 5.f, false, 0.f);
-ConVar pylon_showdebuginfo("pylon_showdebuginfo", "0", FCVAR_RELEASE | FCVAR_ACCESSIBLE_FROM_THREADS, "Shows debug output for pylon");
+ConVar pylon_matchmaking_enabled("pylon_matchmaking_enabled", "1", FCVAR_RELEASE | FCVAR_ACCESSIBLE_FROM_THREADS, "Whether to use the Pylon matchmaking server");
+ConVar pylon_matchmaking_hostname("pylon_matchmaking_hostname", "r5r.org", FCVAR_RELEASE | FCVAR_ACCESSIBLE_FROM_THREADS, "Holds the Pylon matchmaking hostname");
+ConVar pylon_host_update_interval("pylon_host_update_interval", "5", FCVAR_RELEASE, "Time interval between status updates to the Pylon master server", true, 5.f, false, 0.f, "seconds");
+ConVar pylon_host_visibility("pylon_host_visibility", "0", FCVAR_RELEASE, "Determines the visibility to the Pylon master server", true, 0.f, true, 2.f, "0 = Offline, 1 = Hidden, 2 = Public");
+ConVar pylon_showdebuginfo("pylon_showdebuginfo", "0", FCVAR_RELEASE | FCVAR_ACCESSIBLE_FROM_THREADS, "Shows debug output for Pylon");
 
 //-----------------------------------------------------------------------------
 // Purpose: checks if server listing fields are valid, and sets outGameServer
@@ -48,7 +49,8 @@ static bool GetServerListingFromJSON(const rapidjson::Value& value, NetGameServe
 
 //-----------------------------------------------------------------------------
 // Purpose: gets a vector of hosted servers.
-// Input  : &outMessage - 
+// Input  : &outServerList - 
+//          &outMessage - 
 // Output : true on success, false on failure.
 //-----------------------------------------------------------------------------
 bool CPylon::GetServerList(vector<NetGameServer_t>& outServerList, string& outMessage) const
@@ -95,7 +97,7 @@ bool CPylon::GetServerList(vector<NetGameServer_t>& outServerList, string& outMe
             continue;
         }
 
-        outServerList.push_back(gameServer);
+        outServerList.emplace_back(std::move(gameServer));
     }
 
     return true;
@@ -121,8 +123,8 @@ bool CPylon::GetServerByToken(NetGameServer_t& outGameServer,
     requestJson.SetObject();
 
     rapidjson::Document::AllocatorType& allocator = requestJson.GetAllocator();
-    requestJson.AddMember("version", rapidjson::Value(SDK_VERSION, requestJson.GetAllocator()), allocator);
-    requestJson.AddMember("token", rapidjson::Value(token.c_str(), requestJson.GetAllocator()), allocator);
+    requestJson.AddMember("version", rapidjson::Value(SDK_VERSION, sizeof(SDK_VERSION)-1, requestJson.GetAllocator()), allocator);
+    requestJson.AddMember("token", rapidjson::Value(token.c_str(), token.length(), requestJson.GetAllocator()), allocator);
 
     rapidjson::Document responseJson;
     CURLINFO status;
@@ -156,6 +158,7 @@ bool CPylon::GetServerByToken(NetGameServer_t& outGameServer,
 // Purpose: Sends host server POST request.
 // Input  : &outMessage - 
 //			&outToken - 
+//			&outHostIp - 
 //			&netGameServer - 
 // Output : Returns true on success, false on failure.
 //-----------------------------------------------------------------------------
@@ -172,16 +175,16 @@ bool CPylon::PostServerHost(string& outMessage, string& outToken, string& outHos
 
     rapidjson::Document::AllocatorType& allocator = requestJson.GetAllocator();
 
-    requestJson.AddMember("name",        rapidjson::Value(netGameServer.name.c_str(),        allocator), allocator);
-    requestJson.AddMember("description", rapidjson::Value(netGameServer.description.c_str(), allocator), allocator);
+    requestJson.AddMember("name",        rapidjson::Value(netGameServer.name.c_str(),        netGameServer.name.length(),        allocator), allocator);
+    requestJson.AddMember("description", rapidjson::Value(netGameServer.description.c_str(), netGameServer.description.length(), allocator), allocator);
     requestJson.AddMember("hidden",      netGameServer.hidden,                               allocator);
-    requestJson.AddMember("map",         rapidjson::Value(netGameServer.map.c_str(),         allocator), allocator);
-    requestJson.AddMember("playlist",    rapidjson::Value(netGameServer.playlist.c_str(),    allocator), allocator);
-    requestJson.AddMember("ip",          rapidjson::Value(netGameServer.address.c_str(),     allocator), allocator);
+    requestJson.AddMember("map",         rapidjson::Value(netGameServer.map.c_str(),         netGameServer.map.length(),         allocator), allocator);
+    requestJson.AddMember("playlist",    rapidjson::Value(netGameServer.playlist.c_str(),    netGameServer.playlist.length(),    allocator), allocator);
+    requestJson.AddMember("ip",          rapidjson::Value(netGameServer.address.c_str(),     netGameServer.address.length(),     allocator), allocator);
     requestJson.AddMember("port",        netGameServer.port,                                 allocator);
-    requestJson.AddMember("key",         rapidjson::Value(netGameServer.netKey.c_str(),      allocator), allocator);
+    requestJson.AddMember("key",         rapidjson::Value(netGameServer.netKey.c_str(),      netGameServer.netKey.length(),      allocator), allocator);
     requestJson.AddMember("checksum",    netGameServer.checksum,                             allocator);
-    requestJson.AddMember("version",     rapidjson::Value(netGameServer.versionId.c_str(),   allocator), allocator);
+    requestJson.AddMember("version",     rapidjson::Value(netGameServer.versionId.c_str(),   netGameServer.versionId.length(),   allocator), allocator);
     requestJson.AddMember("numPlayers",  netGameServer.numPlayers,                           allocator);
     requestJson.AddMember("maxPlayers",  netGameServer.maxPlayers,                           allocator);
     requestJson.AddMember("timeStamp",   netGameServer.timeStamp,                            allocator);
@@ -244,7 +247,7 @@ bool CPylon::GetBannedList(const CBanSystem::BannedList_t& inBannedVec, CBanSyst
         rapidjson::Value player(rapidjson::kObjectType);
 
         player.AddMember("id", banned.m_NucleusID, allocator);
-        player.AddMember("ip", rapidjson::Value(banned.m_Address.String(), allocator), allocator);
+        player.AddMember("ip", rapidjson::Value(banned.m_Address.String(), banned.m_Address.Length(), allocator), allocator);
 
         playersArray.PushBack(player, allocator);
     }
@@ -296,6 +299,7 @@ bool CPylon::GetBannedList(const CBanSystem::BannedList_t& inBannedVec, CBanSyst
 // Purpose: Checks if client is banned on the comp server.
 // Input  : &ipAddress - 
 //			nucleusId  - 
+//			&personaName - 
 //			&outReason - <- contains banned reason if any.
 // Output : True if banned, false if not banned.
 //-----------------------------------------------------------------------------
@@ -477,7 +481,7 @@ bool CPylon::SendRequest(const char* endpoint, const rapidjson::Document& reques
 
     if (status == 200) // STATUS_OK
     {
-        responseJson.Parse(responseBody.c_str(), responseBody.length()+1);
+        responseJson.Parse(responseBody.c_str(), responseBody.length());
 
         if (responseJson.HasParseError())
         {
@@ -617,7 +621,7 @@ void CPylon::ExtractError(const string& response, string& outMessage,
     if (!response.empty())
     {
         rapidjson::Document resultBody;
-        resultBody.Parse(response.c_str(), response.length()+1);
+        resultBody.Parse(response.c_str(), response.length());
 
         ExtractError(resultBody, outMessage, status, errorText);
     }

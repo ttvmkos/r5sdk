@@ -165,7 +165,7 @@ void Mod_GetAllInstalledMaps()
     CUtlVector<CUtlString> fileList;
     AddFilesToList(fileList, "vpk", "vpk", nullptr, '/');
 
-    std::cmatch regexMatches;
+    boost::cmatch regexMatches;
     AUTO_LOCK(g_InstalledMapsMutex);
 
     g_InstalledMaps.Purge(); // Clear current list.
@@ -173,34 +173,63 @@ void Mod_GetAllInstalledMaps()
     FOR_EACH_VEC(fileList, i)
     {
         const CUtlString& filePath = fileList[i];
-        const char* pFileName = strrchr(filePath.Get(), '/')+1;
 
-        // Should always point right in front of the last
-        // slash, as the files are loaded from 'vpk/'.
-        Assert(pFileName);
+        const char* const pathBase = filePath.String();
+        const ssize_t pathLength = filePath.Length();
 
-        std::regex_search(pFileName, regexMatches, g_VpkDirFileRegex);
+        ssize_t fileNameStart = pathLength;
 
-        if (!regexMatches.empty())
+        // Get the unqualified file name.
+        while (fileNameStart)
         {
-            const std::sub_match<const char*>& match = regexMatches[2];
-
-            if (match.compare("frontend") == 0)
-                continue; // Frontend contains no BSP's.
-
-            else if (match.compare("mp_common") == 0)
+            if (pathBase[fileNameStart] == '/')
             {
-                if (!g_InstalledMaps.HasElement("mp_lobby"))
-                    g_InstalledMaps.AddToTail("mp_lobby");
-
-                continue; // Common contains mp_lobby.
+                fileNameStart++; // Skip the '/'.
+                break;
             }
-            else
-            {
-                const string mapName = match.str();
 
-                if (!g_InstalledMaps.HasElement(mapName.c_str()))
-                    g_InstalledMaps.AddToTail(mapName.c_str());
+            fileNameStart--;
+        }
+
+        const bool result = boost::regex_match(&pathBase[fileNameStart], &pathBase[pathLength], regexMatches, g_VpkDirFileRegex);
+
+        if (!result || regexMatches.empty())
+            continue;
+
+        const boost::csub_match& match = regexMatches[2];
+        const std::string mapName = match.str();
+
+        if (mapName.compare("frontend") == 0)
+            continue; // Frontend contains no BSP's.
+
+        else if (mapName.compare("mp_common") == 0)
+        {
+            if (!g_InstalledMaps.HasElement("mp_lobby"))
+                g_InstalledMaps.AddToTail("mp_lobby");
+
+            continue; // Common contains mp_lobby.
+        }
+        else
+        {
+            bool found = false;
+
+            FOR_EACH_VEC(g_InstalledMaps, j)
+            {
+                const CUtlString& installedMap = g_InstalledMaps[j];
+
+                if (installedMap.IsEqual_CaseSensitive(mapName.c_str()))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                const int index = g_InstalledMaps.AddToTail();
+                CUtlString& entry = g_InstalledMaps.Element(index);
+
+                entry.SetDirect(mapName.c_str(), (ssize_t)mapName.length());
             }
         }
     }

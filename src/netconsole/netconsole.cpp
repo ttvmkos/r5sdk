@@ -27,10 +27,9 @@ CNetCon::CNetCon(void)
 	, m_bEncryptFrames(false)
 	, m_flTickInterval(0.05f)
 {
-	// Empty character set used for ip addresses if we still need to initiate a
-	// connection, as we don't want to break on ':' characters found in an IPv6
-	// address.
-	CharacterSetBuild(&m_CharacterSet, "");
+	// Character set without colon used for ip addresses as we don't want to
+	// break on ':' characters found in an IPv6 address.
+	CharacterSetBuild(&m_CharacterSet, "{}()'");
 }
 
 //-----------------------------------------------------------------------------
@@ -172,8 +171,10 @@ BOOL WINAPI CNetCon::CloseHandler(DWORD eventCode)
 //-----------------------------------------------------------------------------
 void CNetCon::TermSetup(const bool bAnsiColor)
 {
+	if (bAnsiColor)
+		Console_ColorInit();
+
 	SpdLog_Init(bAnsiColor);
-	Console_Init(bAnsiColor);
 
 	// Handle ctrl+x or X close events, give the application time to shutdown
 	// properly and flush all logging buffers.
@@ -233,7 +234,7 @@ void CNetCon::RunInput(const string& lineInput)
 			return;
 		}
 
-		vector<char> vecMsg;
+		vector<byte> vecMsg;
 
 		const SocketHandle_t hSocket = GetSocket();
 		bool bSend = false;
@@ -242,18 +243,27 @@ void CNetCon::RunInput(const string& lineInput)
 		{
 			if (V_strcmp(cmd.Arg(0), "PASS") == 0) // Auth with RCON server.
 			{
-				bSend = Serialize(vecMsg, cmd.Arg(1), "",
+				const char* const pass = cmd.Arg(1);
+				const size_t passLen = strlen(pass);
+
+				bSend = Serialize(vecMsg, pass, passLen, "", 0,
 					netcon::request_e::SERVERDATA_REQUEST_AUTH);
 			}
 			else // Execute command query.
 			{
-				bSend = Serialize(vecMsg, cmd.Arg(0), cmd.GetCommandString(),
+				const char* const request = cmd.Arg(0);
+				const size_t requestLen = strlen(request);
+
+				const char* const command = cmd.GetCommandString();
+				const size_t commandLen = strlen(command);
+
+				bSend = Serialize(vecMsg, request, requestLen, command, commandLen,
 					netcon::request_e::SERVERDATA_REQUEST_EXECCOMMAND);
 			}
 		}
 		else // Single arg command query.
 		{
-			bSend = Serialize(vecMsg, lineInput.c_str(), "", netcon::request_e::SERVERDATA_REQUEST_EXECCOMMAND);
+			bSend = Serialize(vecMsg, lineInput.c_str(), lineInput.length(), "", 0, netcon::request_e::SERVERDATA_REQUEST_EXECCOMMAND);
 		}
 
 		if (bSend) // Only send if serialization process was successful.
@@ -315,8 +325,8 @@ bool CNetCon::RunFrame(void)
 
 		if (IsConnected())
 		{
-			CConnectedNetConsoleData& pData = GetSocketCreator()->GetAcceptedSocketData(0);
-			Recv(pData);
+			ConnectedNetConsoleData_s& pData = GetSocketCreator()->GetAcceptedSocketData(0);
+			Recv(pData, NETCON_MAX_FRAME_SIZE);
 		}
 		else if (GetPrompting())
 		{
@@ -411,13 +421,14 @@ void CNetCon::Disconnect(const char* szReason)
 // Purpose: processes received message
 // Input  : *pMsgBuf - 
 //			nMsgLen - 
+//			nMaxLen - 
 // Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetCon::ProcessMessage(const char* pMsgBuf, const int nMsgLen)
+bool CNetCon::ProcessMessage(const byte* pMsgBuf, const u32 nMsgLen, const u32 nMaxLen)
 {
 	netcon::response response;
 
-	if (!NetconShared_UnpackEnvelope(this, pMsgBuf, nMsgLen, &response, true))
+	if (!NetconShared_UnpackEnvelope(this, pMsgBuf, nMsgLen, nMaxLen, &response, true))
 	{
 		Disconnect("received invalid message");
 		return false;
@@ -432,10 +443,10 @@ bool CNetCon::ProcessMessage(const char* pMsgBuf, const int nMsgLen)
 			const long i = strtol(response.responseval().c_str(), NULL, NULL);
 			if (!i) // Means we are marked 'input only' on the rcon server.
 			{
-				vector<char> vecMsg;
-				bool ret = Serialize(vecMsg, "", "1", netcon::request_e::SERVERDATA_REQUEST_SEND_CONSOLE_LOG);
+				vector<byte> vecMsg;
+				const bool ret = Serialize(vecMsg, "", 0, "1", 1, netcon::request_e::SERVERDATA_REQUEST_SEND_CONSOLE_LOG);
 
-				if (ret && !Send(GetSocket(), vecMsg.data(), int(vecMsg.size())))
+				if (ret && !Send(GetSocket(), vecMsg.data(), (u32)vecMsg.size()))
 				{
 					Error(eDLL_T::CLIENT, NO_ERROR, "Failed to send RCON message: (%s)\n", "SOCKET_ERROR");
 				}
@@ -465,14 +476,16 @@ bool CNetCon::ProcessMessage(const char* pMsgBuf, const int nMsgLen)
 // Purpose: serializes message to vector
 // Input  : &vecBuf - 
 //			*szReqBuf - 
+//			nReqMsgLen - 
 //			*svReqVal - 
+//			nReqValLen - 
 //			requestType - 
 // Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool CNetCon::Serialize(vector<char>& vecBuf, const char* szReqBuf,
-	const char* szReqVal, const netcon::request_e requestType) const
+bool CNetCon::Serialize(vector<byte>& vecBuf, const char* szReqBuf, const size_t nReqMsgLen,
+	const char* szReqVal, const size_t nReqValLen, const netcon::request_e requestType) const
 {
-	return NetconClient_Serialize(this, vecBuf, szReqBuf, szReqVal, requestType, m_bEncryptFrames, true);
+	return NetconClient_Serialize(this, vecBuf, szReqBuf, nReqMsgLen, szReqVal, nReqValLen, requestType, m_bEncryptFrames, true);
 }
 
 //-----------------------------------------------------------------------------
@@ -511,27 +524,23 @@ int main(int argc, char* argv[])
 
 	bool bEnableColor = false;
 
-	for (int i = 0; i < argc; i++)
+	if (argc >= 2)
 	{
-		if (V_strcmp(argv[i], "-ansicolor") == NULL)
-		{
-			bEnableColor = true;
-			break;
-		}
+		bEnableColor = V_strcmp(argv[1], "-ansicolor") == NULL;
 	}
 
 	// The address and key from command line if passed in.
 	const char* pAdr = nullptr;
 	const char* pKey = nullptr;
 
-	if (argc >= 2)
+	if (argc >= 2 + bEnableColor)
 	{
-		pAdr = argv[1];
+		pAdr = argv[1 + bEnableColor];
 	}
 
-	if (argc >= 3)
+	if (argc >= 3 + bEnableColor)
 	{
-		pKey = argv[2];
+		pKey = argv[2 + bEnableColor];
 	}
 
 	if (!NetConsole()->Init(bEnableColor, pAdr, pKey))

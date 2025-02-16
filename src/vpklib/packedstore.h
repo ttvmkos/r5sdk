@@ -27,8 +27,8 @@ constexpr int PACKFILEINDEX_SEP = 0x0;
 constexpr int PACKFILEINDEX_END = 0xffff;
 constexpr const char VPK_IGNORE_FILE[] = ".vpkignore";
 
-static const std::regex g_VpkDirFileRegex{ R"((?:.*\/)?([^_]*)(?:_)(.*)(.bsp.pak000_dir).*)" };
-static const std::regex g_VpkPackFileRegex{ R"(pak000_([0-9]{3}))" };
+static const boost::regex g_VpkDirFileRegex{ R"(([^_\/]+)_([^.]*)\.bsp\.pak000_dir.vpk)" };
+static const boost::regex g_VpkPackFileRegex{ R"(pak000_(\d{3})(?=\.vpk))" };
 
 //-----------------------------------------------------------------------------
 // KeyValues structure for the VPK manifest file. This struct gets populated by
@@ -158,7 +158,7 @@ struct VPKDir_t
 	class CTreeBuilder
 	{
 	public:
-		typedef std::map<std::string, std::list<VPKEntryBlock_t>> PathContainer_t;
+		typedef std::map<std::string, std::list<const VPKEntryBlock_t*>> PathContainer_t;
 		typedef std::map<std::string, PathContainer_t> TypeContainer_t;
 
 		void BuildTree(const CUtlVector<VPKEntryBlock_t>& entryBlocks);
@@ -220,8 +220,8 @@ private:
 	std::unordered_map<string, const VPKChunkDescriptor_t&> m_ChunkHashMap;
 };
 
-CUtlString PackedStore_GetDirBaseName(const CUtlString& dirFileName);
-CUtlString PackedStore_GetDirNameParts(const CUtlString& dirFileName, const int nCaptureGroup);
+bool PackedStore_GetDirBaseName(const CUtlString& dirFileName, CUtlString& dirBaseName);
+bool PackedStore_GetDirNameParts(const CUtlString& dirFileName, const int nCaptureGroup, CUtlString& dirNameParts);
 ///////////////////////////////////////////////////////////////////////////////
 
 #endif // PACKEDSTORE_H

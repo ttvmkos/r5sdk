@@ -144,7 +144,7 @@ namespace VScriptCode
                 else
                 {
                     hiddenServerRequestMessage = Format("Request failed: %s", hiddenServerRequestMessage.c_str());
-                    sq_pushstring(v, hiddenServerRequestMessage.c_str(), -1);
+                    sq_pushstring(v, hiddenServerRequestMessage.c_str(), (SQInteger)hiddenServerRequestMessage.length());
                 }
 
                 SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -157,12 +157,12 @@ namespace VScriptCode
                 else
                     hiddenServerRequestMessage = Format("Server listing empty: %s", hiddenServerRequestMessage.c_str());
 
-                sq_pushstring(v, hiddenServerRequestMessage.c_str(), -1);
+                sq_pushstring(v, hiddenServerRequestMessage.c_str(), (SQInteger)hiddenServerRequestMessage.length());
             }
             else
             {
                 hiddenServerRequestMessage = Format("Found server: %s", serverListing.name.c_str());
-                sq_pushstring(v, hiddenServerRequestMessage.c_str(), -1);
+                sq_pushstring(v, hiddenServerRequestMessage.c_str(), (SQInteger)hiddenServerRequestMessage.length());
             }
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -182,7 +182,7 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
 
             const string& serverName = g_ServerListManager.m_vServerList[iServer].name;
-            sq_pushstring(v, serverName.c_str(), -1);
+            sq_pushstring(v, serverName.c_str(), (SQInteger)serverName.length());
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
@@ -201,7 +201,7 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
 
             const string& serverDescription = g_ServerListManager.m_vServerList[iServer].description;
-            sq_pushstring(v, serverDescription.c_str(), -1);
+            sq_pushstring(v, serverDescription.c_str(), (SQInteger)serverDescription.length());
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
@@ -219,8 +219,8 @@ namespace VScriptCode
             if (!Script_CheckServerIndexAndFailure(v, iServer))
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
 
-            const string& svServerMapName = g_ServerListManager.m_vServerList[iServer].map;
-            sq_pushstring(v, svServerMapName.c_str(), -1);
+            const string& serverMapName = g_ServerListManager.m_vServerList[iServer].map;
+            sq_pushstring(v, serverMapName.c_str(), (SQInteger)serverMapName.length());
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
@@ -239,7 +239,7 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
 
             const string& serverPlaylist = g_ServerListManager.m_vServerList[iServer].playlist;
-            sq_pushstring(v, serverPlaylist.c_str(), -1);
+            sq_pushstring(v, serverPlaylist.c_str(), (SQInteger)serverPlaylist.length());
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
@@ -356,14 +356,14 @@ namespace VScriptCode
                 // set EULA version cvar to the newly fetched EULA version
                 eula_version->SetValue(eulaData.version);
 
-                sq_pushstring(v, eulaData.contents.c_str(), -1);
+                sq_pushstring(v, eulaData.contents.c_str(), (SQInteger)eulaData.contents.length());
             }
             else
             {
-                string error = Format("Failed to load EULA Data: %s", eulaRequestMessage.c_str());
+                const string error = Format("Failed to load EULA Data: %s", eulaRequestMessage.c_str());
 
                 Warning(eDLL_T::UI, "%s\n", error.c_str());
-                sq_pushstring(v, error.c_str(), -1);
+                sq_pushstring(v, error.c_str(), (SQInteger)error.length());
             }
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -479,8 +479,9 @@ namespace VScriptCode
             hostname->SetValue(serverName);
             hostdesc.SetValue(serverDescription);
 
+            pylon_host_visibility.SetValue((int)serverVisibility);
+
             // Launch server.
-            g_ServerHostManager.SetVisibility(ServerVisibility_e(serverVisibility));
             g_ServerHostManager.LaunchServer(serverMapName, serverPlaylist);
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -531,29 +532,29 @@ void Script_RegisterUIFunctions(CSquirrelVM* s)
     DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCount, "Gets the number of public servers", "int", "");
 
     // Functions for retrieving server browser data
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetHiddenServerName, "Gets hidden server name by token", "string", "string");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerName, "Gets the name of the server at the specified index of the server list", "string", "int");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerDescription, "Gets the description of the server at the specified index of the server list", "string", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetHiddenServerName, "Gets hidden server name by token", "string", "string token");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerName, "Gets the name of the server at the specified index of the server list", "string", "int index");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerDescription, "Gets the description of the server at the specified index of the server list", "string", "int index");
 
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMap, "Gets the map of the server at the specified index of the server list", "string", "int");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerPlaylist, "Gets the playlist of the server at the specified index of the server list", "string", "int");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCurrentPlayers, "Gets the current player count of the server at the specified index of the server list", "int", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMap, "Gets the map of the server at the specified index of the server list", "string", "int index");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerPlaylist, "Gets the playlist of the server at the specified index of the server list", "string", "int index");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCurrentPlayers, "Gets the current player count of the server at the specified index of the server list", "int", "int index");
 
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMaxPlayers, "Gets the max player count of the server at the specified index of the server list", "int", "int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMaxPlayers, "Gets the max player count of the server at the specified index of the server list", "int", "int index");
 
     // Misc main menu functions
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetPromoData, "Gets promo data for specified slot type", "string", "int");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetEULAContents, "Gets EULA contents from masterserver", "string", "");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetPromoData, "Gets promo data for specified slot type", "string", "int slotType");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetEULAContents, "Gets EULA contents from the master server", "string", "");
 
     // Functions for connecting to servers
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToServer, "Joins server by ip address and encryption key", "void", "string, string");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToListedServer, "Joins listed server by index", "void", "int");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToHiddenServer, "Joins hidden server by token", "void", "string");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToServer, "Joins server by ip address and encryption key", "void", "string address, string key");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToListedServer, "Joins listed server by index", "void", "int index");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToHiddenServer, "Joins hidden server by token", "void", "string token");
 }
 
 void Script_RegisterUIServerFunctions(CSquirrelVM* s)
 {
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, CreateServer, "Starts server with the specified settings", "void", "string, string, string, string, int");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, CreateServer, "Starts server with the specified settings", "void", "string name, string description, string levelName, string playlistName, int visibilityMode");
     DEFINE_UI_SCRIPTFUNC_NAMED(s, DestroyServer, "Shuts the local server down", "void", "");
 }
 

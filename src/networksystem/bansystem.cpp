@@ -62,7 +62,7 @@ void CBanSystem::LoadList(void)
 
 		rapidjson::Value::ConstMemberIterator entryIt;
 
-		if (JSON_GetIterator(document, idx, JSONFieldType_e::kObject, entryIt))
+		if (JSON_GetIterator(document, rapidjson::StringRef(idx, strlen(idx)), JSONFieldType_e::kObject, entryIt))
 		{
 			const rapidjson::Value& entry = entryIt->value;
 
@@ -107,7 +107,7 @@ void CBanSystem::SaveList(void) const
 
 		rapidjson::Value obj(rapidjson::kObjectType);
 
-		obj.AddMember("ipAddress", rapidjson::Value(banned.m_Address.String(), allocator), allocator);
+		obj.AddMember("ipAddress", rapidjson::Value(banned.m_Address.String(), banned.m_Address.Length(), allocator), allocator);
 		obj.AddMember("nucleusId", banned.m_NucleusID, allocator);
 
 		document.AddMember(rapidjson::Value(idx, allocator), obj, allocator);

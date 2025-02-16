@@ -25,27 +25,27 @@ public:
 	void Think(void);
 	void RunFrame(void);
 
-	bool SendEncoded(const char* pResponseMsg, const char* pResponseVal,
+	bool SendEncoded(const char* pResponseMsg, const size_t nResponseMsgLen, const char* pResponseVal, const size_t nResponseValLen,
 		const netcon::response_e responseType,
 		const int nMessageId = static_cast<int>(eDLL_T::NETCON),
 		const int nMessageType = static_cast<int>(LogType_t::LOG_NET)) const;
 
-	bool SendEncoded(const SocketHandle_t hSocket, const char* pResponseMsg,
-		const char* pResponseVal, const netcon::response_e responseType,
+	bool SendEncoded(const SocketHandle_t hSocket, const char* pResponseMsg, const size_t nResponseMsgLen,
+		const char* pResponseVal, const size_t nResponseValLen, const netcon::response_e responseType,
 		const int nMessageId = static_cast<int>(eDLL_T::NETCON),
 		const int nMessageType = static_cast<int>(LogType_t::LOG_NET)) const;
 
-	bool SendToAll(const char* pMsgBuf, const int nMsgLen) const;
-	bool Serialize(vector<char>& vecBuf, const char* pResponseMsg, const char* pResponseVal, const netcon::response_e responseType,
-		const int nMessageId = static_cast<int>(eDLL_T::NETCON), const int nMessageType = static_cast<int>(LogType_t::LOG_NET)) const;
+	bool SendToAll(const byte* pMsgBuf, const u32 nMsgLen) const;
+	bool Serialize(vector<byte>& vecBuf, const char* pResponseMsg, const size_t nResponseMsgLen, const char* pResponseVal, const size_t nResponseValLen,
+		const netcon::response_e responseType, const int nMessageId = static_cast<int>(eDLL_T::NETCON), const int nMessageType = static_cast<int>(LogType_t::LOG_NET)) const;
 
-	void Authenticate(const netcon::request& request, CConnectedNetConsoleData& data);
+	void Authenticate(const netcon::request& request, ConnectedNetConsoleData_s& data);
 	bool Comparator(const string& svPassword) const;
 
-	virtual bool ProcessMessage(const char* pMsgBuf, const int nMsgLen) override;
+	virtual bool ProcessMessage(const byte* pMsgBuf, const u32 nMsgLen, const u32 nMaxLen) override;
 
 	void Execute(const netcon::request& request) const;
-	bool CheckForBan(CConnectedNetConsoleData& data);
+	bool CheckForBan(ConnectedNetConsoleData_s& data);
 
 	virtual void Disconnect(const char* szReason = nullptr) override;
 	void Disconnect(const int nIndex, const char* szReason = nullptr);

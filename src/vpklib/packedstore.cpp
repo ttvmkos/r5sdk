@@ -88,35 +88,44 @@ void CPackedStoreBuilder::InitLzDecoder(void)
 //-----------------------------------------------------------------------------
 // Purpose: gets the level name from the directory file name
 // Input  : &dirFileName - 
-// Output : level name as string (e.g. "englishclient_mp_rr_box")
+//          &dirBaseName - <- level name as string (e.g. "englishclient_mp_rr_box")
+// Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-CUtlString PackedStore_GetDirBaseName(const CUtlString& dirFileName)
+bool PackedStore_GetDirBaseName(const CUtlString& dirFileName, CUtlString& dirBaseName)
 {
 	const char* baseFileName = V_UnqualifiedFileName(dirFileName.String());
 
-	std::cmatch regexMatches;
-	std::regex_search(baseFileName, regexMatches, g_VpkDirFileRegex);
+	boost::cmatch regexMatches;
+	const bool result = boost::regex_search(baseFileName, regexMatches, g_VpkDirFileRegex);
 
-	CUtlString result;
-	result.Format("%s_%s", regexMatches[1].str().c_str(), regexMatches[2].str().c_str());
+	if (!result || regexMatches.size() < 3)
+		return false;
 
-	return result;
+	dirBaseName.Format("%s_%s", regexMatches[1].str().c_str(), regexMatches[2].str().c_str());
+	return true;
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: gets the parts of the directory file name
-// Input  : &dirFileName   - 
-//          nCaptureGroup  - (1 = locale + target, 2 = level)
-// Output : part of directory file name as string
+// Input  : &dirFileName  - 
+//          nCaptureGroup - <- (1 = locale + target, 2 = level)
+//          &dirBaseName  - <- part of directory file name as string
+// Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-CUtlString PackedStore_GetDirNameParts(const CUtlString& dirFileName, const int nCaptureGroup)
+bool PackedStore_GetDirNameParts(const CUtlString& dirFileName, const int nCaptureGroup, CUtlString& dirNameParts)
 {
 	const char* baseFileName = V_UnqualifiedFileName(dirFileName.String());
 
-	std::cmatch regexMatches;
-	std::regex_search(baseFileName, regexMatches, g_VpkDirFileRegex);
+	boost::cmatch regexMatches;
+	const bool result = boost::regex_search(baseFileName, regexMatches, g_VpkDirFileRegex);
 
-	return regexMatches[nCaptureGroup].str().c_str();
+	if (!result || regexMatches.size() < (nCaptureGroup + 1))
+		return false;
+
+	const std::string capture = regexMatches[nCaptureGroup].str();
+	dirNameParts.SetDirect(capture.c_str(), static_cast<ssize_t>(capture.length()));
+
+	return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -293,7 +302,15 @@ static void GetEntryBlocks(CUtlVector<VPKEntryBlock_t>& entryBlocks, FileHandle_
 static bool GetEntryValues(CUtlVector<VPKKeyValues_t>& entryValues, 
 	const CUtlString& workspacePath, const CUtlString& dirFileName)
 {
-	KeyValues* pManifestKV = GetManifest(workspacePath, PackedStore_GetDirBaseName(dirFileName));
+	CUtlString dirBase;
+
+	if (!PackedStore_GetDirBaseName(dirFileName, dirBase))
+	{
+		Error(eDLL_T::FS, NO_ERROR, "Invalid VPK directory name; unable to retrieve stem from '%s'\n", dirFileName.String());
+		return false;
+	}
+
+	KeyValues* pManifestKV = GetManifest(workspacePath, dirBase);
 
 	if (!pManifestKV)
 	{
@@ -593,7 +610,15 @@ void CPackedStoreBuilder::UnpackStore(const VPKDir_t& vpkDir, const char* worksp
 		return;
 	}
 
-	BuildManifest(vpkDir.m_EntryBlocks, workspacePath, PackedStore_GetDirBaseName(vpkDir.m_DirFilePath));
+	CUtlString dirStem;
+
+	if (!PackedStore_GetDirBaseName(vpkDir.m_DirFilePath, dirStem))
+	{
+		Error(eDLL_T::FS, NO_ERROR, "%s - Unable to retrieve directory stem from '%s'!\n", __FUNCTION__, vpkDir.m_DirFilePath.String());
+		return;
+	}
+
+	BuildManifest(vpkDir.m_EntryBlocks, workspacePath, dirStem);
 	const CUtlString basePath = vpkDir.m_DirFilePath.StripFilename(false);
 
 	for (uint16_t packFileIndex : vpkDir.m_PakFileIndices)
@@ -842,10 +867,10 @@ VPKDir_t::VPKDir_t(const CUtlString& dirFilePath, bool bSanitizeName)
 		return;
 	}
 
-	std::cmatch regexMatches;
-	std::regex_search(dirFilePath.String(), regexMatches, g_VpkPackFileRegex);
+	boost::cmatch regexMatches;
+	const bool result = boost::regex_search(dirFilePath.String(), regexMatches, g_VpkPackFileRegex);
 
-	if (regexMatches.empty()) // Not a block file, or not following the naming scheme.
+	if (!result || regexMatches.empty()) // Not a block file, or not following the naming scheme.
 	{
 		Init(dirFilePath);
 		return;
@@ -1070,25 +1095,11 @@ void VPKDir_t::CTreeBuilder::BuildTree(const CUtlVector<VPKEntryBlock_t>& entryB
 		* - A file path is only written once per extension tree.
 		* - A file name is only written once per file path tree.
 		**********************************************************************/
-		const char* pFileExt = fileExt.Get();
-		auto extIt = m_FileTree.find(pFileExt);
-
-		if (extIt == m_FileTree.end())
-		{
-			extIt = m_FileTree.insert({ pFileExt, PathContainer_t() }).first;
-		}
-
+		const auto& extIt = m_FileTree.try_emplace({ fileExt.String(), (size_t)fileExt.Length() }, PathContainer_t()).first;
 		PathContainer_t& pathTree = extIt->second;
 
-		const char* pFilePath = filePath.Get();
-		auto pathIt = pathTree.find(pFilePath);
-
-		if (pathIt == pathTree.end())
-		{
-			pathIt = pathTree.insert({ pFilePath, std::list<VPKEntryBlock_t>() }).first;
-		}
-
-		pathIt->second.push_back(entryBlock);
+		const auto& pathIt = pathTree.try_emplace({ filePath.String(), (size_t)filePath.Length() }, std::list<const VPKEntryBlock_t*>()).first;
+		pathIt->second.emplace_back(&entryBlock);
 	}
 }
 
@@ -1109,17 +1120,17 @@ int VPKDir_t::CTreeBuilder::WriteTree(FileHandle_t hDirectoryFile) const
 			FileSystem()->Write(jKeyValue.first.c_str(), jKeyValue.first.length() + 1, hDirectoryFile);
 			for (auto& vEntry : jKeyValue.second)
 			{
-				const CUtlString entryPath = vEntry.m_EntryPath.UnqualifiedFilename().StripExtension();
+				const CUtlString entryPath = vEntry->m_EntryPath.UnqualifiedFilename().StripExtension();
 				FileSystem()->Write(entryPath.Get(), entryPath.Length() + 1, hDirectoryFile);
 
-				FileSystem()->Write(&vEntry.m_nFileCRC, sizeof(uint32_t), hDirectoryFile);
-				FileSystem()->Write(&vEntry.m_iPreloadSize, sizeof(uint16_t), hDirectoryFile);
-				FileSystem()->Write(&vEntry.m_iPackFileIndex, sizeof(uint16_t), hDirectoryFile);
+				FileSystem()->Write(&vEntry->m_nFileCRC, sizeof(uint32_t), hDirectoryFile);
+				FileSystem()->Write(&vEntry->m_iPreloadSize, sizeof(uint16_t), hDirectoryFile);
+				FileSystem()->Write(&vEntry->m_iPackFileIndex, sizeof(uint16_t), hDirectoryFile);
 
-				FOR_EACH_VEC(vEntry.m_Fragments, i)
+				FOR_EACH_VEC(vEntry->m_Fragments, i)
 				{
 					/*Write chunk descriptor*/
-					const VPKChunkDescriptor_t& descriptor = vEntry.m_Fragments[i];
+					const VPKChunkDescriptor_t& descriptor = vEntry->m_Fragments[i];
 
 					FileSystem()->Write(&descriptor.m_nLoadFlags, sizeof(uint32_t), hDirectoryFile);
 					FileSystem()->Write(&descriptor.m_nTextureFlags, sizeof(uint16_t), hDirectoryFile);
@@ -1127,7 +1138,7 @@ int VPKDir_t::CTreeBuilder::WriteTree(FileHandle_t hDirectoryFile) const
 					FileSystem()->Write(&descriptor.m_nCompressedSize, sizeof(uint64_t), hDirectoryFile);
 					FileSystem()->Write(&descriptor.m_nUncompressedSize, sizeof(uint64_t), hDirectoryFile);
 
-					if (i != (vEntry.m_Fragments.Count() - 1))
+					if (i != (vEntry->m_Fragments.Count() - 1))
 					{
 						FileSystem()->Write(&PACKFILEINDEX_SEP, sizeof(uint16_t), hDirectoryFile);
 					}
