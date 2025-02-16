@@ -199,7 +199,7 @@ namespace LOGGER
     const std::string VerifyEaAccount(const std::string& token, const std::string& OID, const std::string& ea_name);
 
     //Api call to player count
-    void PlayerCountUpdate(const char* action, const char* player, const char* OID, const char* count, const char* DISCORD_HOOK);
+    void PlayerCountUpdate(std::string action, std::string player, std::string oid, std::string count, std::string DISCORD_HOOK);
     void UPDATE_PLAYER_COUNT(const char* action, const char* player, const char* OID, const char* count, const char* DISCORD_HOOK);
 
     //Api call for end game

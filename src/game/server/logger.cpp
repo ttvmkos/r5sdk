@@ -1060,15 +1060,8 @@ namespace LOGGER
     /********************************/
 
     // called by UPDATE_PLAYER_COUNT as separate thread
-    void PlayerCountUpdate(const char* action, const char* player, const char* oid, const char* count, const char* DISCORD_HOOK)
+    void PlayerCountUpdate(std::string action, std::string player, std::string oid, std::string count, std::string DISCORD_HOOK)
     {
-
-        if (!action || !player || !oid || !count || !DISCORD_HOOK)
-        {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error in [PlayerCountUpdate]: nullptr \n");
-            return;
-        }
-
         CURL* curl = CURLConnectionPool::GetInstance().GetHandle();
 
         if (!curl)
@@ -1079,7 +1072,7 @@ namespace LOGGER
 
 
         CFmtStr postData("servername=%s&action=%s&player_name=%s&OID=%s&current_count=%s&DISCORD_HOOK=%s&KEY=%s",
-            GetServerData(HOST_NAME).c_str(), action, player, oid, count, DISCORD_HOOK, API_KEY.c_str());
+            GetServerData(HOST_NAME).c_str(), action.c_str(), player.c_str(), oid.c_str(), count.c_str(), DISCORD_HOOK.c_str(), API_KEY.c_str());
         
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
         curl_easy_setopt( curl, CURLOPT_URL, PLAYER_COUNT_ENDPOINT );
@@ -1095,20 +1088,21 @@ namespace LOGGER
    // Sends join/leave data to api for various use. replace DISCORD_HOOK with internal r5r.dev functions via string starting with __apicall_ 
     void UPDATE_PLAYER_COUNT(const char* action, const char* player, const char* OID, const char* count, const char* DISCORD_HOOK)
     {
-
-        if (!action || !player || !OID || !count || !DISCORD_HOOK)
-        {
-            return;
-        }
-
         if (strcmp(DISCORD_HOOK, "") == 0)
-        {
             DISCORD_HOOK = GetSetting("webhooks.PLAYERS_WEBHOOK");
-        }
 
-        std::thread updateThread(PlayerCountUpdate, action, player, OID, count, DISCORD_HOOK);
-        updateThread.detach();
+        std::string actionStr(action);
+        std::string playerStr(player);
+        std::string OIDStr(OID);
+        std::string countStr(count);
+        std::string DISCORD_HOOKStr(DISCORD_HOOK);
 
+        std::function<void()> task = [actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr]()
+        {
+            PlayerCountUpdate(actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr);
+        };
+
+        TaskManager::getInstance().AddTask(task);
     }
 
 

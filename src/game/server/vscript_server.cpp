@@ -760,13 +760,13 @@ namespace VScriptCode
                         {
                             switch (type)
                             {
-                            case 0: return "int";
-                            case 1: return "string";
-                            case 2: return "bool";
-                            case 3: return "float";
-                            case 4: return "object";
-                            case 5: return "unknown";
-                            default: return "none";
+                                case 0: return "int";
+                                case 1: return "string";
+                                case 2: return "bool";
+                                case 3: return "float";
+                                case 4: return "object";
+                                case 5: return "unknown";
+                                default: return "none";
                             }
                         };
 
