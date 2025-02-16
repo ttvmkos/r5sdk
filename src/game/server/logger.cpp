@@ -1072,7 +1072,7 @@ namespace LOGGER
 
 
         CFmtStr postData("servername=%s&action=%s&player_name=%s&OID=%s&current_count=%s&DISCORD_HOOK=%s&KEY=%s",
-            GetServerData(HOST_NAME).c_str(), action.c_str(), player.c_str(), oid.c_str(), count.c_str(), DISCORD_HOOK.c_str(), API_KEY.c_str());
+            hostname->GetString(), action.c_str(), player.c_str(), oid.c_str(), count.c_str(), DISCORD_HOOK.c_str(), API_KEY.c_str());
         
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
         curl_easy_setopt( curl, CURLOPT_URL, PLAYER_COUNT_ENDPOINT );

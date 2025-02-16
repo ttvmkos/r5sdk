@@ -9,8 +9,8 @@ http://www.boost.org/LICENSE_1_0.txt)
 #ifndef BOOST_PREDEF_HARDWARE_SIMD_ARM_H
 #define BOOST_PREDEF_HARDWARE_SIMD_ARM_H
 
-#include <boost/predef/version_number.h>
-#include <boost/predef/hardware/simd/arm/versions.h>
+//#include <boost/predef/version_number.h>
+//#include <boost/predef/hardware/simd/arm/versions.h>
 
 /* tag::reference[]
 = `BOOST_HW_SIMD_ARM`
