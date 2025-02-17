@@ -10,10 +10,10 @@ for %%V in (17 16 15) do (
     if NOT ERRORLEVEL 1 (
         if "%%V"=="17" (
             set "CMAKE_GENERATOR=Visual Studio 17 2022"
-            set "CMAKE_TOOLSET=-T v141"
+            set "CMAKE_TOOLSET=-T v142"
         ) else if "%%V"=="16" (
             set "CMAKE_GENERATOR=Visual Studio 16 2019"
-            set "CMAKE_TOOLSET=-T v141"
+            set "CMAKE_TOOLSET=-T v142"
         ) else if "%%V"=="15" (
             set "CMAKE_GENERATOR=Visual Studio 15 2017"
             set "CMAKE_TOOLSET="
