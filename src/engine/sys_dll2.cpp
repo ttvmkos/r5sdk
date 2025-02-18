@@ -56,13 +56,13 @@ static bool IsRespawnMod(const char* pModName)
 //-----------------------------------------------------------------------------
 static void InitVPKSystem()
 {
-    char szCacheEnableFilePath[260]; // [rsp+20h] [rbp-118h] BYREF
+    char szCacheEnableFilePath[MAX_OSPATH];
     char bFixSlashes = FileSystem()->GetCurrentDirectory(szCacheEnableFilePath, sizeof(szCacheEnableFilePath)) ? szCacheEnableFilePath[0] : '\0';
 
     size_t nCachePathLen = strlen(szCacheEnableFilePath);
     size_t nCacheFileLen = sizeof(DFS_ENABLE_PATH)-1;
 
-    if ((nCachePathLen + nCacheFileLen) < 0x104 || (nCacheFileLen = (sizeof(szCacheEnableFilePath)-1) - nCachePathLen, nCachePathLen != (sizeof(szCacheEnableFilePath)-1)))
+    if ((nCachePathLen + nCacheFileLen) < MAX_OSPATH || (nCacheFileLen = (MAX_OSPATH-1) - nCachePathLen, nCachePathLen != (MAX_OSPATH-1)))
     {
         strncat(szCacheEnableFilePath, DFS_ENABLE_PATH, nCacheFileLen)[sizeof(szCacheEnableFilePath)-1] = '\0';
         bFixSlashes = szCacheEnableFilePath[0];
@@ -123,7 +123,7 @@ bool CEngineAPI::OnStartup(CEngineAPI* pEngineAPI, void* pInstance, const char* 
 //-----------------------------------------------------------------------------
 void CEngineAPI::VSetStartupInfo(CEngineAPI* pEngineAPI, StartupInfo_t* pStartupInfo)
 {
-    if (*g_bTextMode)
+    if (*g_bStartupInfoSet)
     {
         return;
     }
@@ -134,32 +134,13 @@ void CEngineAPI::VSetStartupInfo(CEngineAPI* pEngineAPI, StartupInfo_t* pStartup
     g_pEngineParms->baseDirectory = g_szBaseDir;
     g_szBaseDir[nBufLen-1] = '\0';
 
-    void** pCurrentInstance = &pEngineAPI->m_StartupInfo.m_pInstance;
-    size_t nInstances = 6;
-    do
-    {
-        pCurrentInstance += 16;
-        uint64_t pInstance = *(_QWORD*)&pStartupInfo->m_pInstance;
-        pStartupInfo = (StartupInfo_t*)((char*)pStartupInfo + 128);
-        *((_QWORD*)pCurrentInstance - 8) = pInstance;
-        *((_QWORD*)pCurrentInstance - 7) = *(_QWORD*)&pStartupInfo[-1].m_pParentAppSystemGroup[132];
-        *((_QWORD*)pCurrentInstance - 6) = *(_QWORD*)&pStartupInfo[-1].m_pParentAppSystemGroup[148];
-        *((_QWORD*)pCurrentInstance - 5) = *(_QWORD*)&pStartupInfo[-1].m_pParentAppSystemGroup[164];
-        *((_QWORD*)pCurrentInstance - 4) = *(_QWORD*)&pStartupInfo[-1].m_pParentAppSystemGroup[180];
-        *((_QWORD*)pCurrentInstance - 3) = *(_QWORD*)&pStartupInfo[-1].m_pParentAppSystemGroup[196];
-        *((_QWORD*)pCurrentInstance - 2) = *(_QWORD*)&pStartupInfo[-1].m_pParentAppSystemGroup[212];
-        *((_QWORD*)pCurrentInstance - 1) = *(_QWORD*)&pStartupInfo[-1].m_pParentAppSystemGroup[228];
-        --nInstances;
-    } while (nInstances);
-    *(_QWORD*)pCurrentInstance = *(_QWORD*)&pStartupInfo->m_pInstance;
-    *((_QWORD*)pCurrentInstance + 1) = *(_QWORD*)&pStartupInfo->m_szBaseDirectory[8];
-
+    pEngineAPI->m_StartupInfo = *pStartupInfo;
     InitVPKSystem();
 
     v_TRACEINIT(NULL, "COM_InitFilesystem( m_StartupInfo.m_szInitialMod )", "COM_ShutdownFileSystem()");
     v_COM_InitFilesystem(pEngineAPI->m_StartupInfo.m_szInitialMod);
 
-    *g_bTextMode = true;
+    *g_bStartupInfoSet = true;
 }
 
 //-----------------------------------------------------------------------------
