@@ -637,11 +637,11 @@ namespace LOGGER
 
 
     //keeps map lean by removing map slot for player after assignment in squirrel
-    void LOGGER::TaskManager::ResetPlayerStats(const char* player_oid)
+    void LOGGER::TaskManager::ResetPlayerData(const char* player_oid)
     {
         if (player_oid == nullptr || std::strlen(player_oid) == 0)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "ResetPlayerStats called with empty or null player_oid. \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "ResetPlayerData called with empty or null player_oid. \n");
             return;
         }
 
@@ -814,13 +814,13 @@ namespace LOGGER
     }
 
     //input: stores json struct in the map, later used to build stats table when fetched from scripts. 
-    void TaskManager::LoadBatchKDStrings(const std::string& player_oids_str, const std::string& requestedStats, const std::string& requestedSettings)
+    void TaskManager::RequestBatchPlayerPersistenceData(const std::string& player_oids_str, const std::string& requestedStats, const std::string& requestedSettings)
     {
         AddTask([player_oids_str, requestedStats, requestedSettings, this]()
             {
                 if (player_oids_str.empty())
                 {
-                    Error(eDLL_T::SERVER, NO_ERROR, "Error in [LoadBatchKDStrings] : player_oids_str was empty \n");
+                    Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestBatchPlayerPersistenceData] : player_oids_str was empty \n");
                     Script_CodeCallback_BatchStatsLoaded();
                     return;
                 }
@@ -922,42 +922,45 @@ namespace LOGGER
 
     //for individual players, stores data in playerStatsMap
         //for individual players, stores data in playerStatsMap
-    void TaskManager::LoadKDString(const char* player_oid, const char* requestedStats, const char* requestedSettings)
+    void TaskManager::RequestPlayerPersistenceData(const char* player_oid, const char* requestedStats, const char* requestedSettings)
     {
         if (!player_oid)
-        {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error in [LoadKDString] : player_oid was nullptr\n");
-        }
+            Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestPlayerPersistenceData] : player_oid was nullptr\n");
 
         std::string playerOidStr(player_oid);
         std::string requestedStatsStr(requestedStats);
         std::string requestedSettingsStr(requestedSettings);
 
         AddTask([playerOidStr, requestedStatsStr, requestedSettingsStr, this]()
+        {
+
+            std::string stats = FetchPlayerStats(playerOidStr.c_str(), requestedStatsStr.c_str(), requestedSettingsStr.c_str());
+            bool has_lock = false;
+
             {
-
-                std::string stats = FetchPlayerStats(playerOidStr.c_str(), requestedStatsStr.c_str(), requestedSettingsStr.c_str());
-                bool has_lock = false;
-
+                std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
+                if (lock.try_lock_for(std::chrono::milliseconds(3000)))
                 {
-                    std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
-                    if (lock.try_lock_for(std::chrono::milliseconds(3000)))
-                    {
-                        playerStatsMap[playerOidStr] = stats;
-                        has_lock = true;
-                    }
-                    else
-                    {
-                        Error(eDLL_T::SERVER, NO_ERROR, "failed to aquire lock to write player stats into map for: %s\n", playerOidStr.c_str());
-                    }
+                    playerStatsMap[playerOidStr] = stats;
+                    has_lock = true;
                 }
+                else
+                {
+                    Error(eDLL_T::SERVER, NO_ERROR, "failed to aquire lock to write player stats into map for: %s\n", playerOidStr.c_str());
+                }
+            }
 
-                CFmtStrN<128> command("CodeCallback_PlayerStatsReady(\"%s\")", Sanitize_NumbersOnly(playerOidStr).c_str());
-                g_TaskQueue.Dispatch([cmd = std::string(command.Get())] {
+            CFmtStrN<128> command("CodeCallback_PlayerStatsReady(\"%s\")", Sanitize_NumbersOnly(playerOidStr).c_str());
+            g_TaskQueue.Dispatch
+            (
+                [cmd = std::string(command.Get())] 
+                {
                     g_pServerScript->Run(cmd.c_str());
-                    }, 0);
+                },0
+                     
+            );
 
-            });
+        });
     }
 
 

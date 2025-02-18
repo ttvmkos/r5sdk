@@ -635,7 +635,7 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
-            LOGGER::TaskManager::getInstance().LoadKDString(player_oid, requestedStats, requestedSettings);
+            LOGGER::TaskManager::getInstance().RequestPlayerPersistenceData(player_oid, requestedStats, requestedSettings);
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
@@ -667,7 +667,7 @@ namespace VScriptCode
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
-            LOGGER::TaskManager::getInstance().LoadBatchKDStrings(player_oids, requestedStats, requestedSettings);
+            LOGGER::TaskManager::getInstance().RequestBatchPlayerPersistenceData(player_oids, requestedStats, requestedSettings);
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
@@ -875,7 +875,7 @@ namespace VScriptCode
             const SQChar* player_oid = nullptr;
             if (SQ_SUCCEEDED(sq_getstring(v, 2, &player_oid)) && player_oid)
             {
-                LOGGER::TaskManager::getInstance().ResetPlayerStats(player_oid);
+                LOGGER::TaskManager::getInstance().ResetPlayerData(player_oid);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
             }
 

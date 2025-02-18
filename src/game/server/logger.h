@@ -123,9 +123,9 @@ namespace LOGGER
             static TaskManager& getInstance();
 
             void AddTask(const std::function<void()>& task);
-            void LoadKDString(const char* player_oid, const char* requestedStats, const char* requestedSettings);
-            void ResetPlayerStats(const char* player_oid);
-            void LoadBatchKDStrings(const std::string& player_oids_str, const std::string& requestedStats, const std::string& requestedSettings);
+            void RequestPlayerPersistenceData(const char* player_oid, const char* requestedStats, const char* requestedSettings);
+            void ResetPlayerData(const char* player_oid);
+            void RequestBatchPlayerPersistenceData(const std::string& player_oids_str, const std::string& requestedStats, const std::string& requestedSettings);
 
         private:
             TaskManager();
