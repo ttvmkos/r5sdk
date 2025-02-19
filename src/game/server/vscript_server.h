@@ -22,40 +22,40 @@ namespace VScriptCode
 
 		SQRESULT IsServerActive(HSQUIRRELVM v);
 
-		SQRESULT InitializeLogThread__internal(HSQUIRRELVM v);
-		SQRESULT LogEvent__internal(HSQUIRRELVM v);
-		SQRESULT SQMatchID__internal(HSQUIRRELVM v);
-		SQRESULT stopLogging__internal(HSQUIRRELVM v);
-		SQRESULT isLogging__internal(HSQUIRRELVM v);
-		SQRESULT SQ_GetLogState__internal(HSQUIRRELVM v);
-		SQRESULT CleanupLogs__internal(HSQUIRRELVM v);
-		SQRESULT SQ_ReloadConfig__internal(HSQUIRRELVM v);
+		SQRESULT InitializeTrackerLogThread__internal(HSQUIRRELVM v);
+		SQRESULT TrackerLogEvent__internal(HSQUIRRELVM v);
+		SQRESULT TrackerMatchID__internal(HSQUIRRELVM v);
+		SQRESULT TrackerStopLogging__internal(HSQUIRRELVM v);
+		SQRESULT TrackerIsLogging__internal(HSQUIRRELVM v);
+		SQRESULT TrackerGetLogState__internal(HSQUIRRELVM v);
+		SQRESULT TrackerCleanupLogs__internal(HSQUIRRELVM v);
+		SQRESULT TrackerReloadConfig__internal(HSQUIRRELVM v);
 
-		SQRESULT sqprint(HSQUIRRELVM v);
-		SQRESULT sqerror(HSQUIRRELVM v);
+		SQRESULT sqprint__internal(HSQUIRRELVM v);
+		SQRESULT sqerror__internal(HSQUIRRELVM v);
+		SQRESULT sqwarning__internal(HSQUIRRELVM v);
 
-		SQRESULT EA_Verify__internal(HSQUIRRELVM v); //select servers only
-		SQRESULT FetchGlobalSettingsFromR5RDEV__internal(HSQUIRRELVM v);
-		SQRESULT _STATSHOOK_UpdatePlayerCount__internal(HSQUIRRELVM v);
-		SQRESULT _STATSHOOK_EndOfMatch__internal(HSQUIRRELVM v);
+		SQRESULT TrackerEAVerify__internal(HSQUIRRELVM v); //select servers only
+		
+		SQRESULT TrackerUpdatePlayerCount__internal(HSQUIRRELVM v);
+		SQRESULT TrackerEndMatchUpdate__internal(HSQUIRRELVM v);
 
-		SQRESULT SQ_UpdateLiveStats__internal(HSQUIRRELVM v);
-		SQRESULT SQ_ResetStats__internal(HSQUIRRELVM v);
+		SQRESULT FetchGlobalTrackerSettings__internal(HSQUIRRELVM v);
+		SQRESULT FetchBatchPersistenceData__internal(HSQUIRRELVM v);
+		SQRESULT FetchPlayerPersistenceData__internal(HSQUIRRELVM v);
+		SQRESULT GetPlayerPersistenceData__internal(HSQUIRRELVM v); //NEW
+		SQRESULT TrackerUpdateLiveStats__internal(HSQUIRRELVM v);
+		SQRESULT TrackerResetStats__internal(HSQUIRRELVM v);
 
-		SQRESULT LoadBatchSyncData__internal(HSQUIRRELVM v);
-		SQRESULT LoadSyncData__internal(HSQUIRRELVM v);
-		SQRESULT SQ_GetSetting__internal(HSQUIRRELVM v);
-		SQRESULT GetPlayerStats__internal(HSQUIRRELVM v); //NEW
-
-		SQRESULT SQ_ServerMsg__internal(HSQUIRRELVM v);
-		SQRESULT SQ_CreateServerBot__internal(HSQUIRRELVM v);
+		SQRESULT TrackerGetSetting__internal(HSQUIRRELVM v);
+		SQRESULT TrackerServerMsg__internal(HSQUIRRELVM v);
+		SQRESULT TrackerCreateServerBot__internal(HSQUIRRELVM v);
 
 		SQRESULT PrintStack(HSQUIRRELVM v);
 
 		//Declare to be used with logger
 		int64_t getMatchID();
 		void setMatchID(int64_t newID);
-
 	}
 }
 
@@ -68,6 +68,94 @@ void Script_RegisterServerEnums(CSquirrelVM* const s);
 #define DEFINE_SERVER_SCRIPTFUNC_NAMED(s, functionName, helpString, returnType, parameters, ...) \
 	Script_RegisterFuncNamed(s, MKSTRING(functionName), MKSTRING(Server_Script_##functionName),  \
 	helpString, returnType, parameters, VScriptCode::Server::##functionName, __VA_ARGS__)        \
+
+//------------------------------------------------------------------------------
+// Purpose: Converts arguments into ScriptVariant_t objects. By default, it copies
+// C-style strings (const char* or char*), unless wrapped with MakeNoCopyStr().
+// For other types, it simply forwards. Includes overloads for char* variants.
+//------------------------------------------------------------------------------
+struct NoCopyStr
+{
+	const char* const str;
+	NoCopyStr(const char* s) : str(s) {}
+};
+
+inline static NoCopyStr MakeNoCopyStr(const char* s)
+{
+	return NoCopyStr(s);
+}
+
+template < typename T,
+	typename std::enable_if<!std::is_same<std::decay_t<T>, NoCopyStr>::value, int>::type = 0 >
+
+inline ScriptVariant_t MakeVariant(T&& arg)
+{
+	return ScriptVariant_t(std::forward<T>(arg));
+}
+
+inline static ScriptVariant_t MakeVariant(const char* arg)
+{
+	return ScriptVariant_t(arg, true);
+}
+
+inline static ScriptVariant_t MakeVariant(char* arg)
+{
+	return ScriptVariant_t(arg, true);
+}
+
+inline static ScriptVariant_t MakeVariant(const NoCopyStr& arg)
+{
+	return ScriptVariant_t(arg.str, false);
+}
+
+//------------------------------------------------------------------------------
+// Purpose: Helper function that unpacks the tuple. The last tuple element is the
+// function signature, while the rest are the script arguments.
+//------------------------------------------------------------------------------
+template < typename Tuple, size_t ...I >
+inline bool CallServerScriptFunction_Impl(const char* functionName, Tuple& tup, std::index_sequence< I... >)
+{
+	constexpr size_t N = std::tuple_size< std::decay_t< Tuple > >::value;
+	const char* functionSignature = std::get< N - 1 >(tup);
+
+	ScriptVariant_t scriptArgs[] = { MakeVariant(std::get< I >(tup)) ... };
+
+	HSCRIPT hFunc = g_pServerScript->FindFunction(functionName, functionSignature, (HSCRIPT)SQCONTEXT::SERVER);
+	if (!hFunc)
+	{
+		v_SQVM_ScriptError("Function %s not found.\n", functionName);
+		return false;
+	}
+
+	ScriptStatus_t status = Script_ExecuteFunction
+	(
+		g_pServerScript,
+		hFunc,
+		scriptArgs,
+		N - 1,
+		nullptr,
+		(HSCRIPT)SQCONTEXT::SERVER
+	);
+
+	free(hFunc);
+	return (status == SCRIPT_DONE);
+}
+
+//------------------------------------------------------------------------------
+// Purpose: Main function that creates the tuple and calls the helper.
+//------------------------------------------------------------------------------
+template < typename ... Args >
+inline bool CallServerScriptFunction(const char* functionName, Args&&... args)
+{
+	constexpr size_t totalArgs = sizeof...(Args);
+	static_assert(totalArgs >= 1, "Must supply at least the function signature as the last parameter");
+
+	auto tup = std::make_tuple(std::forward< Args >(args)...);
+
+	return CallServerScriptFunction_Impl(functionName, tup, std::make_index_sequence< totalArgs - 1 >{});
+}
+
+#define CALL_SERVER_SCRIPT_FUNC( funcName, ... ) CallServerScriptFunction( funcName, __VA_ARGS__ )
 
 inline void (*v_Script_RegisterServerEntityClassFuncs)();
 inline void (*v_Script_RegisterServerPlayerClassFuncs)();

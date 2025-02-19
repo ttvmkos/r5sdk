@@ -29,27 +29,6 @@ constexpr const char* R5RDEV_CONFIG = "r5rdev_config.json";
 constexpr const char* PLAYER_COUNT_ENDPOINT = "https://r5r.dev/api/playercount.php";
 const std::string STATS_API = "https://r5r.dev/api/stats8.php";
 
-//-----------------------------------------------------------------------------
-// string manipulation split function
-//-----------------------------------------------------------------------------
-
-std::vector<std::string> split(const std::string& str, char delimiter)
-{
-    std::vector<std::string> result;
-    result.reserve(std::count(str.begin(), str.end(), delimiter) + 1);
-
-    size_t start = 0;
-    size_t end = 0;
-
-    while ((end = str.find(delimiter, start)) != std::string::npos)
-    {
-        result.emplace_back(str, start, end - start);
-        start = end + 1;
-    }
-
-    result.emplace_back(str, start);
-    return result;
-}
 
 //-----------------------------------------------------------------------------
 // string manipulation sanitize function
@@ -94,6 +73,35 @@ static void Script_CodeCallback_BatchStatsLoaded()
 {
     g_pServerScript->ExecuteCodeCallback("CodeCallback_BatchStatsLoaded");
 }
+
+inline static std::string join_fast(const std::vector<std::string>& vec, const std::string& delimiter)
+{
+    if (vec.empty()) return "";
+
+    size_t total_size = 0;
+    for (const auto& s : vec) {
+        total_size += s.size();
+    }
+    total_size += delimiter.size() * (vec.size() - 1);
+
+    std::string result;
+    result.resize(total_size);
+    char* dest = &result[0];
+    for (size_t i = 0; i < vec.size(); ++i)
+    {
+        const std::string& s = vec[i];
+        memcpy(dest, s.data(), s.size());
+        dest += s.size();
+        if (i != vec.size() - 1)
+        {
+            memcpy(dest, delimiter.data(), delimiter.size());
+            dest += delimiter.size();
+        }
+    }
+    return result;
+}
+
+
 
 namespace LOGGER
 {
@@ -519,9 +527,9 @@ namespace LOGGER
     //UTILITY
     int64_t GetMaxLogfileSize(const char* settingValue)
     {
-        if (!settingValue)
+        if (!settingValue || settingValue[0] == '\0')
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Max log file size setting is empty.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Max log file size setting is null or empty.\n");
             return -1;
         }
 
@@ -752,8 +760,12 @@ namespace LOGGER
     /     API PLAYER STATS
     /********************************/
 
-    //called by TaskManager::LoadBatchKDStrings
-    std::string FetchBatchPlayerStats( const std::vector<std::string>& player_oids, const std::string& requestedStats, const std::string& requestedSettings )
+    //called by TaskManager::RequestBatchPlayerPersistenceData
+    std::string FetchBatchPlayerStats(
+        const std::vector<std::string>& player_oids,
+        const std::string& requestedStats,
+        const std::string& requestedSettings
+    )
     {
         if (player_oids.empty())
         {
@@ -814,71 +826,72 @@ namespace LOGGER
     }
 
     //input: stores json struct in the map, later used to build stats table when fetched from scripts. 
-    void TaskManager::RequestBatchPlayerPersistenceData(const std::string& player_oids_str, const std::string& requestedStats, const std::string& requestedSettings)
+    void TaskManager::RequestBatchPlayerPersistenceData(
+        const std::vector<std::string>& player_oids,
+        const std::vector<std::string>& requestedStats,
+        const std::vector<std::string>& requestedSettings)
     {
-        AddTask([player_oids_str, requestedStats, requestedSettings, this]()
+        AddTask([player_oids, requestedStats, requestedSettings, this]()
+        {
+            if (player_oids.empty())
             {
-                if (player_oids_str.empty())
-                {
-                    Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestBatchPlayerPersistenceData] : player_oids_str was empty \n");
-                    Script_CodeCallback_BatchStatsLoaded();
-                    return;
-                }
-
-                std::vector<std::string> player_oids = split(player_oids_str, ',');
-
-                std::string stats_json = FetchBatchPlayerStats(player_oids, requestedStats, requestedSettings);
-
-                rapidjson::Document document;
-                if (document.Parse(stats_json.c_str()).HasParseError())
-                {
-                    Error(eDLL_T::SERVER, NO_ERROR, "JSON parsing failed: %s\n",
-                        rapidjson::GetParseError_En(document.GetParseError()));
-                    Script_CodeCallback_BatchStatsLoaded();
-                    return;
-                }
-
-                if (!document.IsObject())
-                {
-                    Error(eDLL_T::SERVER, NO_ERROR, "JSON root is not an object\n");
-                    Script_CodeCallback_BatchStatsLoaded();
-                    return;
-                }
-
-                for (rapidjson::Value::ConstMemberIterator itr = document.MemberBegin(); itr != document.MemberEnd(); ++itr)
-                {
-                    std::string player_oid = itr->name.GetString();
-
-                    if (!itr->value.IsObject()) 
-                        continue;
-
-                    rapidjson::StringBuffer buffer;
-                    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-                    itr->value.Accept(writer);
-
-                    std::string player_stats_json = buffer.GetString();
-
-                    bool has_lock = false;
-                    std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
-                    if (lock.try_lock_for(std::chrono::milliseconds(3000)))
-                    {
-                        playerStatsMap[player_oid] = player_stats_json;
-                        has_lock = true;
-                    }
-
-                    if (!has_lock)
-                    {
-                        Error(eDLL_T::SERVER, NO_ERROR, "failed to acquire lock to write player stats into map\n");
-                    }
-                }
-
+                Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestBatchPlayerPersistenceData] : player_oids was empty \n");
                 Script_CodeCallback_BatchStatsLoaded();
-            });
+                return;
+            }
+
+            std::string statsJoined = join_fast(requestedStats, ",");
+            std::string settingsJoined = join_fast(requestedSettings, ",");
+            std::string stats_json = FetchBatchPlayerStats(player_oids, statsJoined, settingsJoined);
+
+            rapidjson::Document document;
+            if (document.Parse(stats_json.c_str()).HasParseError())
+            {
+                Error(eDLL_T::SERVER, NO_ERROR, "JSON parsing failed: %s\n",
+                    rapidjson::GetParseError_En(document.GetParseError()));
+                Script_CodeCallback_BatchStatsLoaded();
+                return;
+            }
+
+            if (!document.IsObject())
+            {
+                Error(eDLL_T::SERVER, NO_ERROR, "JSON root is not an object\n");
+                Script_CodeCallback_BatchStatsLoaded();
+                return;
+            }
+
+            for (rapidjson::Value::ConstMemberIterator itr = document.MemberBegin(); itr != document.MemberEnd(); ++itr)
+            {
+                std::string player_oid = itr->name.GetString();
+
+                if (!itr->value.IsObject()) 
+                    continue;
+
+                rapidjson::StringBuffer buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                itr->value.Accept(writer);
+
+                std::string player_stats_json = buffer.GetString();
+
+                bool has_lock = false;
+                std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
+                if (lock.try_lock_for(std::chrono::milliseconds(3000)))
+                {
+                    playerStatsMap[player_oid] = player_stats_json;
+                    has_lock = true;
+                }
+
+                if (!has_lock)
+                    Error(eDLL_T::SERVER, NO_ERROR, "failed to acquire lock to write player stats into map\n");
+            }
+
+            Script_CodeCallback_BatchStatsLoaded();
+        });
     }
 
 
 
-    //called by TaskManager::LoadKDString
+    //called by TaskManager::RequestPlayerPersistenceData
     std::string FetchPlayerStats(const char* player_oid, const char* requestedStats, const char* requestedSettings)
     {
         if (!player_oid)
@@ -922,19 +935,18 @@ namespace LOGGER
 
     //for individual players, stores data in playerStatsMap
         //for individual players, stores data in playerStatsMap
-    void TaskManager::RequestPlayerPersistenceData(const char* player_oid, const char* requestedStats, const char* requestedSettings)
+    void TaskManager::RequestPlayerPersistenceData( const std::string& player_oid, const std::vector<std::string>& requestedStats, const std::vector<std::string>& requestedSettings )
     {
-        if (!player_oid)
-            Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestPlayerPersistenceData] : player_oid was nullptr\n");
+        if (player_oid.empty())
+            Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestPlayerPersistenceData] : empty player oid\n");
 
         std::string playerOidStr(player_oid);
-        std::string requestedStatsStr(requestedStats);
-        std::string requestedSettingsStr(requestedSettings);
+        std::string statsJoined = join_fast(requestedStats, ",");
+        std::string settingsJoined = join_fast(requestedSettings, ",");
 
-        AddTask([playerOidStr, requestedStatsStr, requestedSettingsStr, this]()
+        AddTask([playerOidStr, statsJoined, settingsJoined, this]()
         {
-
-            std::string stats = FetchPlayerStats(playerOidStr.c_str(), requestedStatsStr.c_str(), requestedSettingsStr.c_str());
+            std::string stats = FetchPlayerStats( playerOidStr.c_str(), statsJoined.c_str(), settingsJoined.c_str() );
             bool has_lock = false;
 
             {
@@ -950,14 +962,16 @@ namespace LOGGER
                 }
             }
 
-            CFmtStrN<128> command("CodeCallback_PlayerStatsReady(\"%s\")", Sanitize_NumbersOnly(playerOidStr).c_str());
             g_TaskQueue.Dispatch
             (
-                [cmd = std::string(command.Get())] 
+                [ playerOid = Sanitize_NumbersOnly(playerOidStr) ]
                 {
-                    g_pServerScript->Run(cmd.c_str());
-                },0
-                     
+                    const char* const oid = playerOid.c_str();
+                    bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_PlayerStatsReady", MakeNoCopyStr( oid ), "void functionref( string )");
+                    if (!success)
+                        Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_PlayerStatsReady for '%s'.\n", oid);
+                },
+                0
             );
 
         });
@@ -1194,7 +1208,6 @@ namespace LOGGER
     //sends recap data to discord channel
     void NOTIFY_END_OF_MATCH(const char* recap, const char* DISCORD_HOOK)
     {
-
         if (!recap || !DISCORD_HOOK)
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Error in [NOTIFY_END_OF_MATCH] : recap or DISCORD_HOOK was nullptr");
@@ -1266,9 +1279,9 @@ namespace LOGGER
    // returns response settings based on query
     std::string FetchGlobalSettings(const char* query)
     {
-        if (!query)
+        if (!query || strcmp( query, "") == 0 )
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error: query parameter pointed to a nullptr\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Error: query parameter is null or empty\n");
             return "";
         }
 
@@ -1523,13 +1536,9 @@ namespace LOGGER
         std::atomic<u_char> flags = StateBits.load();
 
         if (value)
-        {
             flags |= static_cast<uint8_t>(flag);
-        }
         else
-        {
             flags &= ~static_cast<uint8_t>(flag);
-        }
 
         StateBits.store(flags);
     }
@@ -1606,8 +1615,6 @@ namespace LOGGER
     }
 
 
-
-
     // function to split a string
     std::vector<std::string> Logger::splitString(std::string str, const std::string& delimiter)
     {
@@ -1622,9 +1629,6 @@ namespace LOGGER
         lines.push_back(str);
         return lines;
     }
-
-
-
 
 
     //atomic
@@ -2275,6 +2279,7 @@ namespace LOGGER
             return;
         }
 
+        //without this, we would manipulate a squirrel stack object.
         std::vector<std::string> lines = splitString(logString, "\n");
 
         if (encrypt)

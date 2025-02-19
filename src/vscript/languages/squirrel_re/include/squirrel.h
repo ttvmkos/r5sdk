@@ -200,14 +200,17 @@ SQRESULT sq_endconsttable(HSQUIRRELVM v);
 void sq_addref(HSQUIRRELVM v, SQObject* po);
 SQBool sq_release(HSQUIRRELVM v, SQObject* po);
 
-void sq_newclosure(HSQUIRRELVM v, SQFUNCTION f, SQUnsignedInteger nupvalues);
+//void sq_newclosure(HSQUIRRELVM v, SQFUNCTION f, SQUnsignedInteger nupvalues);
 void sq_pushuserpointer(HSQUIRRELVM v, void* p);
 void sq_pushobject(HSQUIRRELVM v, SQObject& obj);
 void sq_push(HSQUIRRELVM v, SQObject& obj);
 void sq_pushnull(HSQUIRRELVM v);
 SQObjectType sq_gettype(HSQUIRRELVM v, SQInteger idx);
 SQRESULT sq_next(HSQUIRRELVM v, SQInteger idx);
-SQRESULT sq_setnativeclosurename(HSQUIRRELVM v, SQInteger idx, const SQChar* name);
+//SQRESULT sq_setnativeclosurename(HSQUIRRELVM v, SQInteger idx, const SQChar* name);
+SQRESULT sq_getarraysize(HSQUIRRELVM v, SQInteger idx, SQInteger* outSize);
+SQInteger sq_absindex(HSQUIRRELVM v, SQInteger idx);
+const char* sq_typename(SQObjectType type);
 
 /*UTILITY MACRO*/
 #define sq_isnumeric(o) ((o)._type&SQOBJECT_NUMERIC)

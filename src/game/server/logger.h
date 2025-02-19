@@ -16,8 +16,6 @@
 
 namespace LOGGER
 {
-
-
     class Encryption
     {
         public:
@@ -123,9 +121,12 @@ namespace LOGGER
             static TaskManager& getInstance();
 
             void AddTask(const std::function<void()>& task);
-            void RequestPlayerPersistenceData(const char* player_oid, const char* requestedStats, const char* requestedSettings);
+            void RequestPlayerPersistenceData(const std::string& player_oid, const std::vector<std::string>& requestedStats, const std::vector<std::string>& requestedSettings);
             void ResetPlayerData(const char* player_oid);
-            void RequestBatchPlayerPersistenceData(const std::string& player_oids_str, const std::string& requestedStats, const std::string& requestedSettings);
+            void RequestBatchPlayerPersistenceData(
+                const std::vector<std::string>& player_oids,
+                const std::vector<std::string>& requestedStats,
+                const std::vector<std::string>& requestedSettings);
 
         private:
             TaskManager();
@@ -210,7 +211,11 @@ namespace LOGGER
     static std::unordered_map<std::string, std::string> playerStatsMap;
     static std::shared_timed_mutex statsMutex;
     std::string FetchPlayerStats(const char* player_oid, const char* requestedStats, const char* requestedSettings); // on player connect if batch is complete only
-    std::string FetchBatchPlayerStats(const std::vector<std::string>& player_oids, std::string& requestedStats, std::string& requestedSettings); //on startup only
+    std::string FetchBatchPlayerStats(
+        const std::vector<std::string>& player_oids,
+        const std::string& requestedStats,
+        const std::string& requestedSettings
+    );
     const char* GetPlayerJsonData(const char* player_oid); //on startup / player connect
     void RunUpdateLiveStats(std::string stats_json); //onshutdown dispatch thread
     void UpdateLiveStats(std::string stats_json); //onshutdown 

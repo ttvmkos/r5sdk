@@ -11,6 +11,26 @@
 #include "sqstring.h"
 #include "sqtable.h"
 #include "sqclosure.h"
+#include <vector>
+
+const char* sq_typename(SQObjectType type)
+{
+	switch (type)
+	{
+		case OT_NULL: return "null";
+		case OT_INTEGER: return "integer";
+		case OT_FLOAT: return "float";
+		case OT_BOOL: return "bool";
+		case OT_STRING: return "string";
+		case OT_TABLE: return "table";
+		case OT_ARRAY: return "array";
+		case OT_USERDATA: return "userdata";
+		case OT_CLOSURE: return "closure";
+		case OT_NATIVECLOSURE: return "nativeclosure";
+		case OT_THREAD: return "thread";
+		default: return "unknown";
+	}
+}
 
 //---------------------------------------------------------------------------------
 bool sq_aux_gettypedarg(HSQUIRRELVM v, SQInteger idx, SQObjectType type, SQObjectPtr** o)
@@ -286,9 +306,63 @@ SQRESULT sq_next(HSQUIRRELVM v, SQInteger idx)
 		}
 		return SQ_ERROR;
 	}
+	else if (o._type == OT_ARRAY)
+	{
+		SQArray* arr = _array(o);
+		SQInteger arrSize = (SQInteger)arr->Size();
+
+		SQInteger keyIndex = (v->_top - 1);
+
+		if (keyIndex < 0)
+			return SQ_ERROR;
+
+		SQObjectPtr& currentKeyObj = stack_get(v, keyIndex);
+		SQInteger nextIndex = 0;
+
+		if (sq_type(currentKeyObj) == OT_NULL)
+			nextIndex = 0;
+		else if (sq_type(currentKeyObj) == OT_INTEGER)
+		{
+			SQInteger i = _integer(currentKeyObj);
+			nextIndex = i + 1;
+		}
+		else
+			return SQ_ERROR;
+
+		if (nextIndex < arrSize)
+		{
+			SQObjectPtr val;
+			bool gotVal = arr->Get(nextIndex, val);
+
+			if (!gotVal)
+				return SQ_ERROR;
+
+			v->Push(SQObjectPtr(nextIndex));
+			v->Push(val);
+			return SQ_OK;
+		}
+		else
+			return SQ_ERROR;
+	}
+
 	return SQ_ERROR;
 }
 
+SQRESULT sq_getarraysize(HSQUIRRELVM v, SQInteger idx, SQInteger* outSize) 
+{
+	SQObject obj = stack_get(v, idx);
+	if (sq_type(obj) != OT_ARRAY)
+		return SQ_ERROR;
+	SQArray* arr = _array(obj);
+	*outSize = (SQInteger)arr->Size();
+	return SQ_OK;
+}
+
+SQInteger sq_absindex(HSQUIRRELVM v, SQInteger idx)
+{
+	SQInteger top = sq_gettop(v);
+	return (idx < 0) ? (top + idx + 1) : idx;
+}
 
 void VSquirrelAPI::Detour(const bool bAttach) const
 {

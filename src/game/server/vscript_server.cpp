@@ -23,7 +23,7 @@
 #include "game/server/logger.h"
 #include "player.h"
 #include <common/callback.h>
-
+#include <vscript/languages/squirrel_re/include/sqarrayutils.h>
 /*
 =====================
 SQVM_ServerScript_f
@@ -40,6 +40,7 @@ static void SQVM_ServerScript_f(const CCommand& args)
     }
 }
 static ConCommand script("script", SQVM_ServerScript_f, "Run input code as SERVER script on the VM", FCVAR_DEVELOPMENTONLY | FCVAR_GAMEDLL | FCVAR_CHEAT | FCVAR_SERVER_FRAME_THREAD);
+
 
 namespace VScriptCode
 {
@@ -276,7 +277,7 @@ namespace VScriptCode
 
 
         // exposed to sqvm - retrieves matchID
-        SQRESULT SQMatchID__internal(HSQUIRRELVM v)
+        SQRESULT TrackerMatchID__internal(HSQUIRRELVM v)
         {
             std::string matchIDStr = std::to_string(getMatchID());
             sq_pushstring(v, matchIDStr.c_str(), -1);
@@ -307,14 +308,14 @@ namespace VScriptCode
         //-----------------------------------------------------------------------------
 
         // Check of is currently running -- returns true if logging, false if not running
-        SQRESULT isLogging__internal(HSQUIRRELVM v)
+        SQRESULT TrackerIsLogging__internal(HSQUIRRELVM v)
         {
             bool state = LOGGER::Logger::getInstance().isLogging();
             sq_pushbool(v, state);
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
-        SQRESULT SQ_GetLogState__internal(HSQUIRRELVM v)
+        SQRESULT TrackerGetLogState__internal(HSQUIRRELVM v)
         {
             SQInteger flag = NULL;
 
@@ -336,7 +337,7 @@ namespace VScriptCode
 
 
 
-        SQRESULT LogEvent__internal(HSQUIRRELVM v)
+        SQRESULT TrackerLogEvent__internal(HSQUIRRELVM v)
         {
             const SQChar* logString = nullptr;
             SQBool encrypt = false;
@@ -348,8 +349,7 @@ namespace VScriptCode
             {
                 if (!VALID_CHARSTAR(logString))
                 {
-                    Error(eDLL_T::SERVER, NO_ERROR, "INVALID CHARSTAR");
-                    v_SQVM_ScriptError("INVALID CHARSTAR");
+                    v_SQVM_ScriptError("Invalid CHARSTAR during logging.");
                     SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
                 }
 
@@ -358,14 +358,13 @@ namespace VScriptCode
             }
             else
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Error retrieving parameters.");
-                v_SQVM_ScriptError("Error retrieving parameters.");
+                v_SQVM_ScriptError("Error retrieving parameters in %s", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
         }
 
 
-        SQRESULT InitializeLogThread__internal(HSQUIRRELVM v)
+        SQRESULT InitializeTrackerLogThread__internal(HSQUIRRELVM v)
         {
             SQBool encrypt = false;
             if (getMatchID() == 0)
@@ -375,8 +374,7 @@ namespace VScriptCode
 
             if (SQ_FAILED(sq_getbool(v, 2, &encrypt)))
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'encrypt' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'encrypt' parameter.");
+                v_SQVM_ScriptError("Failed to retrieve 'encrypt' parameter in %s", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
@@ -389,14 +387,13 @@ namespace VScriptCode
 
 
 
-        SQRESULT stopLogging__internal(HSQUIRRELVM v)
+        SQRESULT TrackerStopLogging__internal(HSQUIRRELVM v)
         {
             SQBool sendToAPI = false;
 
             if (SQ_FAILED(sq_getbool(v, 2, &sendToAPI)))
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'sendToAPI' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'sendToAPI' parameter.");
+                v_SQVM_ScriptError("Failed to retrieve 'sendToAPI' parameter in %s", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
@@ -413,7 +410,7 @@ namespace VScriptCode
         //          logfolder defined in settings json
         //-----------------------------------------------------------------------------
 
-        SQRESULT CleanupLogs__internal(HSQUIRRELVM v)
+        SQRESULT TrackerCleanupLogs__internal(HSQUIRRELVM v)
         {
             LOGGER::CleanupLogs(FileSystem());
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -423,39 +420,51 @@ namespace VScriptCode
         // Purpose: mkos debug - prints to console without devmode
         //-----------------------------------------------------------------------------
 
-        SQRESULT sqprint(HSQUIRRELVM v)
+        SQRESULT sqprint__internal(HSQUIRRELVM v)
         {
             const SQChar* sqprintmsg = nullptr;
-            SQRESULT res = sq_getstring(v, 2, &sqprintmsg);
 
-            if (SQ_FAILED(res) || !sqprintmsg)
+            if (SQ_FAILED( sq_getstring(v, 2, &sqprintmsg)) || !VALID_CHARSTAR(sqprintmsg))
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'sqprintmsg' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'sqprintmsg' parameter.");
+                v_SQVM_ScriptError("Failed to retrieve 'sqprintmsg' parameter in %s", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
             std::string str = sqprintmsg;
-            Msg(eDLL_T::SERVER, ":: %s\n", str.c_str());
+            Msg(eDLL_T::SERVER, ":Tracker: %s\n", str.c_str());
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
 
-        SQRESULT sqerror(HSQUIRRELVM v)
+        SQRESULT sqerror__internal(HSQUIRRELVM v)
         {
             const SQChar* sqprintmsg = nullptr;
-            SQRESULT res = sq_getstring(v, 2, &sqprintmsg);
 
-            if (SQ_FAILED(res) || !sqprintmsg)
+            if (SQ_FAILED(sq_getstring(v, 2, &sqprintmsg) ) || !VALID_CHARSTAR( sqprintmsg) )
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'sqprintmsg' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'sqprintmsg' parameter.");
+                v_SQVM_ScriptError("Failed to retrieve 'sqprintmsg' parameter in %s.", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
             std::string str = sqprintmsg;
-            Error(eDLL_T::SERVER, NO_ERROR, ":: %s\n", str.c_str());
+            Error(eDLL_T::SERVER, NO_ERROR, ":Tracker: %s\n", str.c_str());
+
+            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+        }
+
+        SQRESULT sqwarning__internal(HSQUIRRELVM v)
+        {
+            const SQChar* sqprintmsg = nullptr;
+
+            if (SQ_FAILED(sq_getstring(v, 2, &sqprintmsg)) || !VALID_CHARSTAR(sqprintmsg))
+            {
+                v_SQVM_ScriptError("Failed to retrieve 'sqprintmsg' parameter in %s", __FUNCTION__);
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+
+            std::string str = sqprintmsg;
+            Warning(eDLL_T::SERVER, ":Tracker: %s\n\n", str.c_str());
 
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
@@ -478,7 +487,7 @@ namespace VScriptCode
 
         std::string Sanitize_NumbersOnly( const std::string& input )
         {
-            std::string sanitized = input;
+            std::string sanitized( input );
             sanitized.erase
             (
                 std::remove_if
@@ -500,7 +509,7 @@ namespace VScriptCode
         // for ea account verification
         //-----------------------------------------------------------------------------
 
-        SQRESULT EA_Verify__internal(HSQUIRRELVM v)
+        SQRESULT TrackerEAVerify__internal(HSQUIRRELVM v)
         {
             const SQChar* pToken = nullptr;
             const SQChar* pOID = nullptr;
@@ -510,8 +519,7 @@ namespace VScriptCode
                 SQ_FAILED(sq_getstring(v, 3, &pOID)) || !pOID ||
                 SQ_FAILED(sq_getstring(v, 4, &pEAName)) || !pEAName)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve parameters.");
-                v_SQVM_ScriptError("Failed to retrieve parameters.");
+                v_SQVM_ScriptError("Failed to retrieve parameters in %s", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
@@ -566,7 +574,7 @@ namespace VScriptCode
         // Purpose: api calls for stats
         //-----------------------------------------------------------------------------
 
-        SQRESULT _STATSHOOK_UpdatePlayerCount__internal(HSQUIRRELVM v)
+        SQRESULT TrackerUpdatePlayerCount__internal(HSQUIRRELVM v)
         {
             const SQChar* action = nullptr;
             const SQChar* player = nullptr;
@@ -580,8 +588,7 @@ namespace VScriptCode
                 SQ_FAILED(sq_getstring(v, 5, &count)) || !count ||
                 SQ_FAILED(sq_getstring(v, 6, &DISCORD_HOOK)) || !DISCORD_HOOK)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve parameters.");
-                v_SQVM_ScriptError("Failed to retrieve parameters.");
+                v_SQVM_ScriptError("Failed to retrieve parameters in %s", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
@@ -590,7 +597,7 @@ namespace VScriptCode
         }
 
 
-        SQRESULT _STATSHOOK_EndOfMatch__internal(HSQUIRRELVM v)
+        SQRESULT TrackerEndMatchUpdate__internal(HSQUIRRELVM v)
         {
             const SQChar* recap = nullptr;
             const SQChar* DISCORD_HOOK = nullptr;
@@ -598,8 +605,7 @@ namespace VScriptCode
             if (SQ_FAILED(sq_getstring(v, 2, &recap)) || !recap ||
                 SQ_FAILED(sq_getstring(v, 3, &DISCORD_HOOK)) || !DISCORD_HOOK)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve parameters.");
-                v_SQVM_ScriptError("Failed to retrieve parameters.");
+                v_SQVM_ScriptError("Failed to retrieve parameters in %s", __FUNCTION__);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
@@ -607,79 +613,80 @@ namespace VScriptCode
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
-
-        SQRESULT LoadSyncData__internal(HSQUIRRELVM v)
+        SQRESULT FetchPlayerPersistenceData__internal(HSQUIRRELVM v)
         {
             const SQChar* player_oid = nullptr;
-            const SQChar* requestedStats = nullptr;
-            const SQChar* requestedSettings = nullptr;
 
+            if ( sq_gettype(v, 2) != OT_STRING )
+            {
+                v_SQVM_ScriptError("First parameter is expected to be of type string, but %s was provided.\n", sq_typename(sq_gettype(v, 2)));
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
             if (SQ_FAILED(sq_getstring(v, 2, &player_oid)) || !player_oid)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'player_oid' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'player_oid' parameter.");
+                v_SQVM_ScriptError("Failed to retrieve 'player_oid' parameter.\n");
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
-            if (SQ_FAILED(sq_getstring(v, 3, &requestedStats)) || !requestedStats)
+            if (sq_gettype(v, 3) != OT_ARRAY)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'requestedStats' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'requestedStats' parameter.");
+                v_SQVM_ScriptError("Second parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 3)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
-
-            if (SQ_FAILED(sq_getstring(v, 4, &requestedSettings)) || !requestedSettings)
+            if (sq_gettype(v, 4) != OT_ARRAY)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'requestedSettings' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'requestedSettings' parameter.");
+                v_SQVM_ScriptError("Third parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 4)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
-            LOGGER::TaskManager::getInstance().RequestPlayerPersistenceData(player_oid, requestedStats, requestedSettings);
+            std::vector<std::string> requestedStats = SQArrayToVector<std::string>(v, 3);
+            std::vector<std::string> requestedSettings = SQArrayToVector<std::string>(v, 4);
+
+            LOGGER::TaskManager::getInstance().RequestPlayerPersistenceData(
+                player_oid,
+                requestedStats,
+                requestedSettings
+            );
+
+            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+        }
+
+        SQRESULT FetchBatchPersistenceData__internal(HSQUIRRELVM v)
+        {
+            if (sq_gettype(v, 2) != OT_ARRAY)
+            {
+                v_SQVM_ScriptError("First parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 2)));
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+            if (sq_gettype(v, 3) != OT_ARRAY)
+            {
+                v_SQVM_ScriptError("Second parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 3)));
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+            if (sq_gettype(v, 4) != OT_ARRAY)
+            {
+                v_SQVM_ScriptError("Third parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 4)));
+                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+            }
+
+            std::vector<std::string> playerOids = SQArrayToVector<std::string>(v, 2);
+            std::vector<std::string> requestedStats = SQArrayToVector<std::string>(v, 3);
+            std::vector<std::string> requestedSettings = SQArrayToVector<std::string>(v, 4);
+
+            LOGGER::TaskManager::getInstance().RequestBatchPlayerPersistenceData(
+                playerOids, requestedStats, requestedSettings);
+
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
 
-        SQRESULT LoadBatchSyncData__internal(HSQUIRRELVM v)
-        {
-            const SQChar* player_oids = nullptr;
-            const SQChar* requestedStats = nullptr;
-            const SQChar* requestedSettings = nullptr;
-
-            if (SQ_FAILED(sq_getstring(v, 2, &player_oids)) || !player_oids)
-            {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'player_oids' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'player_oids' parameter.");
-                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-            }
-
-            if (SQ_FAILED(sq_getstring(v, 3, &requestedStats)) || !requestedStats)
-            {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'requestedStats' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'requestedStats' parameter.");
-                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-            }
-
-            if (SQ_FAILED(sq_getstring(v, 4, &requestedSettings)) || !requestedSettings)
-            {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'requestedSettings' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'requestedSettings' parameter.");
-                SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-            }
-
-            LOGGER::TaskManager::getInstance().RequestBatchPlayerPersistenceData(player_oids, requestedStats, requestedSettings);
-            SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
-        }
-
-        //NEW
-        SQRESULT GetPlayerStats__internal(HSQUIRRELVM v)
+        SQRESULT GetPlayerPersistenceData__internal(HSQUIRRELVM v)
         {
             const SQChar* player_oid = nullptr;
 
             if (SQ_FAILED(sq_getstring(v, 2, &player_oid)) || !player_oid)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to retrieve 'player_oid' parameter.");
-                v_SQVM_ScriptError("Failed to retrieve 'player_oid' parameter.");
+                v_SQVM_ScriptError("Failed to retrieve 'player_oid' parameter.\n");
                 sq_pushinteger(v, -1);
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
@@ -852,13 +859,13 @@ namespace VScriptCode
         }
 
 
-        SQRESULT SQ_UpdateLiveStats__internal(HSQUIRRELVM v)
+        SQRESULT TrackerUpdateLiveStats__internal(HSQUIRRELVM v)
         {
             const SQChar* stats_json = nullptr;
 
             if (SQ_FAILED(sq_getstring(v, 2, &stats_json)))
             {
-                v_SQVM_ScriptError("Failed to get stats_json");
+                v_SQVM_ScriptError("Failed to get stats_json\n");
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
@@ -870,7 +877,7 @@ namespace VScriptCode
 
 
 
-        SQRESULT SQ_ResetStats__internal(HSQUIRRELVM v)
+        SQRESULT TrackerResetStats__internal(HSQUIRRELVM v)
         {
             const SQChar* player_oid = nullptr;
             if (SQ_SUCCEEDED(sq_getstring(v, 2, &player_oid)) && player_oid)
@@ -883,7 +890,7 @@ namespace VScriptCode
         }
 
 
-        SQRESULT FetchGlobalSettingsFromR5RDEV__internal(HSQUIRRELVM v)
+        SQRESULT FetchGlobalTrackerSettings__internal(HSQUIRRELVM v)
         {
             const SQChar* query = nullptr;
             if (SQ_SUCCEEDED(sq_getstring(v, 2, &query)) && query)
@@ -894,14 +901,31 @@ namespace VScriptCode
                     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
                 }
 
-                std::string settings = LOGGER::FetchGlobalSettings(query);
-                sq_pushstring(v, settings.c_str(), -1);
+                SQObject queryObj;
+                sq_getstackobj(v, 2, &queryObj);
+                sq_addref(v, &queryObj);
+
+                LOGGER::TaskManager::getInstance().AddTask([v, queryObj, query]() mutable
+                {
+                    std::string settings = LOGGER::FetchGlobalSettings(query);
+
+                    bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_TrackerGlobalSettingsReady",
+                        settings.c_str(),
+                        "void functionref( string )");
+                        
+                    if (!success)
+                        Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_TrackerGlobalSettingsReady for query '%s'.\n", query);
+                        
+                    sq_release(v, &queryObj);
+                });
 
                 SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
             }
 
+            v_SQVM_ScriptError("Failed to get Query string in %s", __FUNCTION__);
             SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
         }
+
 
 
 
@@ -910,10 +934,10 @@ namespace VScriptCode
         // loaded from (r5rdev_config)
         //-----------------------------------------------------------------------------
 
-        SQRESULT SQ_GetSetting__internal(HSQUIRRELVM v)
+        SQRESULT TrackerGetSetting__internal(HSQUIRRELVM v)
         {
             const SQChar* setting_key = nullptr;
-            if (!SQ_SUCCEEDED(sq_getstring(v, 2, &setting_key)) || !setting_key)
+            if (!SQ_SUCCEEDED(sq_getstring(v, 2, &setting_key)) || !VALID_CHARSTAR( setting_key))
             {
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
@@ -924,13 +948,13 @@ namespace VScriptCode
         }
 
 
-        SQRESULT SQ_ReloadConfig__internal(HSQUIRRELVM v)
+        SQRESULT TrackerReloadConfig__internal(HSQUIRRELVM v)
         {
             LOGGER::ReloadConfig("r5rdev_config.json");
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
         }
 
-        SQRESULT SQ_ServerMsg__internal(HSQUIRRELVM v)
+        SQRESULT TrackerServerMsg__internal(HSQUIRRELVM v)
         {
             const SQChar* inMsg = nullptr;
 
@@ -958,7 +982,7 @@ namespace VScriptCode
 
 
 
-        SQRESULT SQ_CreateServerBot__internal(HSQUIRRELVM v)
+        SQRESULT TrackerCreateServerBot__internal(HSQUIRRELVM v)
         {
             if (!g_pServer->IsActive())
             {
@@ -971,7 +995,7 @@ namespace VScriptCode
             }
 
             const SQChar* ImmutableName = nullptr;
-            if (SQ_FAILED(sq_getstring(v, 2, &ImmutableName)) || !ImmutableName)
+            if (SQ_FAILED(sq_getstring(v, 2, &ImmutableName)) || !VALID_CHARSTAR( ImmutableName ))
             {
                 v_SQVM_ScriptError("Failed to get server msgbot name");
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
@@ -993,28 +1017,20 @@ namespace VScriptCode
                 CClient* pClient = g_pServer->GetClient(i);
 
                 if (!pClient)
-                {
                     continue;
-                }
 
-                if (!pClient || pClient->IsHumanPlayer())
-                {
+                if (pClient->IsHumanPlayer())
                     continue;
-                }
 
                 const CNetChan* pNetChan = pClient->GetNetChan();
 
                 if (!pNetChan)
-                {
                     continue;
-                }
 
                 const char* clientName = pNetChan->GetName();
 
                 if (!clientName)
-                {
                     continue;
-                }
 
                 std::string expectedBotName = "[" + std::string(ImmutableName) + "]"; //heaaaap
 
@@ -1049,24 +1065,25 @@ namespace VScriptCode
 
                 sq_getstring(v, i, &name); //idc
 
-                switch (type) {
-                case OT_NULL: typeName = "null"; break;
-                case OT_INTEGER: typeName = "integer"; break;
-                case OT_FLOAT: typeName = "float"; break;
-                case OT_BOOL: typeName = "bool"; break;
-                case OT_STRING: typeName = "string"; break;
-                case OT_TABLE: typeName = "table"; break;
-                case OT_ARRAY: typeName = "array"; break;
-                case OT_USERDATA: typeName = "userdata"; break;
-                case OT_CLOSURE: typeName = "closure"; break;
-                case OT_NATIVECLOSURE: typeName = "nativeclosure"; break;
-                case OT_USERPOINTER: typeName = "userpointer"; break;
-                case OT_THREAD: typeName = "thread"; break;
-                case OT_FUNCPROTO: typeName = "funcproto"; break;
-                case OT_CLASS: typeName = "class"; break;
-                case OT_INSTANCE: typeName = "instance"; break;
-                case OT_WEAKREF: typeName = "weakref"; break;
-                default: typeName = "unknown"; break;
+                switch (type) 
+                {
+                    case OT_NULL: typeName = "null"; break;
+                    case OT_INTEGER: typeName = "integer"; break;
+                    case OT_FLOAT: typeName = "float"; break;
+                    case OT_BOOL: typeName = "bool"; break;
+                    case OT_STRING: typeName = "string"; break;
+                    case OT_TABLE: typeName = "table"; break;
+                    case OT_ARRAY: typeName = "array"; break;
+                    case OT_USERDATA: typeName = "userdata"; break;
+                    case OT_CLOSURE: typeName = "closure"; break;
+                    case OT_NATIVECLOSURE: typeName = "nativeclosure"; break;
+                    case OT_USERPOINTER: typeName = "userpointer"; break;
+                    case OT_THREAD: typeName = "thread"; break;
+                    case OT_FUNCPROTO: typeName = "funcproto"; break;
+                    case OT_CLASS: typeName = "class"; break;
+                    case OT_INSTANCE: typeName = "instance"; break;
+                    case OT_WEAKREF: typeName = "weakref"; break;
+                    default: typeName = "unknown"; break;
                 }
                 Msg(eDLL_T::SERVER, "Stack [%d]: %s -- %s\n", i, name, typeName);
             }
@@ -1162,44 +1179,38 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetServerID, "Gets the current server ID", "string", "");
 
     //for stat settings (api keys, discord webhooks, server identifiers, preferences))
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_GetSetting__internal, "Fetches value by key", "string", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_ReloadConfig__internal, "Reloads R5R.DEV config file", "void", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerGetSetting__internal, "Fetches value by key", "string", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerReloadConfig__internal, "Reloads R5R.DEV config file", "void", "");
 
-    //for logging 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, InitializeLogThread__internal, "Initializes internal logevent thread", "void", "bool");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LogEvent__internal, "Logs event with GameEvent,Encryption", "void", "string, bool");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQMatchID__internal, "Gets the match ID", "string", "");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, stopLogging__internal, "Stops the logging thread, writes remaining queued messages", "void", "bool");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, isLogging__internal, "Checks if the log thread is running, atomic", "bool", "");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_GetLogState__internal, "Checks various states, returns true false", "bool", "int");
-
-    // for debugging the sqvm
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, CleanupLogs__internal, "Deletes oldest logs in platform/eventlogs when directory exceeds 20mb", "void", "");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqprint, "Prints string to console window from sqvm", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqerror, "Prints error string to console window from sqvm", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, PrintStack, "PRINT STACK", "void", "");
-  
+    //for tracker 
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, InitializeTrackerLogThread__internal, "Initializes internal logevent thread", "void", "bool");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerLogEvent__internal, "Logs event with GameEvent,Encryption", "void", "string, bool");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerMatchID__internal, "Gets the match ID", "string", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerStopLogging__internal, "Stops the logging thread, writes remaining queued messages", "void", "bool");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerIsLogging__internal, "Checks if the log thread is running, atomic", "bool", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerGetLogState__internal, "Checks various states, returns true false", "bool", "int");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCleanupLogs__internal, "Deletes oldest logs in platform/eventlogs when directory exceeds 20mb", "void", "");
     
-    //for verification
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, EA_Verify__internal, "Verifys EA Account on R5R.DEV", "void", "string, string, string");
+    // for tracker api
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchGlobalTrackerSettings__internal, "Fetches global settings based on query", "string", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchBatchPersistenceData__internal, "Fetches batch player stats queries", "void", "array< string >, array< string >, array< string >"); //specify what stats|settings
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchPlayerPersistenceData__internal, "Initializes grabbing stats for player", "void", "string, array< string >, array< string >"); //specify what stats|settings
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetPlayerPersistenceData__internal, "Gets stats table for player from native map", "table", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerResetStats__internal, "Sets map value for player_oid stats to empty string", "void", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdateLiveStats__internal, "Updates live server stats R5R.DEV", "void", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdatePlayerCount__internal, "Updates LIVE player count on R5R.DEV", "void", "string, string, string, string, string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEndMatchUpdate__internal, "Updates match recap on R5R.DEV", "void", "string, string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEAVerify__internal, "Verifys EA Account on R5R.DEV", "void", "string, string, string");
+    
+    // for debugging the sqvm
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqprint__internal, "Prints string to console window from sqvm", "void", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqerror__internal, "Prints error string to console window from sqvm", "void", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqwarning__internal, "Prints warning string to console window from sqvm", "void", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, PrintStack, "PRINT STACK", "void", "");
 
-    // for stat updates
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, _STATSHOOK_UpdatePlayerCount__internal, "Updates LIVE player count on R5R.DEV", "void", "string, string, string, string, string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, _STATSHOOK_EndOfMatch__internal, "Updates match recap on R5R.DEV", "void", "string, string");
-
-    //for polling stats
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_UpdateLiveStats__internal, "Updates live server stats R5R.DEV", "void", "string");
-
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LoadSyncData__internal, "Initializes grabbing stats for player", "void", "string, string, string"); //new: specify what stats|settings
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetPlayerStats__internal, "Fetches stats for player on R5R.DEV", "table", "string"); //NEW
-
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_ResetStats__internal, "Sets map value for player_oid stats to empty string", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LoadBatchSyncData__internal, "Fetches batch player stats queries", "void", "string, string, string"); //new: specify what stats|settings
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchGlobalSettingsFromR5RDEV__internal, "Fetches global settings based on query", "string", "string");
-
-    //send a message as a bot.
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_CreateServerBot__internal, "Creates a bot to send messages", "array< int >", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SQ_ServerMsg__internal, "Says message from specified senderId", "void", "string,int");
+    //send a message as a bot. 
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCreateServerBot__internal, "Creates a bot to send messages", "array< int >", "string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerServerMsg__internal, "Says message from specified senderId", "void", "string,int");
 }
 
 //---------------------------------------------------------------------------------

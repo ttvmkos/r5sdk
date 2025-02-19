@@ -506,7 +506,7 @@ void Editor_TileMesh::handleSettings()
 	ImGui::Checkbox("Build All Tiles", &m_buildAll);
 	ImGui::Checkbox("Keep Intermediate Results", &m_keepInterResults);
 	
-	EditorCommon_SetAndRenderTileProperties(m_geom, m_minTileBits, m_maxTileBits, m_tileSize, m_cellSize, m_maxTiles, m_maxPolysPerTile);
+	EditorCommon_SetAndRenderTileProperties(m_geom, m_tileSize, m_cellSize, m_maxTiles, m_maxPolysPerTile);
 	
 	ImGui::Separator();
 	Editor_StaticTileMeshCommon::renderIntermediateTileMeshOptions();
