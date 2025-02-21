@@ -87,6 +87,7 @@ typedef SQInteger(*SQFUNCTION)(HSQUIRRELVM v);
 
 #define _RT_MASK 0x00FFFFFF
 #define _RAW_TYPE(type) (type&_RT_MASK)
+//#define _RT_BASETYPE(t) static_cast<SQObjectType>((t) & _RT_MASK)
 
 #define _RT_NULL			0x00000001
 #define _RT_INTEGER			0x00000002
