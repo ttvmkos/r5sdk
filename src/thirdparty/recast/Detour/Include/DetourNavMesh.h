@@ -100,6 +100,7 @@ static const int DT_MAX_TRAVERSE_TABLES = 5;
 /// A value that indicates the link doesn't require a traverse action. (Jumping, climbing, etc.)
 static const unsigned char DT_NULL_TRAVERSE_TYPE = 0xff;
 
+/// The maximum number of traversal variations. (Jumping, climbing, crossing, etc.)
 static const unsigned char DT_MAX_TRAVERSE_TYPES = 32;
 
 /// A value that indicates the link doesn't contain a reverse traverse link.
@@ -158,7 +159,7 @@ static const int DT_STRAIGHT_PATH_RESOLUTION = 5;
 
 /// The maximum number of user defined area ids.
 /// @ingroup detour
-static const int DT_MAX_AREAS = 32; // <-- confirmed 32 see [r5apex_ds.exe + 0xf47dda] '-> test    [rcx+80h], ax'.
+static const int DT_MAX_AREAS = 64;
 
 /// Tile flags used for various functions and fields.
 /// For an example, see dtNavMesh::addTile().
@@ -174,9 +175,10 @@ enum dtTileFlags
 /// Vertex flags returned by dtNavMeshQuery::findStraightPath.
 enum dtStraightPathFlags
 {
-	DT_STRAIGHTPATH_START = 0x01,				///< The vertex is the start position in the path.
-	DT_STRAIGHTPATH_END = 0x02,					///< The vertex is the end position in the path.
-	DT_STRAIGHTPATH_OFFMESH_CONNECTION = 0x04,	///< The vertex is the start of an off-mesh connection.
+	DT_STRAIGHTPATH_START = 1<<0,				///< The vertex is the start position in the path.
+	DT_STRAIGHTPATH_END = 1<<1,					///< The vertex is the end position in the path.
+	DT_STRAIGHTPATH_WAYPOINT = 1<<2,			///< The vertex is a waypoint in the path.
+	DT_STRAIGHTPATH_OFFMESH_CONNECTION = 1<<3,	///< The vertex is the start of an off-mesh connection.
 };
 
 /// Options for dtNavMeshQuery::findStraightPath.
@@ -320,13 +322,13 @@ struct dtPoly
 	float center[3];
 
 	/// Sets the user defined area id. [Limit: < #DT_MAX_AREAS]
-	inline void setArea(unsigned char a) { areaAndtype = (areaAndtype & 0xc0) | (a & 0x3f); }
+	inline void setArea(unsigned char a) { areaAndtype = (areaAndtype & 0xc0) | (a & (DT_MAX_AREAS-1)); }
 
 	/// Sets the polygon type. (See: #dtPolyTypes.)
-	inline void setType(unsigned char t) { areaAndtype = (areaAndtype & 0x3f) | (t << 6); }
+	inline void setType(unsigned char t) { areaAndtype = (areaAndtype & (DT_MAX_AREAS-1)) | (t << 6); }
 
 	/// Gets the user defined area id.
-	inline unsigned char getArea() const { return areaAndtype & 0x3f; }
+	inline unsigned char getArea() const { return areaAndtype & (DT_MAX_AREAS-1); }
 
 	/// Gets the polygon type. (See: #dtPolyTypes)
 	inline unsigned char getType() const { return areaAndtype >> 6; }
