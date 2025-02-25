@@ -2787,9 +2787,9 @@ typedef struct {
     U32  cachedLitLength;
     const BYTE* cachedLiterals;
     ZSTDv07_stats_t stats;
-} SeqStore_t;
+} seqStore_t;
 
-void ZSTDv07_seqToCodes(const SeqStore_t* seqStorePtr, size_t const nbSeq);
+void ZSTDv07_seqToCodes(const seqStore_t* seqStorePtr, size_t const nbSeq);
 
 /* custom memory allocation functions */
 static const ZSTDv07_customMem defaultCustomMem = { ZSTDv07_defaultAllocFunction, ZSTDv07_defaultFreeFunction, NULL };

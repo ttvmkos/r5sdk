@@ -15,6 +15,7 @@ add_sources( SOURCE_GROUP "Include"
     "include/detours.h"
     "include/detver.h"
     "include/idetour.h"
+    "include/syelog.h"
 )
 
 end_sources()

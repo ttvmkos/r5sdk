@@ -6,26 +6,20 @@ constexpr char IMGUI_BIND_FILE[] = "keymap.vdf";
 class ImGuiConfig
 {
 public:
-    ImGuiConfig()
+    struct
     {
-        m_ConsoleConfig.m_nBind0 = ImGuiKey_GraveAccent;
-        m_ConsoleConfig.m_nBind1 = ImGuiKey_F10;
+        int m_nBind0 = VK_OEM_3;
+        int m_nBind1 = VK_F10;
+    } m_ConsoleConfig;
 
-        m_BrowserConfig.m_nBind0 = ImGuiKey_Insert;
-        m_BrowserConfig.m_nBind1 = ImGuiKey_F11;
-    }
-
-    struct BindPair_s
+    struct
     {
-        int m_nBind0;
-        int m_nBind1;
-    };
-    
-    BindPair_s m_ConsoleConfig;
-    BindPair_s m_BrowserConfig;
+        int m_nBind0 = VK_INSERT;
+        int m_nBind1 = VK_F11;
+    } m_BrowserConfig;
 
     void Load();
-    void Save() const;
+    void Save();
     ImGuiStyle_t InitStyle() const;
 
     inline bool KeyUsed(const int key) const

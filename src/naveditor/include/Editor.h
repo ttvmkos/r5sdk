@@ -351,8 +351,6 @@ public:
 
 	inline std::map<TraverseLinkPolyPair, unsigned int>& getTraverseLinkPolyMap() { return m_traverseLinkPolyMap; }
 
-	static unsigned int getTraverseFlags(const TraverseAnimType_e type);
-
 	inline const char* getModelName() const { return m_modelName.c_str(); }
 
 	void updateToolStates(const float dt);

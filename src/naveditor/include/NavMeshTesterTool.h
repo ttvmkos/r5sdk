@@ -112,8 +112,6 @@ public:
 	virtual void handleRenderOverlay(double* proj, double* model, int* view);
 
 	void recalc();
-	void updateTraverseCosts();
-
 	void drawAgent(const float* pos, float r, float h, float c, const unsigned int col);
 };
 

@@ -41,7 +41,6 @@ class dtQueryFilter
 	
 public:
 	dtQueryFilter();
-	void resetTraverseCosts();
 	
 #ifdef DT_VIRTUAL_QUERYFILTER
 	virtual ~dtQueryFilter() { }
@@ -61,7 +60,7 @@ public:
 #ifdef DT_VIRTUAL_QUERYFILTER
 	virtual
 #endif
-	bool traverseFilter(const dtLink* link,
+	bool traverseFilter(const dtPolyRef ref,
 			const dtMeshTile* tile,
 			const dtPoly* poly) const;
 
@@ -93,12 +92,12 @@ public:
 	/// Returns the traversal cost of the area.
 	///  @param[in]		i		The id of the area.
 	/// @returns The traversal cost of the area.
-	inline float getTraverseCost(const int i) const { return m_traverseCost[i]; }
+	inline float getAreaCost(const int i) const { return m_traverseCost[i]; }
 
 	/// Sets the traversal cost of the area.
 	///  @param[in]		i		The id of the area.
 	///  @param[in]		cost	The new cost of traversing the area.
-	inline void setTraverseCost(const int i, const float cost) { m_traverseCost[i] = cost; }
+	inline void setAreaCost(const int i, const float cost) { m_traverseCost[i] = cost; } 
 
 	/// Returns the include flags for the filter.
 	/// Any polygons that include one or more of these flags will be
@@ -114,20 +113,12 @@ public:
 	/// excluded from the operation.
 	inline unsigned short getExcludeFlags() const { return m_excludeFlags; }
 
-	/// Sets the traverse flags for the filter.
+	/// Sets the exclude flags for the filter.
 	/// @param[in]		flags		The new flags.
-	inline void setExcludeFlags(const unsigned short flags) { m_excludeFlags = flags; }
-
-	/// Returns the traverse flags for the filter.
-	/// Any polygons that include one ore more of these flags will be
-	/// included in the operation.
-	inline unsigned int getTraverseFlags() const { return m_traverseFlags; }
-
-	/// Sets the traverse flags for the filter.
-	/// @param[in]		flags		The new flags.
-	inline void setTraverseFlags(const unsigned int flags) { m_traverseFlags = flags; }
+	inline void setExcludeFlags(const unsigned short flags) { m_excludeFlags = flags; }	
 
 	///@}
+
 };
 
 /// Provides information about raycast hit
@@ -528,7 +519,7 @@ public:
 	///  @param[in]		pos			The position to check. [(x, y, z)]
 	///  @param[out]	closest		The closest point. [(x, y, z)]
 	/// @returns The status flags for the query.
-	dtStatus closestPointOnPolyBoundary(dtPolyRef ref, const float* pos, float* closest, float* dist = nullptr) const;
+	dtStatus closestPointOnPolyBoundary(dtPolyRef ref, const float* pos, float* closest) const;
 	
 	/// Gets the height of the polygon at the provided position using the height detail. (Most accurate.)
 	///  @param[in]		ref			The reference id of the polygon.
@@ -638,9 +629,9 @@ private:
 
 	// Appends intermediate portal points to a straight path.
 	dtStatus appendPortals(const int startIdx, const int endIdx, const float* endPos, const dtPolyRef* path,
-						   const unsigned char* jumpTypes, float* straightPath, unsigned char* straightPathFlags,
-						   dtPolyRef* straightPathRefs, unsigned char* straightPathJumps, int* straightPathCount,
-						   const int maxStraightPath, const int jumpFilter, const int options) const;
+						   float* straightPath, unsigned char* straightPathFlags, dtPolyRef* straightPathRefs,
+						   unsigned char* straightPathJumps, int* straightPathCount, const int maxStraightPath,
+						   const int options) const;
 
 	// Gets the path leading to the specified end node.
 	dtStatus getPathToNode(struct dtNode* endNode, dtPolyRef* path, int* pathCount, int maxPath) const;

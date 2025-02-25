@@ -95,16 +95,7 @@ protected:
 	// particular block as acknowledged
 	bool m_bBlockAckStatus[MAX_DATABLOCK_FRAGMENTS];
 	uint8_t* m_pScratchBuffer;
-
-	// this member is true when:
-	// net_debugDataBlockSender.GetBool() == true, or:
-	// m_bStartedTransfer == true, or:
-	// ( m_TimeCurrentSend - m_TimeFirstSend ) > net_datablock_longSendTime.GetFloat(), or:
-	// m_nTransferId < 4
-	//
-	// if the above condition is true, function ServerDataBlockSender::SendPendingDataBlocks()
-	// also returns true, else this function always returns false
-	bool m_bAbnormalSend;
+	bool m_bDumbDataBlockInfo;
 };
 
 abstract_class NetDataBlockReceiver

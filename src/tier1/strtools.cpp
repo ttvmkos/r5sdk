@@ -528,87 +528,79 @@ int V_UnicodeToUTF8(const wchar_t* pUnicode, char* pUTF8, int cubDestSizeInBytes
 //-----------------------------------------------------------------------------
 int V_UTF8CharLength(const unsigned char input)
 {
+	if ((input & 0xFE) == 0xFC)
+		return 6;
+	if ((input & 0xFC) == 0xF8)
+		return 5;
 	if ((input & 0xF8) == 0xF0)
-		return 4; // 4-byte sequence (U+10000 to U+10FFFF)
+		return 4;
 	else if ((input & 0xF0) == 0xE0)
-		return 3; // 3-byte sequence (U+0800 to U+FFFF)
+		return 3;
 	else if ((input & 0xE0) == 0xC0)
-		return 2; // 2-byte sequence (U+0080 to U+07FF)
-	return 1; // 1-byte (ASCII)
+		return 2;
+	return 1;
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Checks if a given string only contains UTF-8 characters
 //-----------------------------------------------------------------------------
-bool V_IsValidUTF8(const char* const pszString)
+bool V_IsValidUTF8(const char* pszString)
 {
-	const unsigned char* bytes = (const unsigned char*)pszString;
+	char c;
+	const char* it;
 
-	while (*bytes != 0x00)
+	while (true)
 	{
-		unsigned int cp;
-		int num;
-
-		switch (V_UTF8CharLength(*bytes))
+		while (true)
 		{
-		case 4: // U+10000 to U+10FFFF
-		{
-			cp = (*bytes & 0x07);
-			num = 4;
-
-			break;
-		}
-		case 3: // U+0800 to U+FFFF
-		{
-			cp = (*bytes & 0x0F);
-			num = 3;
-
-			break;
-		}
-		case 2: // U+0080 to U+07FF
-		{
-			cp = (*bytes & 0x1F);
-			num = 2;
-
-			break;
-		}
-		case 1: // U+0000 to U+007F
-		{
-			if ((*bytes & 0x80) == 0x00) 
+			c = *pszString;
+			it = pszString++;
+			if (c < 0)
 			{
-				cp = (*bytes & 0x7F);
-				num = 1;
-
 				break;
 			}
-			else
-				return false;
-		}
-		default:
-			UNREACHABLE();
+			if (!c)
+			{
+				return true;
+			}
 		}
 
-		bytes += 1;
-
-		for (int i = 1; i < num; ++i)
+		char s = *pszString;
+		if ((*pszString & 0xC0) != 0x80)
 		{
-			if ((*bytes & 0xC0) != 0x80)
-				return false;
-
-			cp = (cp << 6) | (*bytes & 0x3F);
-			bytes += 1;
+			break;
 		}
 
-		if ((cp > 0x10FFFF) ||
-			((cp >= 0xD800) && (cp <= 0xDFFF)) ||
-			((cp <= 0x007F) && (num != 1)) ||
-			((cp >= 0x0080) && (cp <= 0x07FF) && (num != 2)) ||
-			((cp >= 0x0800) && (cp <= 0xFFFF) && (num != 3)) ||
-			((cp >= 0x10000) && (cp <= 0x1FFFFF) && (num != 4)))
-			return false;
-	}
+		pszString = it + 2;
+		if (c >= 0xE0u)
+		{
+			int n = (*pszString & 0x3F) | (((s & 0x3F) | ((c & 0xF) << 6)) << 6);
+			if ((*pszString & 0xC0) != 0x80)
+			{
+				return false;
+			}
 
-	return true;
+			pszString = it + 3;
+			if (c >= 0xF0u)
+			{
+				if ((*pszString & 0xC0) != 0x80 || ((n << 6) | (*pszString & 0x3Fu)) > 0x10FFFF)
+				{
+					return false;
+				}
+
+				pszString = it + 4;
+			}
+			else if ((n - 0xD800) <= 0x7FF)
+			{
+				return false;
+			}
+		}
+		else if (c < 0xC2u)
+		{
+			return false;
+		}
+	}
+	return false;
 }
 
 bool V_StringMatchesPattern(const char* pszSource, const char* pszPattern, int nFlags /*= 0 */)

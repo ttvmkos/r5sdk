@@ -53,49 +53,8 @@ C_ASSERT(sizeof(_DETOUR_ALIGN) == 1);
 //
 // Region reserved for system DLLs, which cannot be used for trampolines.
 //
-// On Windows 10, ntdll.dll is mapped at random location (ASLR) within a
-// range near the top of the user-mode address space.
-// After that, further system DLLs are mapped top down within this range.
-// In the bottom of the range is reached, the allocator wraps to the top.
-//
-// We also want to exclude any pages that share a CFG bitmap page with a system DLL
-// so leave an additional a 1MB buffer on each side of the range.
-//
-#if defined(DETOURS_64BIT)
-// On X64 the range is 0x7FF800000000..0x7FFFFFFF0000 - which is 32GB!
-// So we likely must allocate in the system DLL range to be +/- 2GB.
-// But we want to avoid at least the first 1GB that will be used for system DLLs.
-// Due to wrapping, this may be two separate ranges.
-static PVOID    s_pSystemRegionUpperBound = (PVOID)((ULONG_PTR)GetModuleHandleW(L"ntdll.dll") + (ULONG_PTR)0x100000);
-static PVOID    s_pSystemRegionLowerBound = (PVOID)((ULONG_PTR)s_pSystemRegionUpperBound < (ULONG_PTR)0x7FF83F000000 ?
-                                                    (ULONG_PTR)0x7FF7FF000000 : ((ULONG_PTR)s_pSystemRegionUpperBound - (ULONG_PTR)0x40000000));
-static SIZE_T   s_pSystemRegionSize       = (ULONG_PTR)s_pSystemRegionUpperBound - (ULONG_PTR)s_pSystemRegionLowerBound; // up to 1GB
-
-static SIZE_T   s_pSystemRegion2Size       = (SIZE_T)0x40000000 - s_pSystemRegionSize;
-static PVOID    s_pSystemRegion2UpperBound = (PVOID)(ULONG_PTR)0x800000000000;
-static PVOID    s_pSystemRegion2LowerBound = (PVOID)((ULONG_PTR)s_pSystemRegion2UpperBound - s_pSystemRegion2Size);
-#else
-// On X86 the range was originally 0x70000000..0x80000000
-// However, since Windows 8, the range is now 0x50000000..0x78000000
-// Reference: Windows Internals, 7th Edition, page 368
-// We just exclude both ranges.
-static PVOID    s_pSystemRegionUpperBound = (PVOID)((ULONG_PTR)0x80000000);
-static PVOID    s_pSystemRegionLowerBound = (PVOID)((ULONG_PTR)0x50000000 - 0x100000);
-static SIZE_T   s_pSystemRegionSize       = (ULONG_PTR)s_pSystemRegionUpperBound - (ULONG_PTR)s_pSystemRegionLowerBound; // 769MB
-#endif
-
-inline SIZE_T should_skip_sytem_range_size(PBYTE pbTry)
-{
-    if (pbTry >= s_pSystemRegionLowerBound && pbTry <= s_pSystemRegionUpperBound) {
-        return s_pSystemRegionSize;
-    }
-#if defined(DETOURS_64BIT)
-    if (pbTry >= s_pSystemRegion2LowerBound && pbTry <= s_pSystemRegion2UpperBound) {
-        return s_pSystemRegion2Size;
-    }
-#endif
-    return 0;
-}
+static PVOID    s_pSystemRegionLowerBound   = (PVOID)(ULONG_PTR)0x70000000;
+static PVOID    s_pSystemRegionUpperBound   = (PVOID)(ULONG_PTR)0x80000000;
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -197,8 +156,6 @@ inline PBYTE detour_gen_brk(PBYTE pbCode, PBYTE pbLimit)
 
 inline PBYTE detour_skip_jmp(PBYTE pbCode, PVOID *ppGlobals)
 {
-    PBYTE pbCodeOriginal;
-
     if (pbCode == NULL) {
         return NULL;
     }
@@ -222,7 +179,6 @@ inline PBYTE detour_skip_jmp(PBYTE pbCode, PVOID *ppGlobals)
         PBYTE pbNew = pbCode + 2 + *(CHAR *)&pbCode[1];
         DETOUR_TRACE(("%p->%p: skipped over short jump.\n", pbCode, pbNew));
         pbCode = pbNew;
-        pbCodeOriginal = pbCode;
 
         // First, skip over the import vector if there is one.
         if (pbCode[0] == 0xff && pbCode[1] == 0x25) {   // jmp [imm32]
@@ -239,23 +195,6 @@ inline PBYTE detour_skip_jmp(PBYTE pbCode, PVOID *ppGlobals)
             pbNew = pbCode + 5 + *(UNALIGNED INT32 *)&pbCode[1];
             DETOUR_TRACE(("%p->%p: skipped over long jump.\n", pbCode, pbNew));
             pbCode = pbNew;
-
-            // Patches applied by the OS will jump through an HPAT page to get
-            // the target function in the patch image. The jump is always performed
-            // to the target function found at the current instruction pointer +
-            // PAGE_SIZE - 6 (size of jump).
-            // If this is an OS patch, we want to detour at the point of the target function
-            // padding in the base image. Ideally, we would detour at the target function, but
-            // since it's patched it begins with a short jump (to padding) which isn't long
-            // enough to hold the detour code bytes.
-            if (pbCode[0] == 0xff &&
-                pbCode[1] == 0x25 &&
-                *(UNALIGNED INT32 *)&pbCode[2] == (UNALIGNED INT32)(pbCode + 0x1000)) {   // jmp [rip+PAGE_SIZE-6]
-
-                DETOUR_TRACE(("%p->%p: OS patch encountered, reset back to long jump 5 bytes prior to target function.\n", pbCode, pbCodeOriginal));
-                pbCode = pbCodeOriginal;
-            }
-
         }
     }
     return pbCode;
@@ -430,8 +369,6 @@ inline PBYTE detour_gen_brk(PBYTE pbCode, PBYTE pbLimit)
 
 inline PBYTE detour_skip_jmp(PBYTE pbCode, PVOID *ppGlobals)
 {
-    PBYTE pbCodeOriginal;
-
     if (pbCode == NULL) {
         return NULL;
     }
@@ -455,7 +392,6 @@ inline PBYTE detour_skip_jmp(PBYTE pbCode, PVOID *ppGlobals)
         PBYTE pbNew = pbCode + 2 + *(CHAR *)&pbCode[1];
         DETOUR_TRACE(("%p->%p: skipped over short jump.\n", pbCode, pbNew));
         pbCode = pbNew;
-        pbCodeOriginal = pbCode;
 
         // First, skip over the import vector if there is one.
         if (pbCode[0] == 0xff && pbCode[1] == 0x25) {   // jmp [+imm32]
@@ -472,21 +408,6 @@ inline PBYTE detour_skip_jmp(PBYTE pbCode, PVOID *ppGlobals)
             pbNew = pbCode + 5 + *(UNALIGNED INT32 *)&pbCode[1];
             DETOUR_TRACE(("%p->%p: skipped over long jump.\n", pbCode, pbNew));
             pbCode = pbNew;
-
-            // Patches applied by the OS will jump through an HPAT page to get
-            // the target function in the patch image. The jump is always performed
-            // to the target function found at the current instruction pointer +
-            // PAGE_SIZE - 6 (size of jump).
-            // If this is an OS patch, we want to detour at the point of the target function
-            // in the base image. Since we need 5 bytes to perform the jump, detour at the
-            // point of the long jump instead of the short jump at the start of the target.
-            if (pbCode[0] == 0xff &&
-                pbCode[1] == 0x25 &&
-                *(UNALIGNED INT32 *)&pbCode[2] == 0xFFA) {   // jmp [rip+PAGE_SIZE-6]
-
-                DETOUR_TRACE(("%p->%p: OS patch encountered, reset back to long jump 5 bytes prior to target function.\n", pbCode, pbCodeOriginal));
-                pbCode = pbCodeOriginal;
-            }
         }
     }
     return pbCode;
@@ -1230,45 +1151,9 @@ inline void detour_find_jmp_bounds(PBYTE pbCode,
     *ppUpper = (PDETOUR_TRAMPOLINE)hi;
 }
 
-inline BOOL detour_is_code_os_patched(PBYTE pbCode)
-{
-    // Identify whether the provided code pointer is a OS patch jump.
-    // We can do this by checking if a branch (b <imm26>) is present, and if so,
-    // it must be jumping to an HPAT page containing ldr <reg> [PC+PAGE_SIZE-4], br <reg>.
-    ULONG Opcode = fetch_opcode(pbCode);
-
-    if ((Opcode & 0xfc000000) != 0x14000000) {
-        return FALSE;
-    }
-    // The branch must be jumping forward if it's going into the HPAT.
-    // Check that the sign bit is cleared.
-    if ((Opcode & 0x2000000) != 0) {
-        return FALSE;
-    }
-    ULONG Delta = (ULONG)((Opcode & 0x1FFFFFF) * 4);
-    PBYTE BranchTarget = pbCode + Delta;
-
-    // Now inspect the opcodes of the code we jumped to in order to determine if it's HPAT.
-    ULONG HpatOpcode1 = fetch_opcode(BranchTarget);
-    ULONG HpatOpcode2 = fetch_opcode(BranchTarget + 4);
-
-    if (HpatOpcode1 != 0x58008010) {    // ldr <reg> [PC+PAGE_SIZE]
-        return FALSE;
-    }
-    if (HpatOpcode2 != 0xd61f0200) {    // br <reg>
-        return FALSE;
-    }
-    return TRUE;
-}
-
 inline BOOL detour_does_code_end_function(PBYTE pbCode)
 {
     ULONG Opcode = fetch_opcode(pbCode);
-    // When the OS has patched a function entry point, it will incorrectly
-    // appear as though the function is just a single branch instruction.
-    if (detour_is_code_os_patched(pbCode)) {
-        return FALSE;
-    }
     if ((Opcode & 0xfffffc1f) == 0xd65f0000 ||      // br <reg>
         (Opcode & 0xfc000000) == 0x14000000) {      // b <imm26>
         return TRUE;
@@ -1362,10 +1247,9 @@ static PVOID detour_alloc_region_from_lo(PBYTE pbLo, PBYTE pbHi)
     for (; pbTry < pbHi;) {
         MEMORY_BASIC_INFORMATION mbi;
 
-        const SIZE_T nSkipSize = should_skip_sytem_range_size(pbTry);
-        if (nSkipSize) {
+        if (pbTry >= s_pSystemRegionLowerBound && pbTry <= s_pSystemRegionUpperBound) {
             // Skip region reserved for system DLLs, but preserve address space entropy.
-            pbTry += nSkipSize;
+            pbTry += 0x08000000;
             continue;
         }
 
@@ -1413,10 +1297,9 @@ static PVOID detour_alloc_region_from_hi(PBYTE pbLo, PBYTE pbHi)
         MEMORY_BASIC_INFORMATION mbi;
 
         DETOUR_TRACE(("  Try %p\n", pbTry));
-        const SIZE_T nSkipSize = should_skip_sytem_range_size(pbTry);
-        if (nSkipSize) {
+        if (pbTry >= s_pSystemRegionLowerBound && pbTry <= s_pSystemRegionUpperBound) {
             // Skip region reserved for system DLLs, but preserve address space entropy.
-            pbTry -= nSkipSize;
+            pbTry -= 0x08000000;
             continue;
         }
 
@@ -1463,9 +1346,6 @@ static PVOID detour_alloc_trampoline_allocate_new(PBYTE pbTarget,
     //     in order to maintain ASLR entropy.
 
 #if defined(DETOURS_64BIT)
-    DETOUR_TRACE(("  System DLL regions to skip: %p->%p and %p->%p\n",
-                  s_pSystemRegionLowerBound, s_pSystemRegionUpperBound,
-                  s_pSystemRegion2LowerBound, s_pSystemRegion2UpperBound));
     // Try looking 1GB below or lower.
     if (pbTry == NULL && pbTarget > (PBYTE)0x40000000) {
         pbTry = detour_alloc_region_from_hi((PBYTE)pLo, pbTarget - 0x40000000);
@@ -1824,7 +1704,6 @@ LONG WINAPI DetourTransactionCommitEx(_Out_opt_ PVOID **pppFailedPointer)
     DetourOperation *o;
     DetourThread *t;
     BOOL freed = FALSE;
-    BOOL bUpdateContext = FALSE;
 
     // Insert or remove each of the detours.
     for (o = s_pPendingOperations; o != NULL; o = o->pNext) {
@@ -1989,11 +1868,10 @@ typedef ULONG_PTR DETOURS_EIP_TYPE;
 
         if (GetThreadContext(t->hThread, &cxt)) {
             for (o = s_pPendingOperations; o != NULL; o = o->pNext) {
-                bUpdateContext = FALSE;
                 if (o->fIsRemove) {
-                    if (cxt.DETOURS_EIP >= (DETOURS_EIP_TYPE)(ULONG_PTR)o->pTrampoline->rbCode &&
-                        cxt.DETOURS_EIP < (DETOURS_EIP_TYPE)((ULONG_PTR)o->pTrampoline->rbCode
-                                                             + RTL_FIELD_SIZE(DETOUR_TRAMPOLINE, rbCode))
+                    if (cxt.DETOURS_EIP >= (DETOURS_EIP_TYPE)(ULONG_PTR)o->pTrampoline &&
+                        cxt.DETOURS_EIP < (DETOURS_EIP_TYPE)((ULONG_PTR)o->pTrampoline
+                                                             + sizeof(o->pTrampoline))
                        ) {
 
                         cxt.DETOURS_EIP = (DETOURS_EIP_TYPE)
@@ -2003,15 +1881,8 @@ typedef ULONG_PTR DETOURS_EIP_TYPE;
                                                                    - (DETOURS_EIP_TYPE)(ULONG_PTR)
                                                                    o->pTrampoline)));
 
-                        bUpdateContext = TRUE;
+                        SetThreadContext(t->hThread, &cxt);
                     }
-#if defined(_AMD64_)
-                    else if (cxt.DETOURS_EIP == (ULONG_PTR)o->pTrampoline->rbCodeIn)
-                    {
-                        cxt.DETOURS_EIP = (ULONG_PTR)o->pbTarget;
-                        bUpdateContext = TRUE;
-                    }
-#endif
                 }
                 else {
                     if (cxt.DETOURS_EIP >= (DETOURS_EIP_TYPE)(ULONG_PTR)o->pbTarget &&
@@ -2026,13 +1897,8 @@ typedef ULONG_PTR DETOURS_EIP_TYPE;
                                                                - (DETOURS_EIP_TYPE)(ULONG_PTR)
                                                                o->pbTarget)));
 
-                        bUpdateContext = TRUE;
+                        SetThreadContext(t->hThread, &cxt);
                     }
-                }
-                if (bUpdateContext)
-                {
-                    SetThreadContext(t->hThread, &cxt);
-                    break;
                 }
             }
         }

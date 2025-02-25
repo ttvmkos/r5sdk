@@ -1383,7 +1383,7 @@ typedef struct {
     BYTE* matchLength;
     BYTE* dumpsStart;
     BYTE* dumps;
-} SeqStore_t;
+} seqStore_t;
 
 
 typedef struct ZSTD_Cctx_s
@@ -1391,7 +1391,7 @@ typedef struct ZSTD_Cctx_s
     const BYTE* base;
     U32 current;
     U32 nextUpdate;
-    SeqStore_t seqStore;
+    seqStore_t seqStore;
 #ifdef __AVX2__
     __m256i hashTable[HASH_TABLESIZE>>3];
 #else

@@ -8,10 +8,6 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
-#include "common/sdkint.h"
-#include "tier0/annotations.h"
-#include "tier1/strtools.h"
-
 template<class InputIt1, class InputIt2, class BinaryPredicate>
 static bool equals(InputIt1 first1, InputIt1 last1,
 	InputIt2 first2, InputIt2 last2, BinaryPredicate p)
@@ -118,6 +114,50 @@ CTextLogger::Coordinates CTextLogger::SanitizeCoordinates(const Coordinates & aV
 	}
 }
 
+// https://en.wikipedia.org/wiki/UTF-8
+// We assume that the char is a standalone character (<128) or a leading byte of an UTF-8 code sequence (non-10xxxxxx code)
+static int UTF8CharLength(CTextLogger::Char c)
+{
+	if ((c & 0xFE) == 0xFC)
+		return 6;
+	if ((c & 0xFC) == 0xF8)
+		return 5;
+	if ((c & 0xF8) == 0xF0)
+		return 4;
+	else if ((c & 0xF0) == 0xE0)
+		return 3;
+	else if ((c & 0xE0) == 0xC0)
+		return 2;
+	return 1;
+}
+
+bool UTF8StringValid(const char* pszString)
+{
+	size_t byteCount = 0;
+	CTextLogger::Char currentByte;
+
+	while (*pszString)
+	{
+		currentByte = static_cast<CTextLogger::Char>(*pszString);
+		if (byteCount)
+		{
+			if ((currentByte & 0xC0) != 0x80)
+				return false;
+
+			byteCount--;
+		}
+		else
+		{
+			byteCount = UTF8CharLength(currentByte) - 1;
+			if (byteCount > 0 && (currentByte & (1 << (7 - byteCount))) == 0)
+				return false;
+		}
+		pszString++;
+	}
+
+	return byteCount == 0;
+}
+
 void CTextLogger::Advance(Coordinates& aCoordinates) const
 {
 	if (aCoordinates.m_nLine < static_cast<int>(m_Lines.size()))
@@ -127,7 +167,7 @@ void CTextLogger::Advance(Coordinates& aCoordinates) const
 
 		if (cindex + 1 < line.Length())
 		{
-			const int delta = V_UTF8CharLength(line.buffer[cindex]);
+			int delta = UTF8CharLength(line.buffer[cindex]);
 			cindex = ImMin(cindex + delta, static_cast<int>(line.Length() - 1));
 		}
 		else
@@ -198,7 +238,7 @@ int CTextLogger::InsertTextAt(Coordinates& aWhere, const char* aValue, const ImU
 	int cindex = GetCharacterIndex(aWhere);
 	int totalLines = 0;
 
-	if (!V_IsValidUTF8(aValue))
+	if (!UTF8StringValid(aValue))
 	{
 		assert(0);
 		aValue = "Invalid UTF-8 string\n";
@@ -233,7 +273,7 @@ int CTextLogger::InsertTextAt(Coordinates& aWhere, const char* aValue, const ImU
 				continue;
 			}
 
-			size_t d = V_UTF8CharLength(*aValue);
+			size_t d = UTF8CharLength(*aValue);
 			while (d-- > 0 && *aValue != '\0')
 			{
 				if (cindex >= 0 && cindex <= line.Length())
@@ -293,7 +333,7 @@ CTextLogger::Coordinates CTextLogger::ScreenPosToCoordinates(const ImVec2& aPosi
 			else
 			{
 				char buf[7];
-				size_t d = V_UTF8CharLength(line.buffer[columnIndex]);
+				size_t d = UTF8CharLength(line.buffer[columnIndex]);
 				size_t i = 0;
 
 				while (i < 6 && d-- > 0 && columnIndex < line.Length())
@@ -326,7 +366,7 @@ CTextLogger::Coordinates CTextLogger::FindWordStart(const Coordinates & aFrom) c
 	if (cindex >= line.Length())
 		return at;
 
-	while (cindex > 0 && V_isspace(line.buffer[cindex]))
+	while (cindex > 0 && isspace(line.buffer[cindex]))
 		--cindex;
 
 	while (cindex > 0)
@@ -334,7 +374,7 @@ CTextLogger::Coordinates CTextLogger::FindWordStart(const Coordinates & aFrom) c
 		Char c = line.buffer[cindex];
 		if ((c & 0xC0) != 0x80)	// not UTF code sequence 10xxxxxx
 		{
-			if (c <= 32 && V_isspace(c))
+			if (c <= 32 && isspace(c))
 			{
 				cindex++;
 				break;
@@ -358,16 +398,16 @@ CTextLogger::Coordinates CTextLogger::FindWordEnd(const Coordinates & aFrom) con
 	if (cindex >= line.Length())
 		return at;
 
-	bool prevspace = static_cast<bool>(V_isspace(line.buffer[cindex]));
+	bool prevspace = static_cast<bool>(isspace(line.buffer[cindex]));
 	while (cindex < line.Length())
 	{
 		Char c = line.buffer[cindex];
-		int d = V_UTF8CharLength(c);
+		int d = UTF8CharLength(c);
 
-		if (prevspace != !!V_isspace(c))
+		if (prevspace != !!isspace(c))
 		{
-			if (V_isspace(c))
-				while (cindex < line.Length() && !V_isspace(line.buffer[cindex]))
+			if (isspace(c))
+				while (cindex < line.Length() && !isspace(line.buffer[cindex]))
 					++cindex;
 			break;
 		}
@@ -443,7 +483,7 @@ int CTextLogger::GetCharacterIndex(const Coordinates& aCoordinates) const
 			c = (c / m_nTabSize) * m_nTabSize + m_nTabSize;
 		else
 			++c;
-		i += V_UTF8CharLength(line.buffer[i]);
+		i += UTF8CharLength(line.buffer[i]);
 	}
 	return i;
 }
@@ -460,7 +500,7 @@ int CTextLogger::GetCharacterColumn(int aLine, int aIndex) const
 	while (i < aIndex && i < line.Length())
 	{
 		Char c = line.buffer[i];
-		i += V_UTF8CharLength(c);
+		i += UTF8CharLength(c);
 		if (c == '\t')
 			col = (col / m_nTabSize) * m_nTabSize + m_nTabSize;
 		else
@@ -478,7 +518,7 @@ int CTextLogger::GetLineCharacterCount(int aLine) const
 	int c = 0;
 
 	for (size_t i = 0; i < line.Length(); c++)
-		i += static_cast<size_t>(V_UTF8CharLength(m_Lines[aLine].buffer[i]));
+		i += static_cast<size_t>(UTF8CharLength(m_Lines[aLine].buffer[i]));
 	return c;
 }
 
@@ -497,7 +537,7 @@ int CTextLogger::GetLineMaxColumn(int aLine) const
 			col = (col / m_nTabSize) * m_nTabSize + m_nTabSize;
 		else
 			col++;
-		i += static_cast<size_t>(V_UTF8CharLength(c));
+		i += static_cast<size_t>(UTF8CharLength(c));
 	}
 	return col;
 }
@@ -513,7 +553,7 @@ bool CTextLogger::IsOnWordBoundary(const Coordinates & aAt) const
 	if (cindex >= line.Length())
 		return true;
 
-	return V_isspace(line.buffer[cindex]) != V_isspace(line.buffer[cindex - 1]);
+	return isspace(line.buffer[cindex]) != isspace(line.buffer[cindex - 1]);
 }
 
 void CTextLogger::RemoveLine(int aStart, int aEnd)
@@ -583,31 +623,31 @@ void CTextLogger::HandleKeyboardInputs(bool bHoveredScrollbar, bool bActiveScrol
 		io.WantCaptureKeyboard = true;
 		io.WantTextInput = true;
 
-		if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+		if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)))
 			MoveUp(1, shift);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)))
 			MoveDown(1, shift);
-		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow)))
 			MoveLeft(1, shift, ctrl);
-		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow)))
 			MoveRight(1, shift, ctrl);
-		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageUp))
+		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageUp)))
 			MoveUp(GetPageSize() - 4, shift);
-		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageDown))
+		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageDown)))
 			MoveDown(GetPageSize() - 4, shift);
-		else if (!alt && ctrl && ImGui::IsKeyPressed(ImGuiKey_Home))
+		else if (!alt && ctrl && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home)))
 			MoveTop(shift);
-		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_End))
+		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveBottom(shift);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_Home))
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home)))
 			MoveHome(shift);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_End))
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveEnd(shift);
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Insert))
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
 			Copy();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_C))
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_C)))
 			Copy();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_A))
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)))
 			SelectAll();
 	}
 }
@@ -1186,7 +1226,7 @@ void CTextLogger::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 		}
 		else
 		{
-			cindex += V_UTF8CharLength(line.buffer[cindex]);
+			cindex += UTF8CharLength(line.buffer[cindex]);
 			m_State.m_CursorPosition = Coordinates(lindex, GetCharacterColumn(lindex, cindex));
 			if (aWordMode)
 				m_State.m_CursorPosition = FindWordEnd(m_State.m_CursorPosition);
@@ -1440,7 +1480,7 @@ float CTextLogger::TextDistanceToLineStart(const Coordinates& aFrom) const
 		}
 		else
 		{
-			size_t d = V_UTF8CharLength(line.buffer[it]);
+			size_t d = UTF8CharLength(line.buffer[it]);
 			size_t i = 0;
 			char tempCString[7];
 

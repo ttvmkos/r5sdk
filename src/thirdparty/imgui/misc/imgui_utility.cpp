@@ -12,19 +12,6 @@
 #define GAME_CONSOLE_KEY "Console"
 #define GAME_BROWSER_KEY "Browser"
 
-static void ImguiConfig_ClampedKeyInit(KeyValues* const keyValues, ImGuiConfig::BindPair_s& bindPair, const int fallBackPrimary, const int fallBackSecondary)
-{
-    bindPair.m_nBind0 = keyValues->GetInt("$primaryKey", fallBackPrimary);
-
-    if (!ImGui::IsNamedKey((ImGuiKey)bindPair.m_nBind0))
-        bindPair.m_nBind0 = fallBackPrimary;
-
-    bindPair.m_nBind1 = keyValues->GetInt("$secondaryKey", fallBackSecondary);
-
-    if (!ImGui::IsNamedKey((ImGuiKey)bindPair.m_nBind1))
-        bindPair.m_nBind1 = fallBackSecondary;
-}
-
 void ImGuiConfig::Load()
 {
     const string svPath = Format(SDK_USER_CFG_PATH"%s", IMGUI_BIND_FILE);
@@ -41,19 +28,21 @@ void ImGuiConfig::Load()
     KeyValues* pConsoleKV = pKeyMapKV->FindKey(GAME_CONSOLE_KEY);
     if (pConsoleKV)
     {
-        ImguiConfig_ClampedKeyInit(pConsoleKV, m_ConsoleConfig, ImGuiKey_GraveAccent, ImGuiKey_F10);
+        m_ConsoleConfig.m_nBind0 = pConsoleKV->GetInt("$primaryKey", VK_OEM_3);
+        m_ConsoleConfig.m_nBind1 = pConsoleKV->GetInt("$secondaryKey", VK_F10);
     }
 
     KeyValues* pBrowserKV = pKeyMapKV->FindKey(GAME_BROWSER_KEY);
     if (pBrowserKV)
     {
-        ImguiConfig_ClampedKeyInit(pBrowserKV, m_BrowserConfig, ImGuiKey_Insert, ImGuiKey_F11);
+        m_BrowserConfig.m_nBind0 = pBrowserKV->GetInt("$primaryKey", VK_INSERT);
+        m_BrowserConfig.m_nBind1 = pBrowserKV->GetInt("$secondaryKey", VK_F11);
     }
 
     pKeyMapKV->DeleteThis();
 }
 
-void ImGuiConfig::Save() const
+void ImGuiConfig::Save()
 {
     const string svPath = Format(SDK_USER_CFG_PATH"%s", IMGUI_BIND_FILE);
     Msg(eDLL_T::MS, "Saving ImGui config file '%s'\n", svPath.c_str());
@@ -70,7 +59,7 @@ void ImGuiConfig::Save() const
     pBrowserKV->SetInt("$primaryKey", m_BrowserConfig.m_nBind0);
     pBrowserKV->SetInt("$secondaryKey", m_BrowserConfig.m_nBind1);
 
-    CUtlBuffer uBuf(0ll, 0, CUtlBuffer::TEXT_BUFFER);
+    CUtlBuffer uBuf(0i64, 0, CUtlBuffer::TEXT_BUFFER);
 
     kv.RecursiveSaveToFile(uBuf, 0);
     FileSystem()->WriteFile(svPath.c_str(), "PLATFORM", uBuf);
@@ -78,7 +67,7 @@ void ImGuiConfig::Save() const
 
 ImGuiStyle_t ImGuiConfig::InitStyle() const
 {
-    ImGuiStyle_t selected = ImGuiStyle_t::NONE;
+    ImGuiStyle_t selected                 = ImGuiStyle_t::NONE;
 
     if (strcmp(CommandLine()->ParmValue("-imgui_theme", ""), "legacy") == 0)
     {
