@@ -12,58 +12,59 @@
 #include <vector>
 #include <string>
 
-inline bool ConvertSQObjectPtr(const SQObjectPtr& obj, std::string& outVal)
+template <typename T>
+bool ConvertSQObjectPtr(const SQObjectPtr& obj, T& outVal)
 {
-	if (sq_type(obj) == OT_STRING)
+	if constexpr (std::is_same_v<T, int>) 
 	{
-		const SQChar* str = _stringval(obj);
-		if (str)
+		if (sq_type(obj) == OT_INTEGER) 
 		{
-			outVal = str;
+			outVal = _integer(obj);
 			return true;
 		}
+		return false;
 	}
-	return false;
-}
-
-inline bool ConvertSQObjectPtr(const SQObjectPtr& obj, int& outVal)
-{
-	if (sq_type(obj) == OT_INTEGER)
+	else if constexpr (std::is_same_v<T, float>) 
 	{
-		outVal = _integer(obj);
-		return true;
+		if (sq_type(obj) == OT_FLOAT) 
+		{
+			outVal = _float(obj);
+			return true;
+		}
+		return false;
 	}
-	return false;
-}
-
-inline bool ConvertSQObjectPtr(const SQObjectPtr& obj, float& outVal)
-{
-	if (sq_type(obj) == OT_FLOAT)
+	else if constexpr (std::is_same_v<T, bool>) 
 	{
-		outVal = _float(obj);
-		return true;
+		if (sq_type(obj) == OT_BOOL) {
+			outVal = _bool(obj);
+			return true;
+		}
+		return false;
 	}
-	return false;
-}
-
-inline bool ConvertSQObjectPtr(const SQObjectPtr& obj, bool& outVal)
-{
-	if (sq_type(obj) == OT_BOOL)
+	else if constexpr (std::is_same_v<T, std::string>) 
 	{
-		outVal = (_bool(obj));
-		return true;
+		if (sq_type(obj) == OT_STRING) {
+			const SQChar* str = _stringval(obj);
+			if (str) {
+				outVal = str;
+				return true;
+			}
+		}
+		return false;
 	}
-	return false;
-}
-
-inline static bool ConvertSQObjectPtr(const SQObjectPtr& obj, const char*& outVal)
-{
-	if (sq_type(obj) == OT_STRING)
+	else if constexpr (std::is_same_v<T, const char*>) 
 	{
-		outVal = _stringval(obj);
-		return (outVal != nullptr);
+		if (sq_type(obj) == OT_STRING) 
+		{
+			outVal = _stringval(obj);
+			return (outVal != nullptr);
+		}
+		return false;
 	}
-	return false;
+	else 
+	{
+		Assert( std::is_same_v<T, void>, "Conversion for this type is not supported");
+	}
 }
 
 //------------------------------------------------------------------------------
@@ -133,8 +134,8 @@ std::vector<T> SQArrayToVector(HSQUIRRELVM v, SQInteger idx)
 			v_SQVM_ScriptError
 			(
 				"type mismatch at index %d: expected array<%s>, got array<%s>\n",
-				(int)i, sq_typename(expectedType),
-				sq_typename(sq_type(element))
+				(int)i, IdType2Name(expectedType),
+				IdType2Name(sq_type(element))
 			);
 
 			continue;

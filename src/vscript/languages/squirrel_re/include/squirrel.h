@@ -211,7 +211,6 @@ SQRESULT sq_next(HSQUIRRELVM v, SQInteger idx);
 //SQRESULT sq_setnativeclosurename(HSQUIRRELVM v, SQInteger idx, const SQChar* name);
 SQRESULT sq_getarraysize(HSQUIRRELVM v, SQInteger idx, SQInteger* outSize);
 SQInteger sq_absindex(HSQUIRRELVM v, SQInteger idx);
-const char* sq_typename(SQObjectType type);
 
 /*UTILITY MACRO*/
 #define sq_isnumeric(o) ((o)._type&SQOBJECT_NUMERIC)

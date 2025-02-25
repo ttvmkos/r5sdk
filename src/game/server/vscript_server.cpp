@@ -619,7 +619,7 @@ namespace VScriptCode
 
             if ( sq_gettype(v, 2) != OT_STRING )
             {
-                v_SQVM_ScriptError("First parameter is expected to be of type string, but %s was provided.\n", sq_typename(sq_gettype(v, 2)));
+                v_SQVM_ScriptError("First parameter is expected to be of type string, but %s was provided.\n", IdType2Name(sq_gettype(v, 2)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
             if (SQ_FAILED(sq_getstring(v, 2, &player_oid)) || !player_oid)
@@ -630,12 +630,12 @@ namespace VScriptCode
 
             if (sq_gettype(v, 3) != OT_ARRAY)
             {
-                v_SQVM_ScriptError("Second parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 3)));
+                v_SQVM_ScriptError("Second parameter is expected to be of type array. %s provided.\n", IdType2Name(sq_gettype(v, 3)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
             if (sq_gettype(v, 4) != OT_ARRAY)
             {
-                v_SQVM_ScriptError("Third parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 4)));
+                v_SQVM_ScriptError("Third parameter is expected to be of type array. %s provided.\n", IdType2Name(sq_gettype(v, 4)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 
@@ -655,17 +655,17 @@ namespace VScriptCode
         {
             if (sq_gettype(v, 2) != OT_ARRAY)
             {
-                v_SQVM_ScriptError("First parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 2)));
+                v_SQVM_ScriptError("First parameter is expected to be of type array. %s provided.\n", IdType2Name(sq_gettype(v, 2)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
             if (sq_gettype(v, 3) != OT_ARRAY)
             {
-                v_SQVM_ScriptError("Second parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 3)));
+                v_SQVM_ScriptError("Second parameter is expected to be of type array. %s provided.\n", IdType2Name(sq_gettype(v, 3)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
             if (sq_gettype(v, 4) != OT_ARRAY)
             {
-                v_SQVM_ScriptError("Third parameter is expected to be of type array. %s provided.\n", sq_typename(sq_gettype(v, 4)));
+                v_SQVM_ScriptError("Third parameter is expected to be of type array. %s provided.\n", IdType2Name(sq_gettype(v, 4)));
                 SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
             }
 

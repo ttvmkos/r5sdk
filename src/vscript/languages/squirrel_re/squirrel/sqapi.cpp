@@ -10,27 +10,6 @@
 #include "sqarray.h"
 #include "sqstring.h"
 #include "sqtable.h"
-#include "sqclosure.h"
-#include <vector>
-
-const char* sq_typename(SQObjectType type)
-{
-	switch (type)
-	{
-		case OT_NULL: return "null";
-		case OT_INTEGER: return "integer";
-		case OT_FLOAT: return "float";
-		case OT_BOOL: return "bool";
-		case OT_STRING: return "string";
-		case OT_TABLE: return "table";
-		case OT_ARRAY: return "array";
-		case OT_USERDATA: return "userdata";
-		case OT_CLOSURE: return "closure";
-		case OT_NATIVECLOSURE: return "nativeclosure";
-		case OT_THREAD: return "thread";
-		default: return "unknown";
-	}
-}
 
 //---------------------------------------------------------------------------------
 bool sq_aux_gettypedarg(HSQUIRRELVM v, SQInteger idx, SQObjectType type, SQObjectPtr** o)
@@ -239,43 +218,9 @@ SQBool sq_release(HSQUIRRELVM v, SQObject* po)
 //---------------------------------------------------------------------------------
 void sq_pushuserpointer(HSQUIRRELVM v, void* p)
 {
-	SQObject obj;
+	SQObjectPtr obj;
 	obj._type = OT_USERPOINTER;
 	obj._unVal.pUserPointer = p;
-	sq_push(v, obj);
-}
-
-//---------------------------------------------------------------------------------
-
-/*
-SQRESULT sq_setnativeclosurename(HSQUIRRELVM v, SQInteger idx, const SQChar* name) {
-	SQObject o = stack_get(v, idx);
-	if (sq_isnativeclosure(o)) {
-		SQNativeClosure* nc = _nativeclosure(o);
-		size_t raw_len = strlen(name);
-
-#undef max
-		if (raw_len > static_cast<size_t>(std::numeric_limits<SQInteger>::max())) {
-			return SQ_ERROR;
-		}
-
-		SQInteger len = static_cast<SQInteger>(raw_len);
-		nc->_name = SQString::Create(_ss(v), name, len);
-		return SQ_OK;
-	}
-	return SQ_ERROR;
-}
-*/
-
-//---------------------------------------------------------------------------------
-void sq_push(HSQUIRRELVM v, SQObject& obj)
-{
-	v->Push(obj);
-}
-
-//---------------------------------------------------------------------------------
-void sq_pushobject(HSQUIRRELVM v, SQObject& obj) 
-{
 	v->Push(obj);
 }
 
@@ -296,10 +241,13 @@ SQObjectType sq_gettype(HSQUIRRELVM v, SQInteger idx)
 SQRESULT sq_next(HSQUIRRELVM v, SQInteger idx) 
 {
 	SQObjectPtr& o = stack_get(v, idx);
-	if (o._type == OT_TABLE) {
+	if (o._type == OT_TABLE) 
+	{
 		SQTable* table = _table(o);
 		SQObjectPtr key, value;
-		if (table->Next(key, value)) {
+		
+		if (table->Next(key, value)) 
+		{
 			v->Push(key);
 			v->Push(value);
 			return SQ_OK;
@@ -360,8 +308,11 @@ SQRESULT sq_getarraysize(HSQUIRRELVM v, SQInteger idx, SQInteger* outSize)
 
 SQInteger sq_absindex(HSQUIRRELVM v, SQInteger idx)
 {
-	SQInteger top = sq_gettop(v);
-	return (idx < 0) ? (top + idx + 1) : idx;
+	if (idx >= 0)
+		return idx;
+
+	SQInteger absIdx = sq_gettop(v) + idx + 1;
+	return ( absIdx > 0 ) ? absIdx : 0;
 }
 
 void VSquirrelAPI::Detour(const bool bAttach) const
