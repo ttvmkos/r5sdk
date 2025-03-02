@@ -1695,9 +1695,10 @@ namespace LOGGER
 
         std::string serverName = hostname->GetString();
         std::string serverMap = g_pHostState->m_levelName;
-        std::string gameType = mp_gamemode->GetString();
+        std::string gameType = v_Playlists_GetCurrent();
         std::string identifier = GetSetting("identifier");
         std::string uniquekey = GetSetting("apikey");
+        //std::string gameMode = mp_gamemode->GetString(); //not used yet
 
         Sanitize_AlphaNumHyphenUnderscore(identifier);
         Sanitize_AlphaNumHyphenUnderscore(uniquekey);
@@ -2223,11 +2224,13 @@ namespace LOGGER
 
         std::string serverName = hostname->GetString();
         std::string serverMap = g_pHostState->m_levelName;
-        std::string gameType = mp_gamemode->GetString();
+        std::string gameType = v_Playlists_GetCurrent();
+        std::string gameMode = mp_gamemode->GetString();
 
         startLines.push_back(CFmtStrN<128>("|#MatchID:%s", matchID.c_str()).Get());
         startLines.push_back(CFmtStrN<128>("|#Gameversion:%s", SERVER_V.c_str()).Get());
         startLines.push_back(CFmtStrN<128>("|#Gametype:%s", gameType.c_str()).Get());
+        startLines.push_back(CFmtStrN<128>("|#Gamemode:%s", gameMode.c_str()).Get());
         startLines.push_back(CFmtStr("|#ServerName:%s", serverName.c_str()).Get());
         startLines.push_back(CFmtStrN<128>("|#ServerMAP:%s", serverMap.c_str()).Get());
 
