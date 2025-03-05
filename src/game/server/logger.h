@@ -19,6 +19,7 @@ namespace LOGGER
     class Encryption
     {
         public:
+
             std::vector<uint8_t> hex2bytes(const std::string& hex);
             std::string bbase64Encode(std::vector<uint8_t> bytes_to_encode);
             std::string doEncrypt(const std::string& plainText, const std::vector<uint8_t>& keyBytes, const std::vector<uint8_t>& ivBytes);
@@ -29,7 +30,10 @@ namespace LOGGER
     class Logger
     {
         public:
+
             static Logger& getInstance();
+            std::atomic<bool> s_isShutdown{ false };
+            void Shutdown();
 
             enum class LogState : uint8_t {
                 None = 0,
@@ -118,7 +122,10 @@ namespace LOGGER
     class TaskManager
     {
         public:
+
             static TaskManager& getInstance();
+            std::atomic<bool> s_isShutdown{ false };
+            void Shutdown();
 
             void AddTask(const std::function<void()>& task);
             void RequestPlayerPersistenceData(const std::string& player_oid, const std::vector<std::string>& requestedStats, const std::vector<std::string>& requestedSettings);
@@ -135,7 +142,6 @@ namespace LOGGER
             TaskManager& operator=(const TaskManager&) = delete;
 
             void StartWorkerThread();
-            void StopWorkerThread();
             void ProcessTasks();
 
             std::queue<std::function<void()>> taskQueue;
@@ -150,12 +156,13 @@ namespace LOGGER
         public:
 
             static CURLConnectionPool& GetInstance();
+            std::atomic<bool> s_isShutdown{ false };
+            void Shutdown();
 
             CURL* GetHandle();
             bool HandleCurlResult(CURL* handle, CURLcode res, const char* func);
             void DiscardHandle(CURL* handle);
             void ReturnHandle(CURL* handle);
-            void ResetPool();
             ~CURLConnectionPool();
 
         private:
@@ -222,5 +229,15 @@ namespace LOGGER
     std::string FetchGlobalSettings(const char* query);//on startup init
 }
 
+inline void Tracker_Shutdown()
+{
+    static std::atomic<bool> isShutdown{ false };
+    if (isShutdown.exchange(true))
+        return;
+
+    LOGGER::Logger::getInstance().Shutdown();
+    LOGGER::TaskManager::getInstance().Shutdown();
+    LOGGER::CURLConnectionPool::GetInstance().Shutdown();
+}
 #endif // !CLIENT.DLL
 #endif // LOGGER_H

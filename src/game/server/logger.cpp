@@ -12,7 +12,7 @@
 #include <stack>
 #include "rtech/playlists/playlists.h"
 #include <string_view>
-#include <tier1\fmtstr.h>
+#include <tier1\fmtstr.h> 
 
 //-----------------------------------------------------------------------------
 // POINTERS
@@ -349,8 +349,6 @@ namespace LOGGER
 
     CURLConnectionPool::CURLConnectionPool()
     {
-        ResetPool();
-
         for (int i = 0; i < 5; ++i)
         {
             CURL* handle = curl_easy_init();
@@ -496,8 +494,11 @@ namespace LOGGER
         }
     }
 
-    void CURLConnectionPool::ResetPool()
+    void CURLConnectionPool::Shutdown()
     {
+        if (s_isShutdown.exchange(true))
+            return;
+
         std::lock_guard<std::mutex> lock(poolMutex);
         while (!pool.empty())
         {
@@ -512,11 +513,9 @@ namespace LOGGER
     }
 
 
-
-
     CURLConnectionPool::~CURLConnectionPool()
     {
-        ResetPool();
+        Shutdown();
     }
     //END CLASS CURLConnectionPool
 
@@ -614,21 +613,24 @@ namespace LOGGER
 
     TaskManager::~TaskManager()
     {
-        StopWorkerThread();
+        Shutdown();
     }
 
 
-    void TaskManager::StopWorkerThread()
+    void TaskManager::Shutdown()
     {
-        stop_tasks_flag = true;
-        condVar.notify_one();
+        if (s_isShutdown.exchange(true))
+            return;
 
-        if (workerThread.joinable())
         {
-            workerThread.join();
+            std::lock_guard<std::mutex> lock(queueMutex);
+            stop_tasks_flag = true;
         }
-    }
 
+        condVar.notify_all();
+        if (workerThread.joinable())
+            workerThread.join();
+    }
 
     void TaskManager::StartWorkerThread()
     {
@@ -1455,16 +1457,14 @@ namespace LOGGER
    /     Logger instance
    /********************************/
 
-   // constructor
     Logger::Logger() : filePath("")
     {
-        if (FileSystem() != nullptr)
-        {
+        if ( FileSystem() != nullptr )
             LoadConfig(FileSystem(), R5RDEV_CONFIG);
-        }
         else
         {
-            Error(eDLL_T::SERVER, NOERROR, "INIT balls");
+            Error(eDLL_T::SERVER, NOERROR, "Tracker: Filesystem not initialized, aborting.");
+            return;
         }
 
         keyHex = this->eObj.hex2bytes("c7abf6c3574e60bb7e8c2945ff21ec53");
@@ -1475,8 +1475,7 @@ namespace LOGGER
         std::string sleeptime = GetSetting("settings.CVAR_LTHREAD_DEBOUNCE"); //disabled
         std::string max_buffer = GetSetting("settings.CVAR_MAX_BUFFER");
 
-        //put into init wrapper to declutter constructor
-        if (!max_buffer.empty())
+        if ( !max_buffer.empty() )
         {
             try
             {
@@ -1488,7 +1487,7 @@ namespace LOGGER
             }
         }
 
-        if (!sleeptime.empty())
+        if ( !sleeptime.empty() )
         {
             try
             {
@@ -1505,27 +1504,30 @@ namespace LOGGER
         }
     }
 
-    // destructor 
     Logger::~Logger()
     {
-        stopLoggingThread();
+        Shutdown();
+    }
 
-        if ( apiThread.joinable() )
+    void Logger::Shutdown()
+    {
+        if (s_isShutdown.exchange(true))
+            return;
+
+        stopLoggingThread();
+        if (apiThread.joinable())
             apiThread.join();
 
+        closeLogFile();
         pMkosLogger = nullptr;
     }
 
-    // one instance only
     Logger& Logger::getInstance()
     {
         static Logger instance;
         pMkosLogger = &instance;
         return instance;
     }
-
-
-
 
     /*********************************
     /     Utility Functions

@@ -541,26 +541,35 @@ namespace VScriptCode
                         status_num = std::stoi(status);
                     }
                     catch (const std::invalid_argument& e) {
-                        Msg(eDLL_T::SERVER, "Error: Invalid argument for conversion: %s\n", e.what());
+                        Msg(eDLL_T::SERVER, "Error: Invalid argument for conversion: %s in %s\n", e.what(), __FUNCTION__ );
                     }
                     catch (const std::out_of_range& e) {
-                        Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s\n", e.what());
+                        Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s in %s\n", e.what(), __FUNCTION__ );
                     }
                     catch (...)
                     {
-                        Msg(eDLL_T::SERVER, "Unknown error in ea_verify\n");
+                        Msg(eDLL_T::SERVER, "Unknown error in %s\n", __FUNCTION__);
                     }
 
-                    if (!g_pServer->IsActive())
+                    if (g_pServer->IsActive())
                     {
-                        std::string command = "CodeCallback_VerifyEaAccount(\"" + Sanitize_NumbersOnly(oid) + "\", " + status + ")";
                         g_TaskQueue.Dispatch
                         (
-                            [command]
+                            [oid, status_num]
                             {
-                                g_pServerScript->Run(command.c_str());
-                            }
-                            ,1 //delayed
+                                const char* const oidC = oid.c_str();
+                                bool success = CALL_SERVER_SCRIPT_FUNC
+                                (
+                                    "CodeCallback_VerifyEaAccount",
+                                    MakeNoCopyStr(oidC),
+                                    status_num,
+                                    "void functionref( string oid, int status )"
+                                );
+
+                                if (!success)
+                                    Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_VerifyEaAccount for oid '%s'.\n", oid.c_str());
+                            },
+                            0
                         );
                     }
                 }

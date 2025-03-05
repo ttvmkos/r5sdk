@@ -145,6 +145,7 @@
 #include "game/server/vscript_server.h"
 #include "game/server/entitylist.h"
 #include "game/server/baseentity.h"
+#include "game/server/logger.h"
 #endif // !CLIENT_DLL
 #ifndef DEDICATED
 #include "game/client/viewrender.h"
@@ -168,6 +169,8 @@
 #include "DirtySDK/dirtysock/netconn.h"
 #include "DirtySDK/proto/protossl.h"
 #include "DirtySDK/proto/protowebsocket.h"
+
+
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -305,6 +308,7 @@ void Systems_Shutdown()
 	// Shutdown RCON (closes all open sockets)
 #ifndef CLIENT_DLL
 	RCONServer()->Shutdown();
+	Tracker_Shutdown();
 #endif// !CLIENT_DLL
 #ifndef SERVER_DLL
 	RCONClient()->Shutdown();
