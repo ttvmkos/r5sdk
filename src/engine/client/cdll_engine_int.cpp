@@ -5,12 +5,12 @@
 
 #include "core/stdafx.h"
 /*****************************************************************************/
-#include "tier0/commandline.h"
 #include "tier1/cvar.h"
-#include "tier1/keyvalues.h"
+#include "tier0/commandline.h"
 #include "engine/net_chan.h"
 #include "engine/client/cl_rcon.h"
 #include "networksystem/bansystem.h"
+#include "tier1/keyvalues.h"
 #include "windows/id3dx.h"
 #include "geforce/reflex.h"
 #include "vengineclient_impl.h"
@@ -31,14 +31,6 @@ int CHLClient::Init(CHLClient* thisptr, CreateInterfaceFn appSystemFactory, CGlo
 {
 	gpGlobals = pGlobals;
 	return CHLClient__Init(thisptr, appSystemFactory, pGlobals);
-}
-
-IUniformRandomStream* g_randomStream;
-
-int CHLClient::PostInit(CHLClient* thisptr)
-{
-	g_randomStream = (IUniformRandomStream*)GetFactorySystem()->GetFactory(VENGINE_RANDOM_INTERFACE_VERSION);
-	return CHLClient__PostInit(thisptr);
 }
 
 //-----------------------------------------------------------------------------
@@ -120,7 +112,6 @@ void VDll_Engine_Int::Detour(const bool bAttach) const
 {
 #ifndef DEDICATED
 	DetourSetup(&CHLClient__Init, &CHLClient::Init, bAttach);
-	DetourSetup(&CHLClient__PostInit, &CHLClient::PostInit, bAttach);
 	DetourSetup(&CHLClient__FrameStageNotify, &CHLClient::FrameStageNotify, bAttach);
 #endif // !DEDICATED
 }

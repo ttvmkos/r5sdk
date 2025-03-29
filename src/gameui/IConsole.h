@@ -34,9 +34,7 @@ private:
 
     struct ConAutoCompleteSuggest_s;
     void DetermineInputTextFromSelectedSuggestion(const ConAutoCompleteSuggest_s& suggest, string& svInput);
-
-    void DetermineAutoCompleteWindowPosAndWidth(void);
-    void DetermineAutoCompleteWindowHeight(const float startPos);
+    void DetermineAutoCompleteWindowRect(void);
 
     bool LoadFlagIcons(void);
 

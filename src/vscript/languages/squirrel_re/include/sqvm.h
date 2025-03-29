@@ -25,7 +25,6 @@ struct SQVM : public CHAINABLE_OBJ
 
 	// push sqobjectptr on to the stack
 	void Push(const SQObjectPtr& o);
-	void PushNull();
 
 	SQObjectPtr& Top();
 	SQObjectPtr& PopGet();

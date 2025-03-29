@@ -29,19 +29,18 @@ class dtLocalBoundary
 	
 	struct Segment
 	{
-		rdVec3D s; ///< Segment start.
-		rdVec3D e; ///< Segment end.
+		float s[6];	///< Segment start/end
 		float d;	///< Distance for pruning.
 	};
 	
-	rdVec3D m_center;
+	float m_center[3];
 	Segment m_segs[MAX_LOCAL_SEGS];
 	int m_nsegs;
 	
 	dtPolyRef m_polys[MAX_LOCAL_POLYS];
 	int m_npolys;
 
-	void addSegment(const float dist, const rdVec3D* s, const rdVec3D* e);
+	void addSegment(const float dist, const float* s);
 	
 public:
 	dtLocalBoundary();
@@ -49,15 +48,14 @@ public:
 	
 	void reset();
 	
-	void update(dtPolyRef ref, const rdVec3D* pos, const float collisionQueryRange,
+	void update(dtPolyRef ref, const float* pos, const float collisionQueryRange,
 				dtNavMeshQuery* navquery, const dtQueryFilter* filter);
 	
-	bool isValid(dtNavMeshQuery* navquery, const dtQueryFilter* filter) const;
+	bool isValid(dtNavMeshQuery* navquery, const dtQueryFilter* filter);
 	
-	inline const rdVec3D* getCenter() const { return &m_center; }
+	inline const float* getCenter() const { return m_center; }
 	inline int getSegmentCount() const { return m_nsegs; }
-	inline const rdVec3D* getSegmentStart(int i) const { return &m_segs[i].s; }
-	inline const rdVec3D* getSegmentEnd(int i) const { return &m_segs[i].e; }
+	inline const float* getSegment(int i) const { return m_segs[i].s; }
 
 private:
 	// Explicitly disabled copy constructor and copy assignment operator.

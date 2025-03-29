@@ -59,16 +59,16 @@ class TestCase
 		}
 		
 		TestType type;
-		rdVec3D spos;
-		rdVec3D epos;
-		rdVec3D nspos;
-		rdVec3D nepos;
+		float spos[3];
+		float epos[3];
+		float nspos[3];
+		float nepos[3];
 		float radius;
 		unsigned short includeFlags;
 		unsigned short excludeFlags;
 		bool expand;
 		
-		rdVec3D* straight;
+		float* straight;
 		int nstraight;
 		dtPolyRef* polys;
 		int npolys;
@@ -102,7 +102,7 @@ public:
 	void doTests(class dtNavMesh* navmesh, class dtNavMeshQuery* navquery);
 	
 	void handleRender();
-	bool handleRenderOverlay(double* model, double* proj, int* view);
+	bool handleRenderOverlay(double* proj, double* model, int* view);
 
 private:
 	// Explicitly disabled copy constructor and copy assignment operator.

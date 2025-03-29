@@ -32,7 +32,6 @@
 #include "NavEditor/Include/InputGeom.h"
 #include "NavEditor/Include/Editor.h"
 #include "NavEditor/Include/Editor_TileMesh.h"
-#include "NavEditor/Include/CameraUtils.h"
 
 #include "game/server/ai_navmesh.h"
 #include "game/server/ai_hull.h"
@@ -51,8 +50,8 @@ class NavMeshTileTool : public EditorTool
 {
 	Editor_TileMesh* m_editor;
 	dtNavMesh* m_navMesh;
-	rdVec3D m_hitPos;
-	rdVec3D m_nearestPos;
+	float m_hitPos[3];
+	float m_nearestPos[3];
 	int m_selectedSide;
 	int m_selectedTraverseType;
 
@@ -108,8 +107,8 @@ public:
 		m_textOverlayDrawFlags(TO_DRAW_FLAGS_NONE),
 		m_hitPosSet(false)
 	{
-		m_hitPos.init(0.0f,0.0f,0.0f);
-		m_nearestPos.init(0.0f,0.0f,0.0f);
+		rdVset(m_hitPos, 0.0f,0.0f,0.0f);
+		rdVset(m_nearestPos, 0.0f,0.0f,0.0f);
 		memset(m_tileRefTextInput, '\0', sizeof(m_tileRefTextInput));
 		memset(m_polyRefTextInput, '\0', sizeof(m_polyRefTextInput));
 	}
@@ -193,14 +192,14 @@ public:
 		}
 
 		ImGui::PushItemWidth(185);
-		ImGui::SliderFloat3("Cursor", (float*)&m_hitPos, MIN_COORD_FLOAT, MAX_COORD_FLOAT);
+		ImGui::SliderFloat3("Cursor", m_hitPos, MIN_COORD_FLOAT, MAX_COORD_FLOAT);
 		ImGui::PopItemWidth();
 
 		if (hasMarker && ImGui::Button("Clear Markers"))
 		{
 			m_markedTileRef = 0;
 			m_markedPolyRef = 0;
-			m_nearestPos.init(0.0f, 0.0f, 0.0f);
+			rdVset(m_nearestPos, 0.0f, 0.0f, 0.0f);
 		}
 
 		dtNavMeshQuery* query = m_editor->getNavMeshQuery();
@@ -242,36 +241,36 @@ public:
 		}
 	}
 
-	virtual void handleClick(const rdVec3D* /*s*/, const rdVec3D* p, const int /*v*/, bool shift)
+	virtual void handleClick(const float* /*s*/, const float* p, const int /*v*/, bool shift)
 	{
 		m_hitPosSet = true;
-		m_hitPos=*p;
+		rdVcopy(m_hitPos,p);
 		if (m_editor)
 		{
 			if (m_cursorMode == TT_CURSOR_MODE_BUILD)
 			{
 				if (shift)
-					m_editor->removeTile(&m_hitPos);
+					m_editor->removeTile(m_hitPos);
 				else
-					m_editor->buildTile(&m_hitPos);
+					m_editor->buildTile(m_hitPos);
 			}
 			else if (m_cursorMode == TT_CURSOR_MODE_DEBUG && m_navMesh)
 			{
-				const rdVec3D halfExtents(2, 2, 4); // math_refactor(kawe): enlarge?
+				const float halfExtents[3] = { 2, 2, 4 };
 				dtQueryFilter filter;
 
 				if (shift)
 				{
-					if (dtStatusFailed(m_editor->getNavMeshQuery()->findNearestPoly(&m_hitPos, &halfExtents, &filter, &m_markedPolyRef, &m_nearestPos)))
+					if (dtStatusFailed(m_editor->getNavMeshQuery()->findNearestPoly(m_hitPos, halfExtents, &filter, &m_markedPolyRef, m_nearestPos)))
 					{
 						m_markedPolyRef = 0;
-						m_nearestPos.init(0.0f, 0.0f, 0.0f);
+						rdVset(m_nearestPos, 0.0f, 0.0f, 0.0f);
 					}
 				}
 				else
 				{
 					int tx, ty;
-					m_editor->getTilePos(&m_hitPos, tx, ty);
+					m_editor->getTilePos(m_hitPos, tx, ty);
 					m_markedTileRef = m_navMesh->getTileRefAt(tx, ty, 0);
 				}
 			}
@@ -292,17 +291,17 @@ public:
 			glColor4ub(0,0,0,128);
 			glLineWidth(2.0f);
 			glBegin(GL_LINES);
-			glVertex3f(m_hitPos.x-s,m_hitPos.y,m_hitPos.z+0.1f);
-			glVertex3f(m_hitPos.x+s,m_hitPos.y,m_hitPos.z+0.1f);
-			glVertex3f(m_hitPos.x,m_hitPos.y-s,m_hitPos.z+0.1f);
-			glVertex3f(m_hitPos.x,m_hitPos.y+s,m_hitPos.z+0.1f);
-			glVertex3f(m_hitPos.x,m_hitPos.y,m_hitPos.z-s+0.1f);
-			glVertex3f(m_hitPos.x,m_hitPos.y,m_hitPos.z+s+0.1f);
+			glVertex3f(m_hitPos[0]-s,m_hitPos[1],m_hitPos[2]+0.1f);
+			glVertex3f(m_hitPos[0]+s,m_hitPos[1],m_hitPos[2]+0.1f);
+			glVertex3f(m_hitPos[0],m_hitPos[1]-s,m_hitPos[2]+0.1f);
+			glVertex3f(m_hitPos[0],m_hitPos[1]+s,m_hitPos[2]+0.1f);
+			glVertex3f(m_hitPos[0],m_hitPos[1],m_hitPos[2]-s+0.1f);
+			glVertex3f(m_hitPos[0],m_hitPos[1],m_hitPos[2]+s+0.1f);
 			glEnd();
 			glLineWidth(1.0f);
 		}
 
-		const rdVec3D* debugDrawOffset = m_editor->getDetourDrawOffset();
+		const float* debugDrawOffset = m_editor->getDetourDrawOffset();
 
 		if (m_markedTileRef && m_editor && m_navMesh)
 		{
@@ -316,11 +315,11 @@ public:
 				{
 					m_lastMarkedTileRef = m_markedTileRef;
 
-					rdVec3D bmin;
-					rdVec3D bmax;
-					tile->getTightBounds(&bmin, &bmax);
+					float bmin[3];
+					float bmax[3];
+					tile->getTightBounds(bmin, bmax);
 
-					rdVsad(&m_nearestPos, &bmin, &bmax, 0.5f);
+					rdVsad(m_nearestPos, bmin, bmax, 0.5f);
 				}
 
 				duDrawTraverseLinkParams params;
@@ -328,7 +327,7 @@ public:
 
 				const int side = (m_selectedSide != -1) 
 					? m_selectedSide
-					: rdClassifyPointOutsideBounds(&m_hitPos, &header->bmin, &header->bmax);
+					: rdClassifyPointOutsideBounds(m_hitPos, header->bmin, header->bmax);
 
 				if (side != 0xff)
 				{
@@ -355,7 +354,7 @@ public:
 				if (m_markedPolyRef != m_lastMarkedPolyRef)
 				{
 					m_lastMarkedPolyRef = m_markedPolyRef;
-					m_nearestPos = poly->center;
+					rdVcopy(m_nearestPos, poly->center);
 				}
 			}
 
@@ -367,23 +366,24 @@ public:
 			duDebugDrawCross(&m_editor->getDebugDraw(), m_nearestPos[0], m_nearestPos[1], m_nearestPos[2], 20.f, duRGBA(0, 0, 255, 255), 2, debugDrawOffset);
 	}
 	
-	virtual void handleRenderOverlay(double* model, double* proj, int* view)
+	virtual void handleRenderOverlay(double* proj, double* model, int* view)
 	{
-		rdVec2D screenPos;
+		GLdouble x, y, z;
 		const int h = view[3];
-		const rdVec3D* drawOffset = m_editor->getDetourDrawOffset();
+		const float* drawOffset = m_editor->getDetourDrawOffset();
 
 		// NOTE: don't add the render offset here as we want to keep the overlay at the hit position, this
 		// way we can have the navmesh on the side and hit a specific location on the input geometry, and
 		// see which tile we build as this will be drawn on the hit position, while we can enumerate all
 		// the tiles using the debug options in the NavMeshTileTool which will always be aligned with the
 		// navmesh.
-		if (m_hitPosSet && worldToScreen(model, proj, view, m_hitPos, screenPos))
+		if (m_hitPosSet && gluProject((GLdouble)m_hitPos[0], (GLdouble)m_hitPos[1], (GLdouble)m_hitPos[2],
+									  model, proj, view, &x, &y, &z))
 		{
 			int tx=0, ty=0;
-			m_editor->getTilePos(&m_hitPos, tx, ty);
+			m_editor->getTilePos(m_hitPos, tx, ty);
 
-			ImGui_RenderText(ImGuiTextAlign_e::kAlignCenter, ImVec2(screenPos.x, h-(screenPos.y-25)), ImVec4(0,0,0,0.8f), "(%d,%d)", tx,ty);
+			ImGui_RenderText(ImGuiTextAlign_e::kAlignCenter, ImVec2((float)x, h-((float)y-25)), ImVec4(0,0,0,0.8f), "(%d,%d)", tx,ty);
 		}
 
 		if (m_navMesh && m_textOverlayDrawMode != TO_DRAW_MODE_DISABLED)
@@ -398,7 +398,7 @@ public:
 					const dtPoly* poly = &tile->polys[j];
 					unsigned short value = 0;
 
-					const rdVec3D* pos;
+					const float* pos;
 					if (poly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION)
 					{
 						const unsigned int ip = (unsigned int)(poly - tile->polys);
@@ -406,11 +406,11 @@ public:
 
 						// Render on end position to prevent clutter, because
 						// we already render ref positions on the start pos.
-						pos = &con->posb;
+						pos = &con->pos[3];
 					}
 					else
 					{
-						pos = &poly->center;
+						pos = poly->center;
 					}
 
 					switch (m_textOverlayDrawMode)
@@ -429,14 +429,15 @@ public:
 						rdAssert(0);
 					}
 
-					if (worldToScreen(model, proj, view, pos->x+drawOffset->x, pos->y+drawOffset->y, pos->z+drawOffset->z+30, screenPos))
+					if (gluProject((GLdouble)pos[0]+drawOffset[0], (GLdouble)pos[1]+drawOffset[1], (GLdouble)pos[2]+drawOffset[2]+30,
+						model, proj, view, &x, &y, &z))
 					{
 						const char* format = (m_textOverlayDrawFlags & TO_DRAW_FLAGS_INDICES)
 							? "%hu (%d,%d)"
 							: "%hu";
 
 						ImGui_RenderText(ImGuiTextAlign_e::kAlignCenter,
-							ImVec2(screenPos.x, h - screenPos.y), ImVec4(0, 0, 0, 0.8f), format, value, i, j);
+							ImVec2((float)x, h - (float)y), ImVec4(0, 0, 0, 0.8f), format, value, i, j);
 					}
 				}
 
@@ -444,10 +445,11 @@ public:
 				//{
 				//	const dtCell* cell = &tile->cells[j];
 
-				//	if (worldToScreen(model, proj, view, cell->pos.x+drawOffset->x, cell->pos.y+drawOffset->y, cell->pos.z+drawOffset->z+30, screenPos))
+				//	if (gluProject((GLdouble)cell->pos[0]+drawOffset[0], (GLdouble)cell->pos[1]+drawOffset[1], (GLdouble)cell->pos[2]+drawOffset[2]+30,
+				//		model, proj, view, &x, &y, &z))
 				//	{
 				//		ImGui_RenderText(ImGuiTextAlign_e::kAlignCenter,
-				//			ImVec2(screenPos.x, h - screenPos.y), ImVec4(0, 0.4, 0, 0.8f), "(%d,%d)", j, cell->flags);
+				//			ImVec2((float)x, h - (float)y), ImVec4(0, 0.4, 0, 0.8f), "(%d,%d)", j, cell->flags);
 				//	}
 				//}
 			}
@@ -479,10 +481,11 @@ Editor_TileMesh::Editor_TileMesh() :
 	m_tileMemUsage(0),
 	m_tileTriCount(0)
 {
-	m_lastBuiltTileBmin.init(0,0,0);
-	m_lastBuiltTileBmax.init(0,0,0);
+	memset(m_lastBuiltTileBmin, 0, sizeof(m_lastBuiltTileBmin));
+	memset(m_lastBuiltTileBmax, 0, sizeof(m_lastBuiltTileBmax));
 	
 	setTool(new NavMeshTileTool);
+
 	m_drawActiveTile = true;
 }
 
@@ -573,28 +576,29 @@ void Editor_TileMesh::handleRender()
 	Editor_StaticTileMeshCommon::renderTileMeshData();
 }
 
-void Editor_TileMesh::handleRenderOverlay(double* model, double* proj, int* view)
+void Editor_TileMesh::handleRenderOverlay(double* proj, double* model, int* view)
 {
+	GLdouble x, y, z;
 	const int h = view[3];
-	const rdVec3D* drawOffset = getDetourDrawOffset();
+	const float* drawOffset = getDetourDrawOffset();
 
-	rdVec3D projectPos(
-		((m_lastBuiltTileBmin.x + m_lastBuiltTileBmax.x)/2)+drawOffset->x,
-		((m_lastBuiltTileBmin.y + m_lastBuiltTileBmax.y)/2)+drawOffset->y,
-		((m_lastBuiltTileBmin.z + m_lastBuiltTileBmax.z)/2)+drawOffset->z);
+	float projectPos[3];
+	rdVset(projectPos, 
+		((m_lastBuiltTileBmin[0]+m_lastBuiltTileBmax[0])/2)+drawOffset[0],
+		((m_lastBuiltTileBmin[1]+m_lastBuiltTileBmax[1])/2)+drawOffset[1],
+		((m_lastBuiltTileBmin[2]+m_lastBuiltTileBmax[2])/2)+drawOffset[2]);
 	
-	rdVec2D screenPos;
-
 	// Draw start and end point labels
-	if (m_tileBuildTime > 0.0f && worldToScreen(model, proj, view, projectPos, screenPos))
+	if (m_tileBuildTime > 0.0f && gluProject((GLdouble)projectPos[0], (GLdouble)projectPos[1], (GLdouble)projectPos[2],
+											 model, proj, view, &x, &y, &z))
 	{
-		ImGui_RenderText(ImGuiTextAlign_e::kAlignCenter, ImVec2(screenPos.x, h-(float)(screenPos.y-25)),
+		ImGui_RenderText(ImGuiTextAlign_e::kAlignCenter, ImVec2((float)x, h-(float)(y-25)),
 			ImVec4(0,0,0,0.8f), "%.3fms / %dTris / %.1fkB", m_tileBuildTime, m_tileTriCount, m_tileMemUsage);
 	}
 	
 	if (m_tool)
-		m_tool->handleRenderOverlay(model, proj, view);
-	renderOverlayToolStates(model, proj, view);
+		m_tool->handleRenderOverlay(proj, model, view);
+	renderOverlayToolStates(proj, model, view);
 }
 
 void Editor_TileMesh::handleMeshChanged(InputGeom* geom)
@@ -640,9 +644,9 @@ bool Editor_TileMesh::handleBuild()
 	m_traverseLinkDrawParams.traverseAnimType = -2;
 
 	dtNavMeshParams params;
-	params.orig.x = m_geom->getNavMeshBoundsMax()->x;
-	params.orig.y = m_geom->getNavMeshBoundsMin()->y;
-	params.orig.z = m_geom->getNavMeshBoundsMin()->z;
+	rdVcopy(params.orig, m_geom->getNavMeshBoundsMin());
+
+	params.orig[0] = m_geom->getNavMeshBoundsMax()[0];
 
 	params.tileWidth = m_tileSize*m_cellSize;
 	params.tileHeight = m_tileSize*m_cellSize;
@@ -688,21 +692,21 @@ void Editor_TileMesh::collectSettings(BuildSettings& settings)
 	settings.tileSize = m_tileSize;
 }
 
-void Editor_TileMesh::buildTile(const rdVec3D* pos)
+void Editor_TileMesh::buildTile(const float* pos)
 {
 	if (!m_geom) return;
 	if (!m_navMesh) return;
 			
 	int tx, ty;
 	getTilePos(pos, tx, ty);
-	getTileExtents(tx, ty, &m_lastBuiltTileBmin, &m_lastBuiltTileBmax);
+	getTileExtents(tx, ty, m_lastBuiltTileBmin, m_lastBuiltTileBmax);
 	
 	m_tileCol = duRGBA(255,255,255,64);
 	
 	m_ctx->resetLog();
 	
 	int dataSize = 0;
-	unsigned char* data = buildTileMesh(tx, ty, &m_lastBuiltTileBmin, &m_lastBuiltTileBmax, dataSize);
+	unsigned char* data = buildTileMesh(tx, ty, m_lastBuiltTileBmin, m_lastBuiltTileBmax, dataSize);
 
 	// Remove any previous data (navmesh owns and deletes the data).
 	m_navMesh->removeTile(m_navMesh->getTileRefAt(tx,ty,0),0,0);
@@ -748,7 +752,7 @@ void Editor_TileMesh::buildTile(const rdVec3D* pos)
 					const dtOffMeshConnection* con = &target->offMeshCons[j];
 
 					int landTx, landTy;
-					getTilePos(&con->posb, landTx, landTy);
+					getTilePos(&con->pos[3], landTx, landTy);
 
 					if (landTx == tx && landTy == ty)
 						m_navMesh->connectOffMeshLinks(targetRef);
@@ -774,39 +778,39 @@ void Editor_TileMesh::buildTile(const rdVec3D* pos)
 	m_ctx->dumpLog("Build Tile (%d,%d):", tx,ty);
 }
 
-void Editor_TileMesh::getTileExtents(int tx, int ty, rdVec3D* tmin, rdVec3D* tmax)
+void Editor_TileMesh::getTileExtents(int tx, int ty, float* tmin, float* tmax)
 {
 	const float ts = m_tileSize * m_cellSize;
-	const rdVec3D* bmin = m_geom->getNavMeshBoundsMin();
-	const rdVec3D* bmax = m_geom->getNavMeshBoundsMax();
-	tmin->x = bmax->x - (tx+1)*ts;
-	tmin->y = bmin->y + (ty)*ts;
-	tmin->z = bmin->z;
+	const float* bmin = m_geom->getNavMeshBoundsMin();
+	const float* bmax = m_geom->getNavMeshBoundsMax();
+	tmin[0] = bmax[0] - (tx+1)*ts;
+	tmin[1] = bmin[1] + (ty)*ts;
+	tmin[2] = bmin[2];
 
-	tmax->x = bmax->x - (tx)*ts;
-	tmax->y = bmin->y + (ty+1)*ts;
-	tmax->z = bmax->z;
+	tmax[0] = bmax[0] - (tx)*ts;
+	tmax[1] = bmin[1] + (ty+1)*ts;
+	tmax[2] = bmax[2];
 }
-void Editor_TileMesh::getTilePos(const rdVec3D* pos, int& tx, int& ty)
+void Editor_TileMesh::getTilePos(const float* pos, int& tx, int& ty)
 {
 	if (!m_geom) return;
 	
-	const rdVec3D* bmin = m_geom->getNavMeshBoundsMin();
-	const rdVec3D* bmax = m_geom->getNavMeshBoundsMax();
+	const float* bmin = m_geom->getNavMeshBoundsMin();
+	const float* bmax = m_geom->getNavMeshBoundsMax();
 
 	const float ts = m_tileSize*m_cellSize;
-	tx = (int)((bmax->x - pos->x) / ts);
-	ty = (int)((pos->y - bmin->y) / ts);
+	tx = (int)((bmax[0]- pos[0]) / ts);
+	ty = (int)((pos[1] - bmin[1]) / ts);
 }
 
-void Editor_TileMesh::removeTile(const rdVec3D* pos)
+void Editor_TileMesh::removeTile(const float* pos)
 {
 	if (!m_geom) return;
 	if (!m_navMesh) return;
 	
 	int tx, ty;
 	getTilePos(pos, tx, ty);
-	getTileExtents(tx, ty, &m_lastBuiltTileBmin, &m_lastBuiltTileBmax);
+	getTileExtents(tx, ty, m_lastBuiltTileBmin, m_lastBuiltTileBmax);
 	
 	m_tileCol = duRGBA(255,0,0,180);
 	const dtTileRef tileRef = m_navMesh->getTileRefAt(tx,ty, 0);
@@ -840,8 +844,8 @@ void Editor_TileMesh::buildAllTiles()
 	if (!m_geom) return;
 	if (!m_navMesh) return;
 	
-	const rdVec3D* bmin = m_geom->getNavMeshBoundsMin();
-	const rdVec3D* bmax = m_geom->getNavMeshBoundsMax();
+	const float* bmin = m_geom->getNavMeshBoundsMin();
+	const float* bmax = m_geom->getNavMeshBoundsMax();
 	int gw = 0, gh = 0;
 	rcCalcGridSize(bmin, bmax, m_cellSize, &gw, &gh);
 	const int ts = m_tileSize;
@@ -855,10 +859,10 @@ void Editor_TileMesh::buildAllTiles()
 	{
 		for (int x = 0; x < tw; ++x)
 		{
-			getTileExtents(x, y, &m_lastBuiltTileBmin, &m_lastBuiltTileBmax);
+			getTileExtents(x, y, m_lastBuiltTileBmin, m_lastBuiltTileBmax);
 			
 			int dataSize = 0;
-			unsigned char* data = buildTileMesh(x, y, &m_lastBuiltTileBmin, &m_lastBuiltTileBmax, dataSize);
+			unsigned char* data = buildTileMesh(x, y, m_lastBuiltTileBmin, m_lastBuiltTileBmax, dataSize);
 			if (data)
 			{
 				// Remove any previous data (navmesh owns and deletes the data).
@@ -894,8 +898,8 @@ void Editor_TileMesh::removeAllTiles()
 	if (!m_geom || !m_navMesh)
 		return;
 
-	const rdVec3D* bmin = m_geom->getNavMeshBoundsMin();
-	const rdVec3D* bmax = m_geom->getNavMeshBoundsMax();
+	const float* bmin = m_geom->getNavMeshBoundsMin();
+	const float* bmax = m_geom->getNavMeshBoundsMax();
 	int gw = 0, gh = 0;
 	rcCalcGridSize(bmin, bmax, m_cellSize, &gw, &gh);
 	const int ts = m_tileSize;
@@ -931,7 +935,7 @@ void Editor_TileMesh::buildAllHulls()
 	}
 }
 
-unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const rdVec3D* bmin, const rdVec3D* bmax, int& dataSize)
+unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const float* bmin, const float* bmax, int& dataSize)
 {
 	if (!m_geom || !m_geom->getMesh() || !m_geom->getChunkyMesh())
 	{
@@ -944,7 +948,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	
 	cleanup();
 	
-	const rdVec3D* verts = m_geom->getMesh()->getVerts();
+	const float* verts = m_geom->getMesh()->getVerts();
 	const int nverts = m_geom->getMesh()->getVertCount();
 	const int ntris = m_geom->getMesh()->getTriCount();
 	const rcChunkyTriMesh* chunkyMesh = m_geom->getChunkyMesh();
@@ -991,12 +995,12 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	// For example if you build a navmesh for terrain, and want the navmesh tiles to match the terrain tile size
 	// you will need to pass in data from neighbour terrain tiles too! In a simple case, just pass in all the 8 neighbours,
 	// or use the bounding box below to only pass in a sliver of each of the 8 neighbours.
-	m_cfg.bmin = *bmin;
-	m_cfg.bmax = *bmax;
-	m_cfg.bmin.x -= m_cfg.borderSize*m_cfg.cs;
-	m_cfg.bmin.y -= m_cfg.borderSize*m_cfg.cs;
-	m_cfg.bmax.x += m_cfg.borderSize*m_cfg.cs;
-	m_cfg.bmax.y += m_cfg.borderSize*m_cfg.cs;
+	rdVcopy(m_cfg.bmin, bmin);
+	rdVcopy(m_cfg.bmax, bmax);
+	m_cfg.bmin[0] -= m_cfg.borderSize*m_cfg.cs;
+	m_cfg.bmin[1] -= m_cfg.borderSize*m_cfg.cs;
+	m_cfg.bmax[0] += m_cfg.borderSize*m_cfg.cs;
+	m_cfg.bmax[1] += m_cfg.borderSize*m_cfg.cs;
 	
 	// Reset build times gathering.
 	m_ctx->resetTimers();
@@ -1015,7 +1019,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'solid'.");
 		return 0;
 	}
-	if (!rcCreateHeightfield(m_ctx, *m_solid, m_cfg.width, m_cfg.height, &m_cfg.bmin, &m_cfg.bmax, m_cfg.cs, m_cfg.ch))
+	if (!rcCreateHeightfield(m_ctx, *m_solid, m_cfg.width, m_cfg.height, m_cfg.bmin, m_cfg.bmax, m_cfg.cs, m_cfg.ch))
 	{
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Could not create solid heightfield.");
 		return 0;
@@ -1031,9 +1035,11 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		return 0;
 	}
 	
-	rdVec2D tbmin(m_cfg.bmin);
-	rdVec2D tbmax(m_cfg.bmax);
-
+	float tbmin[2], tbmax[2];
+	tbmin[0] = m_cfg.bmin[0];
+	tbmin[1] = m_cfg.bmin[1];
+	tbmax[0] = m_cfg.bmax[0];
+	tbmax[1] = m_cfg.bmax[1];
 #if 0 //NOTE(warmist): original algo
 	int cid[2048];// TODO: Make grow when returning too many items.
 	const int ncid = rcGetChunksOverlappingRect(chunkyMesh, tbmin, tbmax, cid, 2048);
@@ -1065,7 +1071,7 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 	m_tileTriCount = 0;
 	do{
 		int currentCount = 0;
-		done=rcGetChunksOverlappingRect(chunkyMesh, &tbmin, &tbmax, cid, 1024,currentCount,currentNode);
+		done=rcGetChunksOverlappingRect(chunkyMesh, tbmin, tbmax, cid, 1024,currentCount,currentNode);
 		for (int i = 0; i < currentCount; ++i)
 		{
 			const rcChunkyTriMeshNode& node = chunkyMesh->nodes[cid[i]];
@@ -1139,10 +1145,10 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		switch (vol.type)
 		{
 		case VOLUME_BOX:
-			rcMarkBoxArea(m_ctx, &vol.verts[0], &vol.verts[1], vol.flags, vol.area, *m_chf);
+			rcMarkBoxArea(m_ctx, &vol.verts[0], &vol.verts[3], vol.flags, vol.area, *m_chf);
 			break;
 		case VOLUME_CYLINDER:
-			rcMarkCylinderArea(m_ctx, &vol.verts[0], vol.verts[1].x, vol.verts[1].y, vol.flags, vol.area, *m_chf);
+			rcMarkCylinderArea(m_ctx, &vol.verts[0], vol.verts[3], vol.verts[4], vol.flags, vol.area, *m_chf);
 			break;
 		case VOLUME_CONVEX:
 			rcMarkConvexPolyArea(m_ctx, vol.verts, vol.nverts, vol.hmin, vol.hmax, vol.flags, vol.area, *m_chf);
@@ -1342,8 +1348,8 @@ unsigned char* Editor_TileMesh::buildTileMesh(const int tx, const int ty, const 
 		params.tileX = tx;
 		params.tileY = ty;
 		params.tileLayer = 0;
-		params.bmin = m_pmesh->bmin;
-		params.bmax = m_pmesh->bmax;
+		rdVcopy(params.bmin, m_pmesh->bmin);
+		rdVcopy(params.bmax, m_pmesh->bmax);
 		params.cs = m_cfg.cs;
 		params.ch = m_cfg.ch;
 		params.buildBvTree = m_buildBvTree;

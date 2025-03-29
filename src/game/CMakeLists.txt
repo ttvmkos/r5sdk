@@ -10,8 +10,6 @@ if( ${PROJECT_NAME} STREQUAL "game_shared_static" )
 add_sources( SOURCE_GROUP "AI"
     "shared/ai_utility_shared.cpp"
     "shared/ai_utility_shared.h"
-    "shared/navmesh_debug_draw.cpp"
-    "shared/navmesh_debug_draw.h"
 )
 
 add_sources( SOURCE_GROUP "Entity"
@@ -93,7 +91,6 @@ add_sources( SOURCE_GROUP "AI"
     "server/ai_network.h"
     "server/ai_networkmanager.cpp"
     "server/ai_networkmanager.h"
-    "server/ai_commands.cpp"
     "server/ai_node.h"
     "server/ai_utility.cpp"
     "server/ai_utility.h"
@@ -113,7 +110,6 @@ add_sources( SOURCE_GROUP "AI"
     "server/ai_interest.cpp"
     "server/ai_interest.h"
     "server/ai_waypoint.h"
-    "server/ai_pathfinder.cpp"
     "server/ai_pathfinder.h"
     "server/ai_memory.h"
     "server/ai_squad.h"
@@ -192,8 +188,16 @@ add_sources( SOURCE_GROUP "LiveAPI"
     "server/liveapi/liveapi.h"
 )
 
-file( GLOB GAME_SERVER_PUBLIC_HEADERS
-    "${ENGINE_SOURCE_DIR}/public/game/server/*"
+add_sources( SOURCE_GROUP "Public"
+    "${ENGINE_SOURCE_DIR}/public/iserverentity.h"
+    "${ENGINE_SOURCE_DIR}/public/iservernetworkable.h"
+    "${ENGINE_SOURCE_DIR}/public/iserverunknown.h"
+)
+
+add_sources( SOURCE_GROUP "Public/AI"
+    "${ENGINE_SOURCE_DIR}/public/game/server/ai_agent.h"
+    "${ENGINE_SOURCE_DIR}/public/game/server/ai_hull.h"
+    "${ENGINE_SOURCE_DIR}/public/game/server/ai_navmesh.h"
 )
 
 endif()
@@ -238,7 +242,6 @@ add_sources( SOURCE_GROUP "Rendering"
     "client/spritemodel.cpp"
     "client/viewrender.cpp"
     "client/viewrender.h"
-    "client/iviewrender.h"
 )
 
 add_sources( SOURCE_GROUP "Animation"
@@ -257,14 +260,28 @@ add_sources( SOURCE_GROUP "Script"
     "client/vscript_client.h"
 )
 
-file( GLOB GAME_CLIENT_PUBLIC_HEADERS
-    "${ENGINE_SOURCE_DIR}/public/game/client/*"
+add_sources( SOURCE_GROUP "Public"
+    "${ENGINE_SOURCE_DIR}/public/icliententity.h"
+    "${ENGINE_SOURCE_DIR}/public/icliententitylist.h"
+    "${ENGINE_SOURCE_DIR}/public/iclientnetworkable.h"
+    "${ENGINE_SOURCE_DIR}/public/iclientrenderable.h"
+    "${ENGINE_SOURCE_DIR}/public/iclientthinkable.h"
+    "${ENGINE_SOURCE_DIR}/public/iclientunknown.h"
+
+    "${ENGINE_SOURCE_DIR}/public/game/client/iinput.h"
 )
 
 endif()
 
-file( GLOB GAME_SHARED_PUBLIC_HEADERS
-    "${ENGINE_SOURCE_DIR}/public/game/shared/*"
+add_sources( SOURCE_GROUP "Public"
+    "${ENGINE_SOURCE_DIR}/public/basehandle.h"
+    "${ENGINE_SOURCE_DIR}/public/edict.h"
+    "${ENGINE_SOURCE_DIR}/public/eiface.h"
+    "${ENGINE_SOURCE_DIR}/public/globalvars_base.h"
+    "${ENGINE_SOURCE_DIR}/public/ihandleentity.h"
+
+    "${ENGINE_SOURCE_DIR}/public/game/shared/weapon_types.h"
+    "${ENGINE_SOURCE_DIR}/public/game/shared/in_buttons.h"
 )
 
 end_sources()

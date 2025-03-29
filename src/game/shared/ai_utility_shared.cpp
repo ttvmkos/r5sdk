@@ -9,7 +9,6 @@
 
 #include "core/stdafx.h"
 #include "tier1/cvar.h"
-#include "tier2/renderutils.h"
 #include "mathlib/color.h"
 #include "mathlib/vector.h"
 #include "mathlib/ssemath.h"
@@ -21,152 +20,27 @@
 #include "game/client/viewrender.h"
 #include "thirdparty/recast/Shared/Include/SharedCommon.h"
 #include "thirdparty/recast/Detour/Include/DetourNavMesh.h"
-#include "thirdparty/recast/DebugUtils/Include/DetourDebugDraw.h"
 
-//------------------------------------------------------------------------------
-// Purpose: console variables
-//------------------------------------------------------------------------------
-static ConVar navmesh_draw_enable("navmesh_draw_enable", "0", FCVAR_DEVELOPMENTONLY, "Enable the debug drawing of the NavMesh");
-static ConVar navmesh_draw_type("navmesh_draw_type", "0", FCVAR_DEVELOPMENTONLY, "The NavMesh type to use for debug drawing", true, 0.f, true, 4.f, nullptr, "0 = small, 1 = med_short, 2 = medium, 3 = large, 4 = extra_large");
-static ConVar navmesh_draw_range("navmesh_draw_range", "3000", FCVAR_DEVELOPMENTONLY, "Only draw tiles within this distance from our camera", true, 0.f, false, 0.f);
-
-static ConVar navmesh_draw_use_plane_culling("navmesh_draw_use_plane_culling", "0", FCVAR_DEVELOPMENTONLY, "Use plane culling to improve render performance (can be too aggressive on larger tiles)");
-static ConVar navmesh_draw_additional_z("navmesh_draw_additional_z", "0", FCVAR_DEVELOPMENTONLY, "Offset NavMesh drawing by this amount on the Z-axis");
-
-static ConVar navmesh_draw_off_mesh_connections("navmesh_draw_off_mesh_connections", "1", FCVAR_DEVELOPMENTONLY, "Draws the off-mesh connections of the NavMesh");
-static ConVar navmesh_draw_bvtree("navmesh_draw_bvtree", "0", FCVAR_DEVELOPMENTONLY, "Draws the BVTree of the NavMesh polygons");
-static ConVar navmesh_draw_portals("navmesh_draw_portals", "0", FCVAR_DEVELOPMENTONLY, "Draws the portal network connecting the tiles of the NavMesh");
-
-static ConVar navmesh_draw_tile_bounds("navmesh_draw_tile_bounds", "0", FCVAR_DEVELOPMENTONLY, "Draws the bounds of the NavMesh tiles");
-static ConVar navmesh_draw_tile_cells("navmesh_draw_tile_cells", "0", FCVAR_DEVELOPMENTONLY, "Draws the cells of the NavMesh tiles");
-
-static ConVar navmesh_draw_poly_faces("navmesh_draw_poly_faces", "1", FCVAR_DEVELOPMENTONLY, "Draws the polygon faces of the NavMesh tiles");
-static ConVar navmesh_draw_poly_detail("navmesh_draw_poly_detail", "0", FCVAR_DEVELOPMENTONLY, "Draws the detail of the NavMesh polygons");
-static ConVar navmesh_draw_poly_verts("navmesh_draw_poly_verts", "0", FCVAR_DEVELOPMENTONLY, "Draws the vertices of the NavMesh polygons");
-static ConVar navmesh_draw_poly_centers("navmesh_draw_poly_centers", "0", FCVAR_DEVELOPMENTONLY, "Draws the center of the NavMesh polygons");
-
-static ConVar navmesh_draw_poly_bounds_inner("navmesh_draw_poly_bounds_inner", "1", FCVAR_DEVELOPMENTONLY, "Draws the inner polygon bounds of the NavMesh tiles");
-static ConVar navmesh_draw_poly_bounds_outer("navmesh_draw_poly_bounds_outer", "1", FCVAR_DEVELOPMENTONLY, "Draws the outer polygon bounds of the NavMesh tiles");
-
-static ConVar navmesh_draw_traverse_portals("navmesh_draw_traverse_portals", "0", FCVAR_DEVELOPMENTONLY, "Draws the traversal network connecting the polygons of the NavMesh");
-static ConVar navmesh_draw_traverse_portals_type("navmesh_draw_traverse_portals_type", "-1", FCVAR_DEVELOPMENTONLY, "Only draw traverse portals of this type (-1 = everything)", true, -1, true, DT_MAX_TRAVERSE_TYPES-1, "Type: >= -1 && < DT_MAX_TRAVERSE_TYPES - 1");
-
-static ConVar navmesh_draw_force_opaque("navmesh_draw_force_opaque", "0", FCVAR_DEVELOPMENTONLY, "Disable transparency in NavMesh debug draw");
-static ConVar navmesh_draw_flag_show_tile_id("navmesh_draw_show_tile_ids", "0", FCVAR_DEVELOPMENTONLY, "Color NavMesh tiles by their lookup ID");
-static ConVar navmesh_draw_flag_show_poly_groups("navmesh_draw_show_poly_groups", "0", FCVAR_DEVELOPMENTONLY, "Color NavMesh polygons by their group ID");
-
-static ConVar ai_script_nodes_draw_range("ai_script_nodes_draw_range", "1000", FCVAR_DEVELOPMENTONLY, "Only draw AIN script nodes within this distance from our camera");
+static ConVar ai_script_nodes_draw_range("ai_script_nodes_draw_range", "0", FCVAR_DEVELOPMENTONLY, "Debug draw AIN script nodes ranging from shift index to this cvar");
 static ConVar ai_script_nodes_draw_nearest("ai_script_nodes_draw_nearest", "1", FCVAR_DEVELOPMENTONLY, "Debug draw AIN script node links to nearest node (build order is used if null)");
+
+static ConVar navmesh_debug_type("navmesh_debug_type", "0", FCVAR_DEVELOPMENTONLY, "NavMesh debug draw hull index", true, 0.f, true, 4.f, nullptr, "0 = small, 1 = med_short, 2 = medium, 3 = large, 4 = extra large");
+static ConVar navmesh_debug_tile_range("navmesh_debug_tile_range", "0", FCVAR_DEVELOPMENTONLY, "NavMesh debug draw tiles ranging from shift index to this cvar", true, 0.f, false, 0.f);
+static ConVar navmesh_debug_camera_range("navmesh_debug_camera_range", "6000", FCVAR_DEVELOPMENTONLY, "Only debug draw tiles within this distance from camera origin", true, 0.f, false, 0.f);
+static ConVar navmesh_debug_camera_plane_culling("navmesh_debug_camera_plane_culling", "0", FCVAR_DEVELOPMENTONLY, "Use plane culling to improve render performance (can be too aggressive on larger tiles)", true, 0.f, false, 0.f);
+
+static ConVar navmesh_draw_bvtree("navmesh_draw_bvtree", "-1", FCVAR_DEVELOPMENTONLY, "Draws the BVTree of the NavMesh tiles", false, 0.f, false, 0.f, nullptr, "Index: >= 0 && < mesh->m_tileCount");
+static ConVar navmesh_draw_portal("navmesh_draw_portal", "-1", FCVAR_DEVELOPMENTONLY, "Draws the portal of the NavMesh tiles", false, 0.f, false, 0.f, nullptr, "Index: >= 0 && < mesh->m_tileCount");
+static ConVar navmesh_draw_poly_detail("navmesh_draw_poly_detail", "0", FCVAR_DEVELOPMENTONLY, "Draws the detail meshes of the NavMesh polys", false, 0.f, false, 0.f, nullptr, nullptr);
+static ConVar navmesh_draw_poly_bounds("navmesh_draw_poly_bounds", "-1", FCVAR_DEVELOPMENTONLY, "Draws the bounds of the NavMesh polys", false, 0.f, false, 0.f, nullptr, "Index: >= 0 && < mesh->m_tileCount");
 
 //------------------------------------------------------------------------------
 // Purpose:
 //------------------------------------------------------------------------------
 CAI_Utility::CAI_Utility(void)
+    : m_BoxColor(0, 255, 0, 255)
+    , m_LinkColor(255, 0, 0, 255)
 {
-}
-
-//------------------------------------------------------------------------------
-// Purpose: run the NavMesh renderer
-//------------------------------------------------------------------------------
-void CAI_Utility::RunRenderFrame(void)
-{
-    if (navmesh_draw_enable.GetBool())
-    {
-        const dtNavMesh* const nav = Detour_GetNavMeshByType(NavMeshType_e(navmesh_draw_type.GetInt()));
-
-        if (nav)
-        {
-            u32 navmeshDrawFlags = 0;
-
-            if (navmesh_draw_off_mesh_connections.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_OFFMESHCONS;
-            if (navmesh_draw_bvtree.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_BVTREE;
-            if (navmesh_draw_portals.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_PORTALS;
-            if (navmesh_draw_tile_bounds.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_TILE_BOUNDS;
-            if (navmesh_draw_tile_cells.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_TILE_CELLS;
-            if (navmesh_draw_poly_faces.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_POLY_FACES;
-            if (navmesh_draw_poly_detail.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_POLY_EDGES;
-            if (navmesh_draw_poly_verts.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_POLY_VERTS;
-            if (navmesh_draw_poly_bounds_inner.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_POLY_BOUNDS_INNER;
-            if (navmesh_draw_poly_bounds_outer.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_POLY_BOUNDS_OUTER;
-            if (navmesh_draw_poly_centers.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_POLY_CENTERS;
-            if (navmesh_draw_traverse_portals.GetBool())
-                navmeshDrawFlags |= DU_DRAW_DETOURMESH_TRAVERSE_LINKS;
-
-            if (navmeshDrawFlags != 0)
-            {
-                // These are checked and added here, because they require the
-                // above flags to be used. If none of those are set, these
-                // won't do anything.
-                if (navmesh_draw_flag_show_tile_id.GetBool())
-                    navmeshDrawFlags |= DU_DRAW_DETOURMESH_TILE_COLORS;
-                if (navmesh_draw_flag_show_poly_groups.GetBool())
-                    navmeshDrawFlags |= DU_DRAW_DETOURMESH_POLY_GROUPS;
-                if (!navmesh_draw_force_opaque.GetBool())
-                    navmeshDrawFlags |= DU_DRAW_DETOURMESH_ALPHA;
-
-                DrawNavMesh(*nav, navmeshDrawFlags);
-            }
-        }
-    }
-
-    if (ai_script_nodes_draw->GetBool())
-        DrawAIScriptNetwork(*g_pAINetwork, MainViewOrigin(), ai_script_nodes_draw_range.GetFloat(), true);
-}
-
-//------------------------------------------------------------------------------
-// Purpose: draw NavMesh
-//------------------------------------------------------------------------------
-void CAI_Utility::DrawNavMesh(const dtNavMesh& mesh, const u32 flags)
-{
-    const Vector3D& camPos = MainViewOrigin();
-    const VPlane* pPlane = nullptr;
-
-    VPlane plane;
-
-    if (navmesh_draw_use_plane_culling.GetBool())
-    {
-        const QAngle& camAng = MainViewAngles();
-        const Vector3D normal = camPos - camAng.GetNormal() * 256.0f;
-
-        plane.Init(normal, camAng);
-        pPlane = &plane;
-    }
-
-    m_navMeshQuery.attachNavMeshUnsafe(&mesh);
-    const float maxRadius = navmesh_draw_range.GetFloat();
-
-    const rdVec3D offset(0.f, 0.f, navmesh_draw_additional_z.GetFloat());
-    duDrawTraverseLinkParams traverseLinkDrawParams;
-
-    for (int i = 0; i < mesh.getMaxTiles(); i++)
-    {
-        const dtMeshTile* const tile = mesh.getTile(i);
-
-        if (!tile->header)
-            continue;
-
-        if (!IsTileWithinRange(tile, pPlane, camPos, maxRadius))
-            continue;
-
-        if (flags & DU_DRAW_DETOURMESH_TRAVERSE_LINKS)
-        {
-            traverseLinkDrawParams.traverseLinkType = navmesh_draw_traverse_portals_type.GetInt();
-            traverseLinkDrawParams.extraOffset = tile->header->walkableRadius * 2;
-        }
-
-        duDebugDrawMeshTile(&m_navMeshDebugDraw, mesh, &m_navMeshQuery, tile, &offset, flags, traverseLinkDrawParams);
-    }
 }
 
 static const VectorAligned s_vMaxs = { 50.0f, 50.0f, 50.0f };
@@ -177,15 +51,70 @@ static const fltx4 s_xMaxs = LoadAlignedSIMD(s_vMaxs);
 static const fltx4 s_xSubMask = LoadAlignedSIMD(s_vSubMask);
 
 //------------------------------------------------------------------------------
+// Purpose: run the NavMesh renderer
+//------------------------------------------------------------------------------
+void CAI_Utility::RunRenderFrame(void)
+{
+    const int iScriptNodeIndex = ai_script_nodes_draw->GetInt();
+    const int iNavMeshBVTreeIndex = navmesh_draw_bvtree.GetInt();
+    const int iNavMeshPortalIndex = navmesh_draw_portal.GetInt();
+    const int iNavMeshPolyBoundIndex = navmesh_draw_poly_bounds.GetInt();
+
+    if (iScriptNodeIndex <= -1 &&
+        iNavMeshBVTreeIndex <= -1 &&
+        iNavMeshPortalIndex <= -1 &&
+        iNavMeshPolyBoundIndex <= -1)
+    {
+        // Nothing to render.
+        return;
+    }
+
+    const bool bUsePlaneCulling = navmesh_debug_camera_plane_culling.GetBool();
+
+    const Vector3D& vCamera = MainViewOrigin();
+    VPlane vCullPlane;
+
+    if (bUsePlaneCulling)
+    {
+        const QAngle& aCamera = MainViewAngles();
+        const Vector3D vNormal = vCamera - aCamera.GetNormal() * 256.0f;
+
+        vCullPlane.Init(vNormal, aCamera);
+    }
+
+    const VPlane* pCullPlane = bUsePlaneCulling ? &vCullPlane : nullptr;
+
+    const float flCameraRange = navmesh_debug_camera_range.GetFloat();
+    const int nTileRange = navmesh_debug_tile_range.GetInt();
+    const bool bUseDepthBuffer = r_debug_draw_depth_test.GetBool();
+
+    if (iScriptNodeIndex > -1)
+        g_AIUtility.DrawAIScriptNetwork(*g_pAINetwork, vCamera, iScriptNodeIndex, flCameraRange, bUseDepthBuffer);
+    if (iNavMeshBVTreeIndex > -1)
+        g_AIUtility.DrawNavMeshBVTree(nullptr, vCamera, pCullPlane, iNavMeshBVTreeIndex, flCameraRange, nTileRange, bUseDepthBuffer);
+    if (iNavMeshPortalIndex > -1)
+        g_AIUtility.DrawNavMeshPortals(nullptr, vCamera, pCullPlane, iNavMeshPortalIndex, flCameraRange, nTileRange, bUseDepthBuffer);
+    if (iNavMeshPolyBoundIndex > -1)
+    {
+        const bool bDrawDetail = navmesh_draw_poly_detail.GetBool();
+
+        g_AIUtility.DrawNavMeshPolyBoundaries(nullptr, vCamera, pCullPlane, iNavMeshPolyBoundIndex, flCameraRange, nTileRange, true, bDrawDetail, bUseDepthBuffer);
+        g_AIUtility.DrawNavMeshPolyBoundaries(nullptr, vCamera, pCullPlane, iNavMeshPolyBoundIndex, flCameraRange, nTileRange, false, false, bUseDepthBuffer);
+    }
+}
+
+//------------------------------------------------------------------------------
 // Purpose: draw AI script network
 // Input  : *pNetwork       - 
 //          &vCameraPos     - 
+//          iNodeIndex      - 
 //          flCameraRange   - 
 //          bUseDepthBuffer - 
 //------------------------------------------------------------------------------
 void CAI_Utility::DrawAIScriptNetwork(
     const CAI_Network* pNetwork,
     const Vector3D& vCameraPos,
+    const int iNodeIndex,
     const float flCameraRange,
     const bool bUseDepthBuffer) const
 {
@@ -193,12 +122,16 @@ void CAI_Utility::DrawAIScriptNetwork(
         return; // AI Network not build or loaded.
 
     const bool bDrawNearest = ai_script_nodes_draw_nearest.GetBool();
+    const int  nNodeRange = ai_script_nodes_draw_range.GetInt();
 
-    matrix3x4_t vTransforms;
+    OverlayBox_t::Transforms vTransforms;
     std::unordered_set<int64_t> uLinkSet;
 
-    for (int i = 0, ns = pNetwork->NumScriptNodes(); i < ns; i++)
+    for (int i = iNodeIndex, ns = pNetwork->NumScriptNodes(); i < ns; i++)
     {
+        if (nNodeRange && i > nNodeRange)
+            break;
+
         const CAI_ScriptNode* pScriptNode = &pNetwork->m_ScriptNode[i];
         const fltx4 xOrigin = SubSIMD(// Subtract 25.f from our scalars to align box with node.
             LoadUnaligned3SIMD(&pScriptNode->m_vOrigin), s_xSubMask);
@@ -214,17 +147,14 @@ void CAI_Utility::DrawAIScriptNetwork(
         }
 
         // Construct box matrix transforms.
-        vTransforms.Init(
+        vTransforms.mat.Init(
             { 1.0f, 0.0f, 0.0f },
             { 0.0f, 1.0f, 0.0f },
             { 0.0f, 0.0f, 1.0f },
             *reinterpret_cast<const Vector3D*>(&xOrigin));
 
-        static const Color boxColor(0, 255, 0, 30);
-        static const Color linkColor(255, 0, 0, 255);
-
-        g_pDebugOverlay->AddTransformedBoxOverlay(vTransforms, *reinterpret_cast<const Vector3D*>(&s_xMins),
-            *reinterpret_cast<const Vector3D*>(&s_xMaxs), boxColor.r(), boxColor.g(), boxColor.b(), boxColor.a(), !bUseDepthBuffer, 0.0f);
+        v_RenderBox(vTransforms.mat, *reinterpret_cast<const Vector3D*>(&s_xMins),
+            *reinterpret_cast<const Vector3D*>(&s_xMaxs), m_BoxColor, bUseDepthBuffer);
 
         if (bDrawNearest) // Render links to the nearest node.
         {
@@ -238,12 +168,327 @@ void CAI_Utility::DrawAIScriptNetwork(
                 if (p.second) // Only render if link hasn't already been rendered.
                 {
                     const CAI_ScriptNode* pNearestNode = &pNetwork->m_ScriptNode[nNearest];
-                    g_pDebugOverlay->AddLineOverlay(pScriptNode->m_vOrigin, pNearestNode->m_vOrigin, linkColor.r(), linkColor.g(), linkColor.b(), !bUseDepthBuffer, 0.0f);
+                    v_RenderLine(pScriptNode->m_vOrigin, pNearestNode->m_vOrigin, m_LinkColor, bUseDepthBuffer);
                 }
             }
         }
         else if (i > 0) // Render links in the order the AI Network was build.
-            g_pDebugOverlay->AddLineOverlay((pScriptNode - 1)->m_vOrigin, pScriptNode->m_vOrigin, linkColor.r(), linkColor.g(), linkColor.b(), !bUseDepthBuffer, 0.0f);
+            v_RenderLine((pScriptNode - 1)->m_vOrigin, pScriptNode->m_vOrigin, m_LinkColor, bUseDepthBuffer);
+    }
+}
+
+//------------------------------------------------------------------------------
+// Purpose: draw NavMesh BVTree
+// Input  : *pMesh        - 
+//          &vCameraPos   - 
+//          &vCullPlane   - 
+//          iBVTreeIndex  - 
+//          flCameraRange - 
+//          nTileRange    - 
+//          bDepthBuffer  - 
+//------------------------------------------------------------------------------
+void CAI_Utility::DrawNavMeshBVTree(
+    const dtNavMesh* pMesh,
+    const Vector3D& vCameraPos,
+    const VPlane* vCullPlane,
+    const int iBVTreeIndex,
+    const float flCameraRange,
+    const int nTileRange,
+    const bool bDepthBuffer) const
+{
+    if (!pMesh)
+        pMesh = Detour_GetNavMeshByType(NavMeshType_e(navmesh_debug_type.GetInt()));
+    if (!pMesh)
+        return; // NavMesh for hull not loaded.
+
+    OverlayBox_t::Transforms vTransforms;
+    for (int i = iBVTreeIndex, nt = pMesh->getMaxTiles(); i < nt; ++i)
+    {
+        if (nTileRange > 0 && i > nTileRange)
+            break;
+
+        const dtMeshTile* pTile = pMesh->getTile(i);
+        if (!pTile->header)
+            continue;
+
+        if (!IsTileWithinRange(pTile, vCullPlane, vCameraPos, flCameraRange))
+            continue;
+
+        const float flCellSize = 1.0f / pTile->header->bvQuantFactor;
+
+        const fltx4 xTileAABB = LoadGatherSIMD(pTile->header->bmin[0], pTile->header->bmin[1], pTile->header->bmin[2], 0.0f);
+        const fltx4 xCellSize = LoadGatherSIMD(flCellSize, flCellSize, flCellSize, 0.0f);
+
+        for (int j = 0, nc = pTile->header->bvNodeCount; j < nc; ++j)
+        {
+            const dtBVNode* pNode = &pTile->bvTree[j];
+            if (pNode->i < 0) // Leaf indices are positive.
+                continue;
+
+            vTransforms.xmm[0] = LoadGatherSIMD(1.0f, 0.0f, 0.0f, 0.0f);
+            vTransforms.xmm[1] = LoadGatherSIMD(0.0f, 1.0f, 0.0f, 0.0f);
+            vTransforms.xmm[2] = LoadGatherSIMD(0.0f, 0.0f, 1.0f, 0.0f);
+
+            // Formula: tile->header->bm##[axis]+node->bm##[axis]*cs;
+            const fltx4 xMins = MaddSIMD(LoadGatherSIMD(pNode->bmin[0], pNode->bmin[1], pNode->bmin[2], 0.0f), xCellSize, xTileAABB);
+            const fltx4 xMaxs = MaddSIMD(LoadGatherSIMD(pNode->bmax[0], pNode->bmax[1], pNode->bmax[2], 0.0f), xCellSize, xTileAABB);
+
+            v_RenderBox(vTransforms.mat, *reinterpret_cast<const Vector3D*>(&xMins), *reinterpret_cast<const Vector3D*>(&xMaxs),
+                Color(188, 188, 188, 255), bDepthBuffer);
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Purpose: draw NavMesh portals
+// Input  : *pMesh        - 
+//          &vCameraPos   - 
+//          &vCullPlane   - 
+//          iPortalIndex  - 
+//          flCameraRange - 
+//          nTileRange    - 
+//          bDepthBuffer  - 
+//------------------------------------------------------------------------------
+void CAI_Utility::DrawNavMeshPortals(const dtNavMesh* pMesh,
+    const Vector3D& vCameraPos,
+    const VPlane* vCullPlane,
+    const int iPortalIndex,
+    const float flCameraRange,
+    const int nTileRange,
+    const bool bDepthBuffer) const
+{
+    if (!pMesh)
+        pMesh = Detour_GetNavMeshByType(NavMeshType_e(navmesh_debug_type.GetInt()));
+    if (!pMesh)
+        return; // NavMesh for hull not loaded.
+
+    for (int i = iPortalIndex, nt = pMesh->getMaxTiles(); i < nt; ++i)
+    {
+        if (nTileRange > 0 && i > nTileRange)
+            break;
+
+        const dtMeshTile* pTile = pMesh->getTile(i);
+        if (!pTile->header)
+            continue;
+
+        if (!IsTileWithinRange(pTile, vCullPlane, vCameraPos, flCameraRange))
+            continue;
+
+        // Draw portals
+        const float flPadX = 0.04f;
+        const float flPadZ = pTile->header->walkableClimb;
+
+        for (int nSide = 0; nSide < 8; ++nSide)
+        {
+            unsigned short m = DT_EXT_LINK | static_cast<unsigned short>(nSide);
+            for (int j = 0, np = pTile->header->polyCount; j < np; ++j)
+            {
+                const dtPoly* pPoly = &pTile->polys[j];
+
+                // Create new links.
+                for (int v = 0, nv = pPoly->vertCount; v < nv; ++v)
+                {
+                    // Skip edges which do not point to the right side.
+                    if (pPoly->neis[v] != m)
+                        continue;
+
+                    // Create new links
+                    const float* va = &pTile->verts[pPoly->verts[v] * 3];
+                    const float* vb = &pTile->verts[pPoly->verts[(v + 1) % nv] * 3];
+
+                    /*****************
+                     Vertex indices:
+                     va - = 0 +------+
+                     vb - = 1 |      |
+                     va + = 2 |      |
+                     vb + = 3 +------+
+                     *****************/
+                    fltx4 xVerts = LoadGatherSIMD(va[2], vb[2], va[2], vb[2]);
+                    Vector4D* vVerts = reinterpret_cast<Vector4D*>(&xVerts);
+
+                    xVerts = SubSIMD(xVerts, LoadGatherSIMD(flPadZ, flPadZ, 0.0f, 0.0f));
+                    xVerts = AddSIMD(xVerts, LoadGatherSIMD(0.0f, 0.0f, flPadZ, flPadZ));
+
+                    if (nSide == 0 || nSide == 4)
+                    {
+                        Color col = nSide == 0 ? Color(188, 0, 0, 255) : Color(188, 0, 188, 255);
+                        const float x = va[0] + ((nSide == 0) ? -flPadX : flPadX);
+
+                        fltx4 xOrigin = LoadGatherSIMD(x, va[1], vVerts->x, 0);
+                        fltx4 xDest = LoadGatherSIMD(x, va[1], vVerts->z, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin), 
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                        xOrigin = LoadGatherSIMD(x, va[1], vVerts->z, 0);
+                        xDest = LoadGatherSIMD(x, vb[1], vVerts->w, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin), 
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                        xOrigin = LoadGatherSIMD(x, vb[1], vVerts->w, 0);
+                        xDest = LoadGatherSIMD(x, vb[1], vVerts->y, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin), 
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                        xOrigin = LoadGatherSIMD(x, vb[1], vVerts->y, 0);
+                        xDest = LoadGatherSIMD(x, va[1], vVerts->x, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin), 
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                    }
+                    else if (nSide == 2 || nSide == 6)
+                    {
+                        Color col = nSide == 2 ? Color(0, 188, 0, 255) : Color(188, 188, 0, 255);
+                        const float y = va[1] + ((nSide == 2) ? -flPadX : flPadX);
+
+                        fltx4 xOrigin = LoadGatherSIMD(va[0], y, vVerts->x, 0);
+                        fltx4 xDest = LoadGatherSIMD(va[0], y, vVerts->z, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin),
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                        xOrigin = LoadGatherSIMD(va[0], y, vVerts->z, 0);
+                        xDest = LoadGatherSIMD(vb[0], y, vVerts->w, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin),
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                        xOrigin = LoadGatherSIMD(vb[0], y, vVerts->w, 0);
+                        xDest = LoadGatherSIMD(vb[0], y, vVerts->y, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin),
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                        xOrigin = LoadGatherSIMD(vb[0], y, vVerts->y, 0);
+                        xDest = LoadGatherSIMD(va[0], y, vVerts->x, 0);
+                        v_RenderLine(*reinterpret_cast<Vector3D*>(&xOrigin),
+                            *reinterpret_cast<Vector3D*>(&xDest), col, bDepthBuffer);
+                    }
+                }
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Purpose : draw NavMesh poly boundaries
+// Input  : *pMesh         - 
+//          &vCameraPos    - 
+//          &vCullPlane    - 
+//          iBoundaryIndex - 
+//          flCameraRange  - 
+//          nTileRange     - 
+//          bDepthBuffer   - 
+//------------------------------------------------------------------------------
+void CAI_Utility::DrawNavMeshPolyBoundaries(const dtNavMesh* pMesh,
+    const Vector3D& vCameraPos,
+    const VPlane* vCullPlane,
+    const int iBoundaryIndex,
+    const float flCameraRange,
+    const int nTileRange,
+    const bool bDrawInner,
+    const bool bDrawDetail,
+    const bool bDepthBuffer) const
+{
+    static const float thr = 0.01f * 0.01f;
+    Color col{ 20, 140, 255, 255 };
+
+    if (!pMesh)
+        pMesh = Detour_GetNavMeshByType(NavMeshType_e(navmesh_debug_type.GetInt()));
+    if (!pMesh)
+        return; // NavMesh for hull not loaded.
+
+    for (int i = iBoundaryIndex, nt = pMesh->getMaxTiles(); i < nt; ++i)
+    {
+        if (nTileRange > 0 && i > nTileRange)
+            break;
+
+        const dtMeshTile* pTile = pMesh->getTile(i);
+        if (!pTile->header)
+            continue;
+
+        if (!IsTileWithinRange(pTile, vCullPlane, vCameraPos, flCameraRange))
+            continue;
+
+        for (int j = 0; j < pTile->header->polyCount; ++j)
+        {
+            const dtPoly* pPoly = &pTile->polys[j];
+
+            if (pPoly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION)
+            {
+                const dtOffMeshConnection* con = &pTile->offMeshCons[j - pTile->header->offMeshBase];
+                v_RenderLine(Vector3D(con->pos[0], con->pos[1], con->pos[2]),
+                    Vector3D(con->pos[3], con->pos[4], con->pos[5]), Color(188, 0, 188, 255), bDepthBuffer);
+
+                continue;
+            }
+
+            const dtPolyDetail* pd = &pTile->detailMeshes[j];
+
+            for (int e = 0, ne = static_cast<int>(pPoly->vertCount); e < ne; ++e)
+            {
+                const bool bIsLinked = pPoly->groupId != DT_UNLINKED_POLY_GROUP;
+
+                if (bDrawInner)
+                {
+                    if (pPoly->neis[e] == 0)
+                        continue;
+
+                    if (pPoly->neis[e] & DT_EXT_LINK)
+                    {
+                        bool bCon = false;
+                        for (unsigned int k = pPoly->firstLink; k != DT_NULL_LINK; k = pTile->links[k].next)
+                        {
+                            if (pTile->links[k].edge == e)
+                            {
+                                bCon = true;
+                                break;
+                            }
+                        }
+                        if (bCon)
+                            col = Color(128, 128, 128, 255);
+                        else
+                            col = bIsLinked ? Color(255, 0, 0, 255) : Color(0, 0, 255, 255);
+                    }
+                    else
+                    {
+                        col = bIsLinked
+                            ? Color(0, 200, 220, 255)
+                            : Color(220, 120, 0, 255);
+                    }
+                }
+                else
+                {
+                    if (pPoly->neis[e] != 0)
+                        continue;
+
+                    col = pPoly->groupId == DT_UNLINKED_POLY_GROUP
+                        ? Color(255, 20, 10, 255)
+                        : Color(20, 140, 255, 255);
+                }
+
+                const float* v0 = &pTile->verts[pPoly->verts[e] * 3];
+                const float* v1 = &pTile->verts[pPoly->verts[(e + 1) % ne] * 3];
+
+                // Draw detail mesh edges, this is really slow.
+                for (int k = 0, ke = pd->triCount; k < ke; ++k)
+                {
+                    const unsigned char* t = &pTile->detailTris[(pd->triBase + k) * 4];
+                    const float* tv[3];
+                    for (int m = 0; m < 3; ++m)
+                    {
+                        if (t[m] < pPoly->vertCount)
+                            tv[m] = &pTile->verts[pPoly->verts[t[m]] * 3];
+                        else
+                            tv[m] = &pTile->detailVerts[(pd->vertBase + (t[m] - pPoly->vertCount)) * 3];
+                    }
+                    for (int m = 0, n = 2; m < 3; n = m++)
+                    {
+                        // only draw edges which align with the actual poly edge.
+                        if (!bDrawDetail)
+                        {
+                            if ((dtGetDetailTriEdgeFlags(t[3], n) & RD_DETAIL_EDGE_BOUNDARY) == 0)
+                                continue;
+
+                            if (rdDistancePtLine2D(tv[n], v0, v1) > thr ||
+                                rdDistancePtLine2D(tv[m], v0, v1) > thr)
+                                continue;
+                        }
+
+                        v_RenderLine(Vector3D(tv[n][0], tv[n][1], tv[n][2]), Vector3D(tv[m][0], tv[m][1], tv[m][2]), col, bDepthBuffer);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -255,7 +500,7 @@ void CAI_Utility::DrawAIScriptNetwork(
 //          d - 
 // Output : packed node set as i64x2
 //------------------------------------------------------------------------------
-shortx8 CAI_Utility::PackNodeLink(const i32 a, const i32 b, const i32 c, const i32 d)
+shortx8 CAI_Utility::PackNodeLink(int32_t a, int32_t b, int32_t c, int32_t d) const
 {
     shortx8 xResult = _mm_set_epi32(a, b, c, d);
 
@@ -309,7 +554,7 @@ bool CAI_Utility::IsTileWithinRange(const dtMeshTile* pTile, const VPlane* vPlan
 //          *vPos       - 
 // Output : node index ('NO_NODE' if no node has been found)
 //------------------------------------------------------------------------------
-int CAI_Utility::GetNearestNodeToPos(const CAI_Network* pAINetwork, const Vector3D* vPos)
+int CAI_Utility::GetNearestNodeToPos(const CAI_Network* pAINetwork, const Vector3D* vPos) const
 {
     int result; // rax
     unsigned int v3; // er10

@@ -6,8 +6,6 @@ start_sources()
 add_sources( SOURCE_GROUP "Runtime"
     "particles.cpp"
     "particles.h"
-    "particle_overlay.cpp"
-    "particle_overlay.h"
 )
 
 end_sources()

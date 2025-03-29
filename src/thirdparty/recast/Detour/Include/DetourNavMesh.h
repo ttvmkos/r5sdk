@@ -29,7 +29,7 @@
 #define DT_NAVMESH_SET_MAGIC ('M'<<24 | 'S'<<16 | 'E'<<8 | 'T')
 int dtGetNavMeshVersionForSet(const int setVersion);
 
-// Uncomment (or define in a build config) the following line to use 64bit polyref.
+// Undefine (or define in a build config) the following line to use 64bit polyref.
 // Generally not needed, useful for very large worlds.
 // Note: tiles build using 32bit refs are not compatible with 64bit refs!
 //#define DT_POLYREF64 1
@@ -100,12 +100,7 @@ static const int DT_MAX_TRAVERSE_TABLES = 5;
 /// A value that indicates the link doesn't require a traverse action. (Jumping, climbing, etc.)
 static const unsigned char DT_NULL_TRAVERSE_TYPE = 0xff;
 
-/// The maximum number of traversal variations. (Jumping, climbing, crossing, etc.)
 static const unsigned char DT_MAX_TRAVERSE_TYPES = 32;
-
-/// The reserved traverse type index, which unlike other traverse types, is used internally
-/// to mark special traverse portals such as zip lines.
-static const unsigned char DT_RESERVED_TRAVERSE_TYPE = 19;
 
 /// A value that indicates the link doesn't contain a reverse traverse link.
 static const unsigned short DT_NULL_TRAVERSE_REVERSE_LINK = 0xffff;
@@ -158,12 +153,12 @@ static const unsigned char DT_OFFMESH_CON_TRAVERSE_ON_VERT = 1<<6;
 /// A flag that indicates that the off-mesh link can be traversed from or towards the polygon it connects to.
 static const unsigned char DT_OFFMESH_CON_TRAVERSE_ON_POLY = 1<<7;
 
-/// A value that determines the default number of points describing the straight path result.
-static const int DT_DEFAULT_STRAIGHT_PATH_RESOLUTION = 5;
+/// A value that determines the maximum number of points describing the straight path result.
+static const int DT_STRAIGHT_PATH_RESOLUTION = 5;
 
 /// The maximum number of user defined area ids.
 /// @ingroup detour
-static const int DT_MAX_AREAS = 64;
+static const int DT_MAX_AREAS = 32; // <-- confirmed 32 see [r5apex_ds.exe + 0xf47dda] '-> test    [rcx+80h], ax'.
 
 /// Tile flags used for various functions and fields.
 /// For an example, see dtNavMesh::addTile().
@@ -177,49 +172,33 @@ enum dtTileFlags
 };
 
 /// Vertex flags returned by dtNavMeshQuery::findStraightPath.
-enum dtStraightPathFlags : unsigned char
+enum dtStraightPathFlags
 {
-	DT_STRAIGHTPATH_START = 1<<0,				///< The vertex is the start position in the path.
-	DT_STRAIGHTPATH_END_GOAL = 1<<1,			///< The vertex is the goal end position in the path.
-
-#if DT_NAVMESH_SET_VERSION >= 7
-	DT_STRAIGHTPATH_END_PARTIAL = 1<<2,			///< The vertex is the partial end position in the path.
-	DT_STRAIGHTPATH_OFFMESH_CONNECTION = 1<<3	///< The vertex is the start of an off-mesh connection.
-#else
-	// 'DT_STRAIGHTPATH_END_PARTIAL' doesn't exist for Titanfall 2, therefore the enumerant
-	// 'DT_STRAIGHTPATH_OFFMESH_CONNECTION' must be shifted for backwards compatibility.
-	DT_STRAIGHTPATH_OFFMESH_CONNECTION = 1<<2	///< The vertex is the start of an off-mesh connection.
-#endif
+	DT_STRAIGHTPATH_START = 0x01,				///< The vertex is the start position in the path.
+	DT_STRAIGHTPATH_END = 0x02,					///< The vertex is the end position in the path.
+	DT_STRAIGHTPATH_OFFMESH_CONNECTION = 0x04,	///< The vertex is the start of an off-mesh connection.
 };
 
 /// Options for dtNavMeshQuery::findStraightPath.
 enum dtStraightPathOptions
 {
-	DT_STRAIGHTPATH_AREA_CROSSINGS = 1<<0,		///< Add a vertex at every polygon edge crossing where area changes.
-	DT_STRAIGHTPATH_ALL_CROSSINGS = 1<<1,		///< Add a vertex at every polygon edge crossing.
-	DT_STRAIGHTPATH_CONTINUE_AFTER_JUMP = 1<<2	///< Continue the straight path after jump instead of returning out.
+	DT_STRAIGHTPATH_AREA_CROSSINGS = 0x01,	///< Add a vertex at every polygon edge crossing where area changes.
+	DT_STRAIGHTPATH_ALL_CROSSINGS = 0x02,	///< Add a vertex at every polygon edge crossing.
 };
+
 
 /// Options for dtNavMeshQuery::initSlicedFindPath and updateSlicedFindPath
 enum dtFindPathOptions
 {
-	DT_FINDPATH_ANY_ANGLE = 0x02,		///< use raycasts during pathfind to "shortcut". (Raycast still considers costs.)
+	DT_FINDPATH_ANY_ANGLE = 0x02,		///< use raycasts during pathfind to "shortcut" (raycast still consider costs)
 };
 
-/// Options for dtNavMeshQuery::raycast.
+/// Options for dtNavMeshQuery::raycast
 enum dtRaycastOptions
 {
-	DT_RAYCAST_USE_COSTS = 1<<0,				///< Raycast should calculate movement cost along the ray and fill RaycastHit::cost.
-	DT_RAYCAST_SKIP_OFFMESH_CONNECTION = 1<<1	///< Raycast should skip off-mesh connections along the ray.
+	DT_RAYCAST_USE_COSTS = 0x01,		///< Raycast should calculate movement cost along the ray and fill RaycastHit::cost
 };
 
-/// Options for dtNavMeshQuery::moveAlongSurface.
-enum dtMoveAlongSurfaceOptions : unsigned char
-{
-	DT_MOVEALONGSURFACE_DONT_VISIT_POLYGONS = 1<<0,			///< Don't visit polygons during the move. (Useful if we don't care about the path.)
-	DT_MOVEALONGSURFACE_USE_REGULAR_NODE_POOL = 1<<1,		///< Use the regular node pool instead of the tiny one.
-	DT_MOVEALONGSURFACE_USE_POLY_HEIGHT_FOR_RESULT = 1<<2,	///< Use the height of the polygon at the end position in the z of the result position.
-};
 
 /// Limit raycasting during any angle pahfinding
 /// The limit is given as a multiple of the character radius
@@ -338,16 +317,16 @@ struct dtPoly
 #endif
 
 	/// The center of the polygon; see abstracted script function 'Navmesh_RandomPositions'.
-	rdVec3D center;
+	float center[3];
 
 	/// Sets the user defined area id. [Limit: < #DT_MAX_AREAS]
-	inline void setArea(unsigned char a) { areaAndtype = (areaAndtype & 0xc0) | (a & (DT_MAX_AREAS-1)); }
+	inline void setArea(unsigned char a) { areaAndtype = (areaAndtype & 0xc0) | (a & 0x3f); }
 
 	/// Sets the polygon type. (See: #dtPolyTypes.)
-	inline void setType(unsigned char t) { areaAndtype = (areaAndtype & (DT_MAX_AREAS-1)) | (t << 6); }
+	inline void setType(unsigned char t) { areaAndtype = (areaAndtype & 0x3f) | (t << 6); }
 
 	/// Gets the user defined area id.
-	inline unsigned char getArea() const { return areaAndtype & (DT_MAX_AREAS-1); }
+	inline unsigned char getArea() const { return areaAndtype & 0x3f; }
 
 	/// Gets the polygon type. (See: #dtPolyTypes)
 	inline unsigned char getType() const { return areaAndtype >> 6; }
@@ -357,7 +336,7 @@ struct dtPoly
 ///  @param[in]		poly	The polygon.
 ///  @param[in]		verts	The polygon vertices.
 /// @return The total surface are of the polygon.
-float dtCalcPolySurfaceArea(const dtPoly* poly, const rdVec3D* verts);
+float dtCalcPolySurfaceArea(const dtPoly* poly, const float* verts);
 
 /// Defines the location of detail sub-mesh data within a dtMeshTile.
 struct dtPolyDetail
@@ -371,7 +350,7 @@ struct dtPolyDetail
 /// Defines the vertical triangle of a wall hint.
 struct dtTriangleSurface
 {
-	rdVec3D pos;					///< The surface position of the triangle. [(x, y, z)]
+	float pos[3];					///< The surface position of the triangle. [(x, y, z)]
 	float minDist;					///< The minimum distance between the agent's and triangle position before they are considered close enough.
 	unsigned short vertAIndex;		///< The index of the first vert connecting A->B.
 	unsigned short vertBIndex;		///< The index of the second vert connecting B->C.
@@ -388,9 +367,6 @@ inline int dtGetDetailTriEdgeFlags(unsigned char triFlags, int edgeIndex)
 {
 	return (triFlags >> (edgeIndex * 2)) & 0x3;
 }
-
-/// If a point is this close to a detail triangle edge, its considered to be on it.
-static const float DT_DETAIL_EDGE_ALIGN_THRESHOLD = 0.01f*0.01f;
 
 /// Defines a link between polygons.
 /// @note This structure is rarely if ever used by the end user.
@@ -411,7 +387,7 @@ struct dtLink
 	unsigned short reverseLink;		///< The reverse traversal link for this link. (Path returns through this link.)
 };
 
-float dtCalcLinkDistance(const rdVec3D* spos, const rdVec3D* epos);
+float dtCalcLinkDistance(const float* spos, const float* epos);
 unsigned char dtQuantLinkDistance(const float distance);
 
 /// Defines a cell in a tile.
@@ -419,10 +395,9 @@ unsigned char dtQuantLinkDistance(const float distance);
 /// @see dtMeshTile
 struct dtCell
 {
-	inline void setUnoccupied() { *(int*)((uintptr_t)&occupyState & ~0x3) = -1; }
-	inline bool isOccupied() const { return (*(int*)((uintptr_t)&occupyState & ~0x3)) != -1; }
+	inline void setOccupied() { *(int*)((uintptr_t)&occupyState & ~0x3) = -1; }
 
-	rdVec3D pos;					///< The position of the cell.
+	float pos[3];					///< The position of the cell.
 	unsigned int polyIndex;			///< The index of the poly this cell is on.
 	unsigned char pad;				
 	unsigned char occupyState[4];	///< The occupation state of this cell, -1 means not occupied. See [r5apex_ds + 0xEF86C9].
@@ -439,9 +414,9 @@ struct dtCell
 /// @see dtOffMeshConnection
 struct dtHint
 {
-	rdVec3D* verts;					///< The triangle vertices. [Size: (x, y, z) * dtHint::vertCount]
+	float* verts;					///< The triangle vertices. [Size: (x, y, z) * dtHint::vertCount]
 	dtTriangleSurface* tris;		///< The triangles. [Size: dtHint::triCount]
-	char reserved[24];				///< Reserved data for the Radiant level editor.
+	char unk[24]; // Editor only.
 	int vertCount;					///< The number of vertices in the hint.
 	int triCount;					///< The number of triangles in the hint.
 };
@@ -496,11 +471,8 @@ struct dtOffMeshConnection
 	void setHintIndex(unsigned short index) { traverseContext = index; };
 #endif
 
-	/// The A endpoint of the connection. [(ax, ay, az)]
-	rdVec3D posa;
-
-	/// The B endpoint of the connection. [(bx, by, bz)]
-	rdVec3D posb;
+	/// The endpoints of the connection. [(ax, ay, az, bx, by, bz)]
+	float pos[6];
 
 	/// The radius of the endpoints. [Limit: >= 0]
 	float rad;
@@ -537,15 +509,14 @@ struct dtOffMeshConnection
 #endif
 
 	/// The reference position set to the start of the off-mesh connection with an offset of DT_OFFMESH_CON_REFPOS_OFFSET
-	rdVec3D refPos; // See [r5apex_ds + F114CF], [r5apex_ds + F11B42], [r5apex_ds + F12447].
+	float refPos[3]; // See [r5apex_ds + F114CF], [r5apex_ds + F11B42], [r5apex_ds + F12447].
 	/// The reference yaw angle set towards the end position of the off-mesh connection.
 	float refYaw;    // See [r5apex_ds + F11527], [r5apex_ds + F11F90], [r5apex_ds + F12836].
 
 #if DT_NAVMESH_SET_VERSION >= 9
 	/// Off-mesh connections are always placed in pairs, in version 5 to 8, each connection for
 	/// the pair was a separate instance. In newer versions, this is squashed into 1 connection.
-	rdVec3D secPosa;
-	rdVec3D secPosb;
+	float secPos[6];
 #endif
 };
 
@@ -553,13 +524,13 @@ struct dtOffMeshConnection
 /// @param	spos[in]		The start position of the off mesh connection.
 /// @param	epos[in]		The end position of the off mesh connection.
 ///								returns the yaw angle on the XY plane in radians.
-extern float dtCalcOffMeshRefYaw(const rdVec2D* spos, const rdVec2D* epos);
+extern float dtCalcOffMeshRefYaw(const float* spos, const float* epos);
 /// Calculates the ref position in an off-mesh connection.
 /// @param	spos[in]		The start position of the off mesh connection.
 /// @param	yawRad[in]		The yaw angle of the off-mesh connection in radians.
 /// @param	offset[in]		The desired offset from the start position.
 /// @param	res[in]			The output ref position.
-extern void dtCalcOffMeshRefPos(const rdVec3D* spos, const float yawDeg, const rdVec3D* offset, rdVec3D* res);
+extern void dtCalcOffMeshRefPos(const float* spos, const float yawDeg, const float* offset, float* res);
 
 /// Provides high level information related to a dtMeshTile object.
 /// @ingroup detour
@@ -593,8 +564,8 @@ struct dtMeshHeader
 	float walkableHeight;		///< The height of the agents using the tile.
 	float walkableRadius;		///< The radius of the agents using the tile.
 	float walkableClimb;		///< The maximum climb height of the agents using the tile.
-	rdVec3D bmin;				///< The minimum bounds of the tile's AABB. [(x, y, z)]
-	rdVec3D bmax;				///< The maximum bounds of the tile's AABB. [(x, y, z)]
+	float bmin[3];				///< The minimum bounds of the tile's AABB. [(x, y, z)]
+	float bmax[3];				///< The maximum bounds of the tile's AABB. [(x, y, z)]
 
 	/// The bounding volume quantization factor. 
 	float bvQuantFactor;
@@ -618,7 +589,7 @@ public:
 
 	bool linkCountAvailable(const int count) const;
 
-	void getTightBounds(rdVec3D* bminOut, rdVec3D* bmaxOut) const;
+	void getTightBounds(float* bminOut, float* bmaxOut) const;
 
 	unsigned int salt;					///Counter describing modifications to the tile.
 
@@ -626,12 +597,12 @@ public:
 	dtMeshHeader* header;				///The tile header.
 	dtPoly* polys;						///The tile polygons. [Size: dtMeshHeader::polyCount]
 	unsigned int* polyMap;				///TODO: needs to be reversed.
-	rdVec3D* verts;						///The tile vertices. [Size: dtMeshHeader::vertCount]
+	float* verts;						///The tile vertices. [Size: dtMeshHeader::vertCount]
 	dtLink* links;						///The tile links. [Size: dtMeshHeader::maxLinkCount]
 	dtPolyDetail* detailMeshes;			///The tile's detail sub-meshes. [Size: dtMeshHeader::detailMeshCount]
 
 	/// The detail mesh's unique vertices. [(x, y, z) * dtMeshHeader::detailVertCount]
-	rdVec3D* detailVerts;
+	float* detailVerts;
 
 	/// The detail mesh's triangles. [(vertA, vertB, vertC, triFlags) * dtMeshHeader::detailTriCount].
 	/// See dtDetailTriEdgeFlags and dtGetDetailTriEdgeFlags.
@@ -676,14 +647,14 @@ struct dtTraverseLinkConnectParams
 	///  @param[in]		userData		Pointer to user defined data.
 	///  @param[in]		lowerEdgeMid	The mid point of the lower edge from which the link starts. [(x, y, z)] [Unit: wu]
 	///  @param[in]		higherEdgeMid	The mid point of the higher edge to which the link ends. [(x, y, z)] [Unit: wu]
-	///  @param[in]		lowerEdgeNorm	The edge normal of the lower edge. [(x, y)] [Unit: wu]
-	///  @param[in]		higherEdgeNorm	The edge normal of the higher edge. [(x, y)] [Unit: wu]
+	///  @param[in]		lowerEdgeNorm	The edge normal of the lower edge. [(x, y, z)] [Unit: wu]
+	///  @param[in]		higherEdgeNorm	The edge normal of the higher edge. [(x, y, z)] [Unit: wu]
 	///  @param[in]		walkableHeight	The walkable height defined by the tile hosting the link. [Unit: wu]
 	///  @param[in]		walkableRadius	The walkable radius defined by the tile hosting the link. [Unit: wu]
 	///  @param[in]		slopeAngle		The slope angle from lower to higher edge mid points. [Unit: Degrees]
 	/// @return True if the link between the lower and higher edge mid points don't collide with anything.
-	bool(*traverseLinkInLOS)(void* userData, const rdVec3D* lowerEdgeMid, const rdVec3D* higherEdgeMid, const rdVec2D* lowerEdgeNorm,
-		const rdVec2D* higherEdgeNorm, const float walkableHeight, const float walkableRadius, const float slopeAngle);
+	bool(*traverseLinkInLOS)(void* userData, const float* lowerEdgeMid, const float* higherEdgeMid, const float* lowerEdgeNorm,
+		const float* higherEdgeNorm, const float walkableHeight, const float walkableRadius, const float slopeAngle);
 
 	/// User defined callback that looks if a link between these 2 polygons
 	/// have already been established. A traverse type can only be used once
@@ -708,7 +679,7 @@ struct dtTraverseLinkConnectParams
 	float minEdgeOverlap;			///< The minimum amount of projection overlap required between the 2 edges before they are considered overlapping. [Unit: wu]
 	float maxPortalAlign;			///< The maximum amount of portal alignment the system will apply. [Limit: 0 >= align <= 0.5]
 	bool singlePortalPerPair;		///< Whether to limit the number of portal connections between 2 polygon pairs to 1.
-	bool linkToNeighbor;			///< Whether to link to polygons in neighboring tiles, limits linkage to internal polygons if false. Returns #DT_INVALID_ACTION if no neighbors exist.
+	bool linkToNeighbor;			///< Whether to link to polygons in neighboring tiles. Limits linkage to internal polygons if false.
 };
 
 /// Configuration parameters used to define multi-tile navigation meshes.
@@ -717,7 +688,7 @@ struct dtTraverseLinkConnectParams
 /// @ingroup detour
 struct dtNavMeshParams
 {
-	rdVec3D orig;					///< The world space origin of the navigation mesh's tile space. [(x, y, z)]
+	float orig[3];					///< The world space origin of the navigation mesh's tile space. [(x, y, z)]
 	float tileWidth;				///< The width of each tile. (Along the x-axis.)
 	float tileHeight;				///< The height of each tile. (Along the y-axis.)
 	int maxTiles;					///< The maximum number of tiles the navigation mesh can contain. This and maxPolys are used to calculate how many bits are needed to identify tiles and polygons uniquely.
@@ -790,7 +761,7 @@ public:
 	///  @param[in]	pos  The world position for the query. [(x, y, z)]
 	///  @param[out]	tx		The tile's x-location. (x, y)
 	///  @param[out]	ty		The tile's y-location. (x, y)
-	void calcTileLoc(const rdVec3D* pos, int* tx, int* ty) const;
+	void calcTileLoc(const float* pos, int* tx, int* ty) const;
 
 	/// Gets the tile at the specified grid location.
 	///  @param[in]	x		The tile's x-location. (x, y, layer)
@@ -892,7 +863,7 @@ public:
 	///  @param[out]	startPos	The start position of the off-mesh connection. [(x, y, z)]
 	///  @param[out]	endPos		The end position of the off-mesh connection. [(x, y, z)]
 	/// @return The status flags for the operation.
-	dtStatus getOffMeshConnectionPolyEndPoints(dtPolyRef prevRef, dtPolyRef polyRef, rdVec3D* startPos, rdVec3D* endPos) const;
+	dtStatus getOffMeshConnectionPolyEndPoints(dtPolyRef prevRef, dtPolyRef polyRef, float* startPos, float* endPos) const;
 
 	/// Gets the specified off-mesh connection.
 	///  @param[in]	ref		The polygon reference of the off-mesh connection.
@@ -926,7 +897,7 @@ public:
 
 	/// @{
 	/// @name State Management
-	/// These functions do not affect #dtTileRef or #dtPolyRef's. 
+	/// These functions do not effect #dtTileRef or #dtPolyRef's. 
 
 	/// Sets the user defined flags for the specified polygon.
 	///  @param[in]	ref		The polygon reference.
@@ -1096,27 +1067,16 @@ public:
 	dtPolyRef clampOffMeshVertToPoly(dtOffMeshConnection* con, dtMeshTile* conTile, const dtMeshTile* lookupTile, const bool start);
 
 private:
-	/// Same as the public #getTileAndPolyByRef, but provides mutable handles.
-	dtStatus getTileAndPolyByRef(dtMeshTile** tile, dtPoly** poly, const dtPolyRef ref) const;
-
-	/// Internal result structure for #findConnectingPolys.
-	struct dtFindConnectingPolysResult
-	{
-		dtPolyRef ref;	///< The connecting polygon ref.
-		float min;		///< The min of the segment overlap.
-		float max;		///< The max of the segment overlap.
-	};
-
 	/// Returns all polygons in neighbour tile based on portal defined by the segment.
-	void findConnectingPolys(const rdVec3D* va, const rdVec3D* vb,
+	int findConnectingPolys(const float* va, const float* vb,
 		const dtMeshTile* tile, int side,
-		rdTempVector<dtFindConnectingPolysResult>& result) const;
+		dtPolyRef* con, float* conarea, int maxcon) const;
 
 	/// Builds internal polygons links for a tile.
-	dtStatus connectIntLinks(dtMeshTile* tile);
+	void connectIntLinks(dtMeshTile* tile);
 
 	/// Builds external polygon links for a tile.
-	dtStatus connectExtLinks(dtMeshTile* tile, dtMeshTile* target, const int side);
+	void connectExtLinks(dtMeshTile* tile, dtMeshTile* target, int side);
 
 	/// Removes external links at specified side.
 	void unconnectLinks(dtMeshTile* tile, dtMeshTile* target);
@@ -1125,15 +1085,15 @@ private:
 	// TODO: These methods are duplicates from dtNavMeshQuery, but are needed for off-mesh connection finding.
 
 	/// Queries polygons within a tile.
-	int queryPolygonsInTile(const dtMeshTile* tile, const rdVec3D* qmin, const rdVec3D* qmax,
+	int queryPolygonsInTile(const dtMeshTile* tile, const float* qmin, const float* qmax,
 		dtPolyRef* polys, const int maxPolys) const;
 	/// Find nearest polygon within a tile.
-	dtPolyRef findNearestPolyInTile(const dtMeshTile* tile, const rdVec3D* center,
-		const rdVec3D* halfExtents, rdVec3D* nearestPt) const;
+	dtPolyRef findNearestPolyInTile(const dtMeshTile* tile, const float* center,
+		const float* halfExtents, float* nearestPt) const;
 	/// Returns whether position is over the poly and the height at the position if so.
-	bool getPolyHeight(const dtMeshTile* tile, const dtPoly* poly, const rdVec3D* pos, float* height, rdVec3D* normal = 0) const;
+	bool getPolyHeight(const dtMeshTile* tile, const dtPoly* poly, const float* pos, float* height) const;
 	/// Returns closest point on polygon.
-	void closestPointOnPoly(dtPolyRef ref, const rdVec3D* pos, rdVec3D* closest, bool* posOverPoly, float* dist = 0, rdVec3D* normal = 0) const;
+	void closestPointOnPoly(dtPolyRef ref, const float* pos, float* closest, bool* posOverPoly) const;
 
 	dtMeshTile** m_posLookup;			///< Tile hash lookup.
 	dtMeshTile* m_nextFree;				///< Freelist of tiles.
@@ -1145,7 +1105,7 @@ private:
 	int m_unused1;
 
 	dtNavMeshParams m_params;			///< Current initialization params. TODO: do not store this info twice.
-	rdVec3D m_orig;						///< Origin of the tile (0,0)
+	float m_orig[3];					///< Origin of the tile (0,0)
 	float m_tileWidth, m_tileHeight;	///< Dimensions of each tile.
 	int m_tileCount;					///< Number of tiles in the mesh.
 	int m_maxTiles;						///< Max number of tiles.
@@ -1174,24 +1134,6 @@ int dtCalcTraverseTableCellIndex(const int numPolyGroups,
 ///  @return the total size needed for the static traverse table.
 ///  @ingroup detour
 int dtCalcTraverseTableSize(const int numPolyGroups);
-
-/// Returns whether this traverse type belongs to an off-mesh link.
-///  @param[in]	traverseType	The traverse type.
-///  @return the bit mask of (#DT_OFFMESH_CON_TRAVERSE_ON_VERT | #DT_OFFMESH_CON_TRAVERSE_ON_POLY)
-///  @ingroup detour
-inline int dtIsTraverseTypeOffMesh(const unsigned char traverseType)
-{
-	return traverseType & (DT_OFFMESH_CON_TRAVERSE_ON_VERT | DT_OFFMESH_CON_TRAVERSE_ON_POLY);
-}
-
-/// Returns whether this traverse type is reserved.
-///  @param[in]	traverseType	The traverse type.
-///  @return whether this traverse type is reserved.
-///  @ingroup detour
-inline bool dtIsTraverseTypeReserved(const unsigned char traverseType)
-{
-	return traverseType == (DT_RESERVED_TRAVERSE_TYPE | DT_OFFMESH_CON_TRAVERSE_ON_POLY);
-}
 
 /// Defines a navigation mesh tile data block.
 /// @ingroup detour
@@ -1258,7 +1200,7 @@ Basically, if the storage structure of a tile changes, its associated
 tile reference changes.
 
 
-@var unsigned short dtPoly::neis[RD_VERTS_PER_POLYGON]
+@var unsigned short dtPoly::neis[DT_VERTS_PER_POLYGON]
 @par
 
 Each entry represents data for the edge starting at the vertex of the same index.
@@ -1288,8 +1230,8 @@ const dtBVNode* n = &tile->bvTree[i];
 if (n->i >= 0)
 {
 	// This is a leaf node.
-	float worldMinX = tile->header->bmin.x + n->bmin.x*cs;
-	float worldMinY = tile->header->bmin.y + n->bmin.y*cs;
+	float worldMinX = tile->header->bmin[0] + n->bmin[0]*cs;
+	float worldMinY = tile->header->bmin[0] + n->bmin[1]*cs;
 	// Etc...
 }
 @endcode
@@ -1310,8 +1252,7 @@ For example: The tile at a location might not have been loaded yet, or may have 
 In this case, pointers will be null.  So if in doubt, check the polygon count in the
 tile's header to determine if a tile has polygons defined.
 
-@var float dtOffMeshConnection::posa
-@var float dtOffMeshConnection::posb
+@var float dtOffMeshConnection::pos[6]
 @par
 
 For a properly built navigation mesh, vertex A will always be within the bounds of the mesh.

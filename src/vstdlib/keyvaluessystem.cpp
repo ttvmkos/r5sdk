@@ -5,6 +5,8 @@
 // $NoKeywords: $
 //=============================================================================//
 
+#include <ikeyvaluessystem.h>
+#include "keyvaluessystem.h"
 #include "tier0/threadtools.h"
 #include "tier1/keyvalues.h"
 #include "tier1/mempool.h"
@@ -13,7 +15,6 @@
 #include "tier1/memstack.h"
 #include "tier1/convar.h"
 #include "tier1/strtools.h"
-#include "keyvaluessystem.h"
 
 #ifdef _PS3
 #include "ps3/ps3_core.h"

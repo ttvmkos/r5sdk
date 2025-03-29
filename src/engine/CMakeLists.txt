@@ -20,12 +20,12 @@ add_sources( SOURCE_GROUP "Collision"
     "traceinit.h"
 )
 
+if( NOT ${PROJECT_NAME} STREQUAL "engine_ds" )
 add_sources( SOURCE_GROUP "Debug"
     "debugoverlay.cpp"
     "debugoverlay.h"
 )
 
-if( NOT ${PROJECT_NAME} STREQUAL "engine_ds" )
 add_sources( SOURCE_GROUP "Input"
     "keys.cpp"
     "keys.h"
@@ -66,8 +66,6 @@ add_sources( SOURCE_GROUP "Network"
 )
 
 add_sources( SOURCE_GROUP "Model"
-    "cmodel.cpp"
-    "cmodel.h"
     "cmodel_bsp.cpp"
     "cmodel_bsp.h"
     "modelinfo.cpp"
@@ -164,8 +162,6 @@ add_sources( SOURCE_GROUP "GameUI"
     "${ENGINE_SOURCE_DIR}/gameui/IBrowser.h"
     "${ENGINE_SOURCE_DIR}/gameui/IConsole.cpp"
     "${ENGINE_SOURCE_DIR}/gameui/IConsole.h"
-    "${ENGINE_SOURCE_DIR}/gameui/IParticleOverlay.cpp"
-    "${ENGINE_SOURCE_DIR}/gameui/IParticleOverlay.h"
     "${ENGINE_SOURCE_DIR}/gameui/IStreamOverlay.cpp"
     "${ENGINE_SOURCE_DIR}/gameui/IStreamOverlay.h"
 
@@ -214,6 +210,31 @@ add_sources( SOURCE_GROUP "Common"
 
 file( GLOB ENGINE_PUBLIC_HEADERS
     "${ENGINE_SOURCE_DIR}/public/engine/*"
+)
+add_sources( SOURCE_GROUP "Public"
+    "${ENGINE_PUBLIC_HEADERS}"
+    "${ENGINE_SOURCE_DIR}/public/const.h"
+    "${ENGINE_SOURCE_DIR}/public/dt_common.h"
+    "${ENGINE_SOURCE_DIR}/public/dt_send.h"
+    "${ENGINE_SOURCE_DIR}/public/dt_recv.h"
+    "${ENGINE_SOURCE_DIR}/public/datamap.h"
+    "${ENGINE_SOURCE_DIR}/public/idebugoverlay.h"
+    "${ENGINE_SOURCE_DIR}/public/iengine.h"
+    "${ENGINE_SOURCE_DIR}/public/iserver.h"
+    "${ENGINE_SOURCE_DIR}/public/isnapshotmgr.h"
+    "${ENGINE_SOURCE_DIR}/public/inetchannel.h"
+    "${ENGINE_SOURCE_DIR}/public/inetmessage.h"
+    "${ENGINE_SOURCE_DIR}/public/inetmsghandler.h"
+    "${ENGINE_SOURCE_DIR}/public/server_class.h"
+    "${ENGINE_SOURCE_DIR}/public/networkvar.h"
+    "${ENGINE_SOURCE_DIR}/public/playerstate.h"
+
+    "${ENGINE_SOURCE_DIR}/public/netcon/INetCon.h"
+
+    # These probably need to go to 'bsplib' if we ever create that project.
+    "${ENGINE_SOURCE_DIR}/public/bspflags.h"
+    "${ENGINE_SOURCE_DIR}/public/bspfile.h"
+    "${ENGINE_SOURCE_DIR}/public/gamebspfile.h"
 )
 
 if( NOT ${PROJECT_NAME} STREQUAL "engine_ds" )

@@ -11,8 +11,6 @@
 #include "public/eiface.h"
 #include "public/const.h"
 #include "common/protocol.h"
-#include "common/callback.h"
-#include "rtech/liveapi/liveapi.h"
 #include "engine/server/sv_main.h"
 #include "gameinterface.h"
 #include "entitylist.h"
@@ -21,40 +19,6 @@
 #include "game/shared/usercmd.h"
 #include "game/server/util_server.h"
 #include "pluginsystem/pluginsystem.h"
-
-//-----------------------------------------------------------------------------
-// Purpose: retrieves the index of the client that issued the last command
-// Output : int
-//-----------------------------------------------------------------------------
-int UTIL_GetCommandClientIndex(void)
-{
-	// -1 == unknown,dedicated server console
-	// 0  == player 1
-
-	// Convert to 1 based offset
-	return (*g_nCommandClientIndex)+1;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: retrieves the player of the client that issued the last command
-// Output : CPlayer*
-//-----------------------------------------------------------------------------
-CPlayer* UTIL_GetCommandClient(void)
-{
-	const int idx = UTIL_GetCommandClientIndex();
-	if (idx > 0)
-	{
-		CPlayer* const player = UTIL_PlayerByIndex(idx);
-
-		if (!player || !player->IsConnected())
-			return NULL;
-
-		return player;
-	}
-
-	// HLDS console issued command
-	return NULL;
-}
 
 bool CServerGameDLL::DLLInit(CServerGameDLL* thisptr, CreateInterfaceFn appSystemFactory, CreateInterfaceFn physicsFactory,
 	CreateInterfaceFn fileSystemFactory, CGlobalVars* pGlobals)
@@ -158,10 +122,10 @@ void CServerGameDLL::OnReceivedSayTextMessage(CServerGameDLL* thisptr, int sende
 	CServerGameDLL__OnReceivedSayTextMessage(thisptr, senderId, text, false);
 }
 
-static void DrawServerHitbox(int iEntity)
+void DrawServerHitbox(int iEntity)
 {
-	const CEntInfo* const pInfo = g_serverEntityList->GetEntInfoPtrByIndex(iEntity);
-	CBaseAnimating* const pAnimating = dynamic_cast<CBaseAnimating*>(pInfo->m_pEntity);
+	const CEntInfo* pInfo = g_serverEntityList->GetEntInfoPtrByIndex(iEntity);
+	CBaseAnimating* pAnimating = dynamic_cast<CBaseAnimating*>(pInfo->m_pEntity);
 
 	if (pAnimating)
 	{
@@ -169,9 +133,9 @@ static void DrawServerHitbox(int iEntity)
 	}
 }
 
-static void DrawServerHitboxes()
+void DrawServerHitboxes(bool bRunOverlays)
 {
-	const int nVal = sv_showhitboxes->GetInt();
+	int nVal = sv_showhitboxes->GetInt();
 	Assert(nVal < NUM_ENT_ENTRIES);
 
 	if (nVal == -1)
@@ -188,30 +152,6 @@ static void DrawServerHitboxes()
 	{
 		DrawServerHitbox(nVal);
 	}
-}
-
-static void DrawGeometryOverlays()
-{
-	const CEntInfo* pInfo = g_serverEntityList->FirstEntInfo();
-
-	for (; pInfo; pInfo = pInfo->m_pNext)
-	{
-		CBaseEntity* const ent = (CBaseEntity*)pInfo->m_pEntity;
-
-		if (ent->GetDebugOverlays() || ent->GetTimedOverlay())
-		{
-			ent->DrawDebugGeometryOverlays();
-		}
-	}
-}
-
-static void DrawAllDebugOverlays()
-{
-	if (!developer->GetBool())
-		return;
-
-	DrawServerHitboxes();
-	DrawGeometryOverlays();
 }
 
 void CServerGameClients::_ProcessUserCmds(CServerGameClients* thisp, edict_t edict,
@@ -259,33 +199,10 @@ void CServerGameClients::_ProcessUserCmds(CServerGameClients* thisp, edict_t edi
 	pPlayer->ProcessUserCmds(cmds, numCmds, totalCmds, droppedPackets, paused);
 }
 
-//---------------------------------------------------------------------------------
-// Purpose: dispatches the server frame job, this calls ExecuteFrameServerJob(),
-//          anything you add in this function will either be before, or after the
-//          server frame job has ran, so ThreadInServerFrameThread() will always
-//          return false here. If you need to run code in the server frame thread,
-//          consider adding your code in ExecuteFrameServerJob().
-// Input  : flFrameTime - 
-//			bRunOverlays - 
-//			bUpdateFrame - 
-//---------------------------------------------------------------------------------
-static void DispatchFrameServerJob(double flFrameTime, bool bRunOverlays, bool bUniformUpdate)
+void RunFrameServer(double flFrameTime, bool bRunOverlays, bool bUniformUpdate)
 {
-	v_DispatchFrameServerJob(flFrameTime, bRunOverlays, bUniformUpdate);
-}
-
-//---------------------------------------------------------------------------------
-// Purpose: executes the server frame job
-// Input  : flFrameTime - 
-//			bRunOverlays - 
-//			bUpdateFrame - 
-//---------------------------------------------------------------------------------
-static void ExecuteFrameServerJob(double flFrameTime, bool bRunOverlays, bool bUpdateFrame)
-{
-	v_ExecuteFrameServerJob(flFrameTime, bRunOverlays, bUpdateFrame);
-
-	LiveAPISystem()->RunFrame();
-	DrawAllDebugOverlays();
+	DrawServerHitboxes(bRunOverlays);
+	v_RunFrameServer(flFrameTime, bRunOverlays, bUniformUpdate);
 }
 
 void VServerGameDLL::Detour(const bool bAttach) const
@@ -293,14 +210,12 @@ void VServerGameDLL::Detour(const bool bAttach) const
 	DetourSetup(&CServerGameDLL__DLLInit, &CServerGameDLL::DLLInit, bAttach);
 	DetourSetup(&CServerGameDLL__OnReceivedSayTextMessage, &CServerGameDLL::OnReceivedSayTextMessage, bAttach);
 	DetourSetup(&CServerGameClients__ProcessUserCmds, CServerGameClients::_ProcessUserCmds, bAttach);
-	DetourSetup(&v_DispatchFrameServerJob, &DispatchFrameServerJob, bAttach);
-	DetourSetup(&v_ExecuteFrameServerJob, &ExecuteFrameServerJob, bAttach);
+	DetourSetup(&v_RunFrameServer, &RunFrameServer, bAttach);
 }
 
 CServerGameDLL* g_pServerGameDLL = nullptr;
 CServerGameClients* g_pServerGameClients = nullptr;
 CServerGameEnts* g_pServerGameEntities = nullptr;
-CServerRandomStream* g_randomStream = nullptr;
 
 // Holds global variables shared between engine and game.
 CGlobalVars* gpGlobals = nullptr;

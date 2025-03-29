@@ -1,5 +1,5 @@
 #pragma once
-#include "game/client/iclientnetworkable.h"
+#include "public/iclientnetworkable.h"
 
 typedef IClientNetworkable* (*CreateClientClassFn)(int entNum, int serialNum);
 typedef IClientNetworkable* (*CreateEventFn)();

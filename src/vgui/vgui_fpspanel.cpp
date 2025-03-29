@@ -8,12 +8,14 @@
 #include "core/stdafx.h"
 #include "tier1/cvar.h"
 #include "vgui/vgui_fpspanel.h"
+#include "vgui/vgui_debugpanel.h"
 
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-static ConVar* HCFPSPanel_Paint(void* thisptr)
+ConVar* HCFPSPanel_Paint(void* thisptr)
 {
+	g_TextOverlay.Update();
 	return CFPSPanel__Paint(thisptr);
 }
 

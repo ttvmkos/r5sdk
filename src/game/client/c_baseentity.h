@@ -1,13 +1,14 @@
 #ifndef C_BASEENTITY_H
 #define C_BASEENTITY_H
 
-#include "mathlib/vector.h"
-#include "vscript/ivscript.h"
-
 #include "game/shared/collisionproperty.h"
 #include "game/shared/particleproperty.h"
 #include "game/shared/predictioncopy.h"
-#include "game/client/icliententity.h"
+
+#include "vscript/ivscript.h"
+#include "icliententity.h"
+
+#include "mathlib/vector.h"
 
 // How many data slots to use when in multiplayer.
 #define MULTIPLAYER_BACKUP 750

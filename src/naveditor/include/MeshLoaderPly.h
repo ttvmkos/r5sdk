@@ -30,8 +30,8 @@ public:
 
 	bool load(const std::string& fileName);
 
-	const rdVec3D* getVerts() const { return m_verts.data(); }
-	const rdVec3D* getNormals() const { return m_normals.data(); }
+	const float* getVerts() const { return m_verts.data(); }
+	const float* getNormals() const { return m_normals.data(); }
 	const int* getTris() const { return m_tris.data(); }
 	int getVertCount() const { return m_vertCount; }
 	int getTriCount() const { return m_triCount; }
@@ -41,9 +41,9 @@ private:
 	
 	std::string m_filename;
 	float m_scale = 1.0;
-	std::vector<rdVec3D> m_verts;
+	std::vector<float> m_verts;
 	std::vector<int>  m_tris;
-	std::vector<rdVec3D> m_normals;
+	std::vector<float> m_normals;
 	int m_vertCount = 0;
 	int m_triCount = 0;
 };

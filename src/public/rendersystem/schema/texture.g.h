@@ -1,7 +1,7 @@
 #ifndef TEXTURE_G_H
 #define TEXTURE_G_H
 #include <rtech/ipakfile.h>
-#include <materialsystem/imaterial.h>
+#include <imaterial.h>
 
 //-----------------------------------------------------------------------------
 // Structure definitions

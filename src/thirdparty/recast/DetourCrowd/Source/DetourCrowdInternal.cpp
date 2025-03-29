@@ -31,27 +31,18 @@ void integrate(dtCrowdAgent* ag, const float dt)
 {
 	// Fake dynamic constraint.
 	const float maxDelta = ag->params.maxAcceleration * dt;
-	rdVec3D dv;
-	rdVsub(&dv, &ag->nvel, &ag->vel);
-	float ds = rdVlen(&dv);
+	float dv[3];
+	rdVsub(dv, ag->nvel, ag->vel);
+	float ds = rdVlen(dv);
 	if (ds > maxDelta)
-		rdVscale(&dv, &dv, maxDelta/ds);
-	rdVadd(&ag->vel, &ag->vel, &dv);
+		rdVscale(dv, dv, maxDelta/ds);
+	rdVadd(ag->vel, ag->vel, dv);
 	
 	// Integrate
-	if (rdVlen(&ag->vel) > 0.0001f)
-		rdVmad(&ag->npos, &ag->npos, &ag->vel, dt);
+	if (rdVlen(ag->vel) > 0.0001f)
+		rdVmad(ag->npos, ag->npos, ag->vel, dt);
 	else
-		rdVset(&ag->vel,0,0,0);
-}
-
-static inline bool checkLinkProximity(const dtCrowdAgent* ag, const float radius)
-{
-	const float distSq = rdVdist2DSqr(&ag->npos, &ag->cornerVerts[(ag->ncorners-1)]);
-	if (distSq < radius*radius)
-		return true;
-
-	return false;
+		rdVset(ag->vel,0,0,0);
 }
 
 bool overOffmeshConnection(const dtCrowdAgent* ag, const float radius)
@@ -59,39 +50,11 @@ bool overOffmeshConnection(const dtCrowdAgent* ag, const float radius)
 	if (!ag->ncorners)
 		return false;
 	
-	const bool offMeshConnection = dtIsStraightPathOffmeshConnection(ag->cornerFlags[ag->ncorners-1]);
+	const bool offMeshConnection = (ag->cornerFlags[ag->ncorners-1] & DT_STRAIGHTPATH_OFFMESH_CONNECTION) ? true : false;
 	if (offMeshConnection)
 	{
-		if (checkLinkProximity(ag, radius))
-			return true;
-	}
-	
-	return false;
-}
-
-bool overTraversePortal(const dtCrowdAgent* ag, const dtNavMeshQuery* query, const dtQueryFilter* filter, const float radius)
-{
-	if (!ag->ncorners)
-		return false;
-	
-	const unsigned char curJump = ag->cornerJumps[ag->ncorners-1];
-	const bool traversePortal = curJump != DT_NULL_TRAVERSE_TYPE;
-
-	if (traversePortal)
-	{
-		// note(kawe): if this asserts, then off-mesh connection
-		// links made it in the path which should never happen.
-		rdAssert(!dtIsTraverseTypeOffMesh(curJump));
-
-		float distToWall = 0;
-		rdVec3D hitPos;
-		rdVec3D hitNormal;
-
-		if (dtStatusFailed(query->findDistanceToWall(ag->cornerPolys[(ag->ncorners - 1)],
-			&ag->npos, radius, filter, &distToWall, &hitPos, &hitNormal)))
-			return false;
-
-		if (distToWall < radius)
+		const float distSq = rdVdist2DSqr(ag->npos, &ag->cornerVerts[(ag->ncorners-1)*3]);
+		if (distSq < radius*radius)
 			return true;
 	}
 	
@@ -103,53 +66,53 @@ float getDistanceToGoal(const dtCrowdAgent* ag, const float range)
 	if (!ag->ncorners)
 		return range;
 	
-	const bool endOfPath = dtIsStraightPathEnd(ag->cornerFlags[ag->ncorners-1]);
+	const bool endOfPath = (ag->cornerFlags[ag->ncorners-1] & DT_STRAIGHTPATH_END) ? true : false;
 	if (endOfPath)
-		return rdMin(rdVdist2D(&ag->npos, &ag->cornerVerts[(ag->ncorners-1)]), range);
+		return rdMin(rdVdist2D(ag->npos, &ag->cornerVerts[(ag->ncorners-1)*3]), range);
 	
 	return range;
 }
 
-void calcSmoothSteerDirection(const dtCrowdAgent* ag, rdVec3D* dir)
+void calcSmoothSteerDirection(const dtCrowdAgent* ag, float* dir)
 {
 	if (!ag->ncorners)
 	{
-		dir->init(0,0,0);
+		rdVset(dir, 0,0,0);
 		return;
 	}
 	
 	const int ip0 = 0;
 	const int ip1 = rdMin(1, ag->ncorners-1);
-	const rdVec3D* p0 = &ag->cornerVerts[ip0];
-	const rdVec3D* p1 = &ag->cornerVerts[ip1];
+	const float* p0 = &ag->cornerVerts[ip0*3];
+	const float* p1 = &ag->cornerVerts[ip1*3];
 	
-	rdVec3D dir0, dir1;
-	rdVsub(&dir0, p0, &ag->npos);
-	rdVsub(&dir1, p1, &ag->npos);
-	dir0.z = 0;
-	dir1.z = 0;
+	float dir0[3], dir1[3];
+	rdVsub(dir0, p0, ag->npos);
+	rdVsub(dir1, p1, ag->npos);
+	dir0[2] = 0;
+	dir1[2] = 0;
 	
-	float len0 = rdVlen(&dir0);
-	float len1 = rdVlen(&dir1);
+	float len0 = rdVlen(dir0);
+	float len1 = rdVlen(dir1);
 	if (len1 > 0.001f)
-		rdVscale(&dir1,&dir1,1.0f/len1);
+		rdVscale(dir1,dir1,1.0f/len1);
 	
-	dir->x = dir0.x - dir1.x*len0*0.5f;
-	dir->y = dir0.y - dir1.y*len0*0.5f;
-	dir->z = 0;
+	dir[0] = dir0[0] - dir1[0]*len0*0.5f;
+	dir[1] = dir0[1] - dir1[1]*len0*0.5f;
+	dir[2] = 0;
 	
 	rdVnormalize(dir);
 }
 
-void calcStraightSteerDirection(const dtCrowdAgent* ag, rdVec3D* dir)
+void calcStraightSteerDirection(const dtCrowdAgent* ag, float* dir)
 {
 	if (!ag->ncorners)
 	{
-		dir->init(0,0,0);
+		rdVset(dir, 0,0,0);
 		return;
 	}
-	rdVsub(dir, &ag->cornerVerts[0], &ag->npos);
-	dir->z = 0;
+	rdVsub(dir, &ag->cornerVerts[0], ag->npos);
+	dir[2] = 0;
 	rdVnormalize(dir);
 }
 
@@ -193,7 +156,7 @@ int addNeighbour(const int idx, const float dist,
 	return rdMin(nneis+1, maxNeis);
 }
 
-int getNeighbours(const rdVec3D* pos, const float height, const float range,
+int getNeighbours(const float* pos, const float height, const float range,
 						 const dtCrowdAgent* skip, dtCrowdNeighbour* result, const int maxResult,
 						 dtCrowdAgent** agents, const int /*nagents*/, dtProximityGrid* grid)
 {
@@ -201,8 +164,8 @@ int getNeighbours(const rdVec3D* pos, const float height, const float range,
 	
 	static const int MAX_NEIS = 32;
 	unsigned short ids[MAX_NEIS];
-	int nids = grid->queryItems(pos->x-range, pos->y-range,
-								pos->x+range, pos->y+range,
+	int nids = grid->queryItems(pos[0]-range, pos[1]-range,
+								pos[0]+range, pos[1]+range,
 								ids, MAX_NEIS);
 	
 	for (int i = 0; i < nids; ++i)
@@ -212,12 +175,12 @@ int getNeighbours(const rdVec3D* pos, const float height, const float range,
 		if (ag == skip) continue;
 		
 		// Check for overlap.
-		rdVec3D diff;
-		rdVsub(&diff, pos, &ag->npos);
-		if (rdMathFabsf(diff.z) >= (height+ag->params.height)/2.0f)
+		float diff[3];
+		rdVsub(diff, pos, ag->npos);
+		if (rdMathFabsf(diff[2]) >= (height+ag->params.height)/2.0f)
 			continue;
-		diff.z = 0;
-		const float distSqr = rdVlenSqr(&diff);
+		diff[2] = 0;
+		const float distSqr = rdVlenSqr(diff);
 		if (distSqr > rdSqr(range))
 			continue;
 		

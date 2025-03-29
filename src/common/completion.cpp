@@ -4,8 +4,9 @@
 //
 //=============================================================================//
 #include "core/stdafx.h"
-#include "tier1/strtools.h"
+#include "public/iconvar.h"
 #include "engine/cmodel_bsp.h"
+#include "tier1/strtools.h"
 #include "completion.h"
 #include "vstdlib/autocompletefilelist.h"
 

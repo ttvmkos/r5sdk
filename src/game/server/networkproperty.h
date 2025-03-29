@@ -11,9 +11,9 @@
 #pragma once
 #endif
 
-#include "game/server/iservernetworkable.h"
-#include "server_class.h"
-#include "edict.h"
+#include "public/iservernetworkable.h"
+#include "public/server_class.h"
+#include "public/edict.h"
 #include "game/shared/predictioncopy.h"
 
 class CServerNetworkProperty : IServerNetworkable

@@ -53,7 +53,6 @@ ConVar* mp_gamemode                        = nullptr;
 #ifndef DEDICATED
 ConVar* r_visualizetraces                  = nullptr;
 ConVar* r_visualizetraces_duration         = nullptr;
-ConVar* r_drawvgui                         = nullptr;
 #endif // !DEDICATED
 
 ConVar* stream_overlay                     = nullptr;
@@ -77,7 +76,6 @@ ConVar* name_cvar                          = nullptr;
 // SERVER                                                                     |
 #ifndef CLIENT_DLL
 ConVar* ai_script_nodes_draw               = nullptr;
-ConVar* navmesh_move_along_surface_asserts = nullptr;
 
 ConVar* sv_forceChatToTeamOnly             = nullptr;
 
@@ -105,7 +103,6 @@ ConVar* playerframetimekick_decayrate      = nullptr;
 ConVar* player_userCmdsQueueWarning        = nullptr;
 ConVar* player_disallow_negative_frametime = nullptr;
 
-ConVar* script_server_fps                  = nullptr;
 #endif // !CLIENT_DLL
 ConVar* sv_cheats                          = nullptr;
 ConVar* sv_visualizetraces                 = nullptr;
@@ -124,10 +121,6 @@ ConVar* discord_updatePresence = nullptr;
 ConVar* gamepad_custom_enabled             = nullptr;
 ConVar* gamepad_custom_assist_on           = nullptr;
 ConVar* gamepad_look_curve                 = nullptr;
-
-ConVar* particle_overlay                   = nullptr;
-ConVar* particle_overlay_old               = nullptr;
-ConVar* particle_overlay_list_tally        = nullptr;
 #endif // !DEDICATED
 //-----------------------------------------------------------------------------
 // FILESYSTEM                                                                 |
@@ -160,7 +153,6 @@ void ConVar_InitShipped(void)
 {
 #ifndef CLIENT_DLL
 	ai_script_nodes_draw             = g_pCVar->FindVar("ai_script_nodes_draw");
-	navmesh_move_along_surface_asserts = g_pCVar->FindVar("navmesh_move_along_surface_asserts");
 	bhit_enable                      = g_pCVar->FindVar("bhit_enable");
 #endif // !CLIENT_DLL
 	developer                        = g_pCVar->FindVar("developer");
@@ -192,7 +184,6 @@ void ConVar_InitShipped(void)
 	in_syncRT                        = g_pCVar->FindVar("in_syncRT");
 	r_visualizetraces                = g_pCVar->FindVar("r_visualizetraces");
 	r_visualizetraces_duration       = g_pCVar->FindVar("r_visualizetraces_duration");
-	r_drawvgui                       = g_pCVar->FindVar("r_drawvgui");
 #endif // !DEDICATED
 	staticProp_no_fade_scalar        = g_pCVar->FindVar("staticProp_no_fade_scalar");
 	staticProp_gather_size_weight    = g_pCVar->FindVar("staticProp_gather_size_weight");
@@ -212,10 +203,6 @@ void ConVar_InitShipped(void)
 	gamepad_custom_enabled           = g_pCVar->FindVar("gamepad_custom_enabled");
 	gamepad_custom_assist_on         = g_pCVar->FindVar("gamepad_custom_assist_on");
 	gamepad_look_curve               = g_pCVar->FindVar("gamepad_look_curve");
-
-	particle_overlay                 = g_pCVar->FindVar("particle_overlay");
-	particle_overlay_old             = g_pCVar->FindVar("particle_overlay_old");
-	particle_overlay_list_tally      = g_pCVar->FindVar("particle_overlay_list_tally");
 #endif // !DEDICATED
 	mp_gamemode                      = g_pCVar->FindVar("mp_gamemode");
 	ip_cvar                          = g_pCVar->FindVar("ip");
@@ -261,8 +248,6 @@ void ConVar_InitShipped(void)
 	player_userCmdsQueueWarning = g_pCVar->FindVar("player_userCmdsQueueWarning");
 	player_disallow_negative_frametime = g_pCVar->FindVar("player_disallow_negative_frametime");
 
-	script_server_fps = g_pCVar->FindVar("script_server_fps");
-
 	sv_updaterate_sp->RemoveFlags(FCVAR_DEVELOPMENTONLY);
 	sv_updaterate_mp->RemoveFlags(FCVAR_DEVELOPMENTONLY);
 
@@ -274,11 +259,7 @@ void ConVar_InitShipped(void)
 
 	sv_single_core_dedi->RemoveFlags(FCVAR_DEVELOPMENTONLY);
 
-	// This gets used for division in code, make sure its never zero
-	// to prevent division by zero since this cvar doesn't have a min
-	// and code doesn't check for it either.
-	script_server_fps->SetMin(0.0001f);
-
+	ai_script_nodes_draw->SetValue(-1);
 	bhit_enable->SetValue(0);
 #endif // !CLIENT_DLL
 #ifndef DEDICATED
@@ -376,7 +357,6 @@ static ConCommand bhit("bhit", BHit_f, "Bullet-hit trajectory debug", FCVAR_DEVE
 
 #ifndef DEDICATED
 static ConCommand line("line", Line_f, "Draw a debug line", FCVAR_DEVELOPMENTONLY | FCVAR_CHEAT);
-static ConCommand triangle("triangle", Triangle_f, "Draw a debug triangle", FCVAR_DEVELOPMENTONLY | FCVAR_CHEAT);
 static ConCommand sphere("sphere", Sphere_f, "Draw a debug sphere", FCVAR_DEVELOPMENTONLY | FCVAR_CHEAT);
 static ConCommand capsule("capsule", Capsule_f, "Draw a debug capsule", FCVAR_DEVELOPMENTONLY | FCVAR_CHEAT);
 #endif //!DEDICATED

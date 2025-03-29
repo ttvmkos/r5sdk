@@ -137,14 +137,12 @@ dtNode* dtNodePool::getNode(dtPolyRef id, unsigned char state)
 	
 	// Init node
 	node = &m_nodes[i];
-	node->pos.init(0,0,0);
 	node->pidx = 0;
 	node->cost = 0;
 	node->total = 0;
 	node->id = id;
 	node->state = state;
 	node->flags = 0;
-	node->jump = DT_NULL_TRAVERSE_TYPE;
 	
 	m_next[i] = m_first[bucket];
 	m_first[bucket] = i;

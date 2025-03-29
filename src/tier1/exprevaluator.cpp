@@ -7,7 +7,8 @@
 //				e.g: ( $1 || ( $FOO || $WHATEVER ) && !$BAR )
 //===========================================================================//
 
-#include "vstdlib/ikeyvaluessystem.h"
+#include <ctype.h>
+#include "ikeyvaluessystem.h"
 #include "tier1/exprevaluator.h"
 #include "tier1/convar.h"
 #include "tier1/fmtstr.h"

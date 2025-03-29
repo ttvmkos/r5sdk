@@ -1,5 +1,5 @@
-#ifndef TIER0_ICOMMANDLINE_H
-#define TIER0_ICOMMANDLINE_H
+#ifndef ICOMMANDLINE_H
+#define ICOMMANDLINE_H
 
 abstract_class ICommandLine
 {
@@ -27,4 +27,4 @@ public:
 	virtual void CleanUpParms(void) = 0;
 };
 
-#endif // TIER0_ICOMMANDLINE_H
+#endif // ICOMMANDLINE_H

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vstdlib/ikeyvaluessystem.h"
+#include "public/ikeyvaluessystem.h"
 #include "tier1/memstack.h"
 #include "tier1/mempool.h"
 #include "tier1/utlvector.h"

@@ -11,11 +11,9 @@
 #pragma once
 #endif
 
-#include "game/shared/shared_activity.h"
 #include "ai_navtypes.h"
 
 class CAI_Path;
-class CBaseEntity;
 
 //-------------------------------------
 
@@ -130,11 +128,6 @@ public:
 private:
 	IAI_MovementSink* m_pProxied;
 };
-
-inline bool IsMoveBlocked(const AIMoveResult_t moveResult)
-{
-	return (moveResult < AIMR_OK);
-}
 
 //=============================================================================
 

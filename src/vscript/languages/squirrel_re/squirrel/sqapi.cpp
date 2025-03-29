@@ -55,17 +55,6 @@ SQRESULT sq_getfloat(HSQUIRRELVM v, SQInteger idx, SQFloat* f)
 }
 
 //---------------------------------------------------------------------------------
-SQRESULT sq_getvector(HSQUIRRELVM v, SQInteger idx, const SQVector3D** w)
-{
-	SQObjectPtr& o = stack_get(v, idx);
-	if (sq_isvector(o)) {
-		*w = _vector(o);
-		return SQ_OK;
-	}
-	return SQ_ERROR;
-}
-
-//---------------------------------------------------------------------------------
 SQRESULT sq_getbool(HSQUIRRELVM v, SQInteger idx, SQBool* b)
 {
 	SQObjectPtr& o = stack_get(v, idx);
@@ -156,12 +145,6 @@ void sq_pushinteger(HSQUIRRELVM v, SQInteger val)
 void sq_pushfloat(HSQUIRRELVM v, SQFloat n)
 {
 	v->Push(n);
-}
-
-//---------------------------------------------------------------------------------
-void sq_pushvector(HSQUIRRELVM v, const SQVector3D* w)
-{
-	v->Push(w);
 }
 
 //---------------------------------------------------------------------------------

@@ -50,8 +50,8 @@ protected:
 	unsigned int m_tileMeshDrawFlags;
 	unsigned int m_tileCol;
 
-	rdVec3D m_lastBuiltTileBmin;
-	rdVec3D m_lastBuiltTileBmax;
+	float m_lastBuiltTileBmin[3];
+	float m_lastBuiltTileBmax[3];
 
 	double m_totalBuildTimeMs;
 

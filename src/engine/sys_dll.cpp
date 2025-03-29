@@ -15,12 +15,10 @@
 #include "ebisusdk/EbisuSDK.h"
 #include "engine/cmodel_bsp.h"
 #include "engine/sys_engine.h"
-#include "engine/sys_dll.h"
 #include "engine/sys_dll2.h"
 #include "engine/sdk_dll.h"
 #include "engine/host_cmd.h"
 #include "engine/enginetrace.h"
-#include "engine/debugoverlay.h"
 #ifndef CLIENT_DLL
 #include "engine/server/server.h"
 #include "engine/server/sv_main.h"
@@ -28,12 +26,15 @@
 #include "game/server/gameinterface.h"
 #endif // !CLIENT_DLL
 #ifndef DEDICATED
+#include "client/cdll_engine_int.h"
 #include "game/client/cliententitylist.h"
 #include "gameui/IConsole.h"
 #include "windows/id3dx.h"
 #include "windows/input.h"
 #endif // !DEDICATED
+#include "public/idebugoverlay.h"
 #include "vstdlib/keyvaluessystem.h"
+#include "engine/sys_dll.h"
 
 //-----------------------------------------------------------------------------
 // Purpose: 

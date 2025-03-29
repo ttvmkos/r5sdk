@@ -18,15 +18,16 @@
 
 #ifndef DEBUGDRAW_H
 #define DEBUGDRAW_H
-#include "Shared/Include/SharedCommon.h"
+
+// Some math headers don't have PI defined.
+static const float DU_PI = 3.14159265f;
 
 enum duDebugDrawPrimitives
 {
-	DU_DRAW_UNDEFINED,
 	DU_DRAW_POINTS,
 	DU_DRAW_LINES,
 	DU_DRAW_TRIS,
-	DU_DRAW_QUADS,
+	DU_DRAW_QUADS,	
 };
 
 /// Abstract debug draw interface.
@@ -41,12 +42,12 @@ struct duDebugDraw
 	/// Begin drawing primitives.
 	///  @param prim [in] primitive type to draw, one of rcDebugDrawPrimitives.
 	///  @param size [in] size of a primitive, applies to point size and line width only.
-	virtual void begin(const duDebugDrawPrimitives prim, const float size = 1.0f, const rdVec3D* offset = 0) = 0;
+	virtual void begin(const duDebugDrawPrimitives prim, const float size = 1.0f, const float* offset = 0) = 0;
 
 	/// Submit a vertex
 	///  @param pos [in] position of the verts.
 	///  @param color [in] color of the verts.
-	virtual void vertex(const rdVec3D* pos, unsigned int color) = 0;
+	virtual void vertex(const float* pos, unsigned int color) = 0;
 
 	/// Submit a vertex
 	///  @param x,y,z [in] position of the verts.
@@ -56,7 +57,7 @@ struct duDebugDraw
 	/// Submit a vertex
 	///  @param pos [in] position of the verts.
 	///  @param color [in] color of the verts.
-	virtual void vertex(const rdVec3D* pos, unsigned int color, const rdVec2D* uv) = 0;
+	virtual void vertex(const float* pos, unsigned int color, const float* uv) = 0;
 	
 	/// Submit a vertex
 	///  @param x,y,z [in] position of the verts.
@@ -126,46 +127,46 @@ inline unsigned int duTransCol(unsigned int c, unsigned int a)
 }
 
 const unsigned char* duSetBoxVerts(float minx, float miny, float minz, float maxx,
-								   float maxy, float maxz, rdVec3D* verts);
+								   float maxy, float maxz, float* verts);
 
 void duCalcBoxColors(unsigned int* colors, unsigned int colTop, unsigned int colSide);
 
 void duDebugDrawCylinderWire(struct duDebugDraw* dd, float minx, float miny, float minz,
 							 float maxx, float maxy, float maxz, unsigned int col,
-							 const float lineWidth, const rdVec3D* offset);
+							 const float lineWidth, const float* offset);
 
 void duDebugDrawBoxWire(struct duDebugDraw* dd, float minx, float miny, float minz,
 						float maxx, float maxy, float maxz, unsigned int col,
-						const float lineWidth, const rdVec3D* offset);
+						const float lineWidth, const float* offset);
 
 void duDebugDrawArc(struct duDebugDraw* dd, const float x0, const float y0, const float z0,
 					const float x1, const float y1, const float z1, const float h,
 					const float as0, const float as1, unsigned int col,
-					const float lineWidth, const rdVec3D* offset);
+					const float lineWidth, const float* offset);
 
 void duDebugDrawArrow(struct duDebugDraw* dd, const float x0, const float y0, const float z0,
 					  const float x1, const float y1, const float z1,
 					  const float as0, const float as1, unsigned int col,
-					  const float lineWidth, const rdVec3D* offset);
+					  const float lineWidth, const float* offset);
 
 void duDebugDrawCircle(struct duDebugDraw* dd, const float x, const float y, const float z,
-					   const float r, unsigned int col, const float lineWidth, const rdVec3D* offset);
+					   const float r, unsigned int col, const float lineWidth, const float* offset);
 
 void duDebugDrawCross(struct duDebugDraw* dd, const float x, const float y, const float z,
-					  const float size, unsigned int col, const float lineWidth, const rdVec3D* offset);
+					  const float size, unsigned int col, const float lineWidth, const float* offset);
 
 void duDebugDrawBox(struct duDebugDraw* dd, float minx, float miny, float minz,
-					float maxx, float maxy, float maxz, const unsigned int* fcol, const rdVec3D* offset);
+					float maxx, float maxy, float maxz, const unsigned int* fcol, const float* offset);
 
 void duDebugDrawCylinder(struct duDebugDraw* dd, float minx, float miny, float minz,
-						 float maxx, float maxy, float maxz, unsigned int col, const rdVec3D* offset);
+						 float maxx, float maxy, float maxz, unsigned int col, const float* offset);
 
 void duDebugDrawGridXZ(struct duDebugDraw* dd, const float ox, const float oy, const float oz,
 					   const int w, const int h, const float size,
-					   const unsigned int col, const float lineWidth, const rdVec3D* offset);
+					   const unsigned int col, const float lineWidth, const float* offset);
 void duDebugDrawGridXY(struct duDebugDraw* dd, const float ox, const float oy, const float oz,
 	const int w, const int h, const float size,
-	const unsigned int col, const float lineWidth, const rdVec3D* offset);
+	const unsigned int col, const float lineWidth, const float* offset);
 
 // Versions without begin/end, can be used to draw multiple primitives.
 void duAppendCylinderWire(struct duDebugDraw* dd, float minx, float miny, float minz,
@@ -200,7 +201,7 @@ void duAppendCylinder(struct duDebugDraw* dd, float minx, float miny, float minz
 
 class duDisplayList : public duDebugDraw
 {
-	rdVec3D* m_pos;
+	float* m_pos;
 	unsigned int* m_color;
 
 	int m_size;
@@ -209,7 +210,7 @@ class duDisplayList : public duDebugDraw
 	duDebugDrawPrimitives m_prim;
 	float m_primSize;
 
-	rdVec3D m_drawOffset;
+	float m_drawOffset[3];
 	bool m_depthMask;
 	
 	void resize(int cap);
@@ -218,9 +219,9 @@ public:
 	duDisplayList(int cap = 512);
 	~duDisplayList();
 	virtual void depthMask(bool state);
-	virtual void begin(const duDebugDrawPrimitives prim, const float size = 1.0f, const rdVec3D* offset = 0);
+	virtual void begin(const duDebugDrawPrimitives prim, const float size = 1.0f, const float* offset = 0);
 	virtual void vertex(const float x, const float y, const float z, unsigned int color);
-	virtual void vertex(const rdVec3D* pos, unsigned int color);
+	virtual void vertex(const float* pos, unsigned int color);
 	virtual void end();
 	void clear();
 	void draw(struct duDebugDraw* dd);

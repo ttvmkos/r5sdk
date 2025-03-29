@@ -1,7 +1,7 @@
 #ifndef IFILE_H
 #define IFILE_H
 
-#include "filesystem/ifilesystem.h"
+#include "public/ifilesystem.h"
 
 //-----------------------------------------------------------------------------
 // Per-file worker classes

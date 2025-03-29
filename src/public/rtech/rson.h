@@ -2,6 +2,7 @@
 #include "mathlib/color.h"
 #include "tier0/tslist.h"
 #include "tier1/utlbuffer.h"
+#include "public/ifilesystem.h"
 #include "filesystem/filesystem.h"
 
 class RSON

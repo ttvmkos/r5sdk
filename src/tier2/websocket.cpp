@@ -282,7 +282,7 @@ bool CWebSocket::ConnContext_s::Process(const double queryTime)
 //-----------------------------------------------------------------------------
 // Purpose: set parameters for this socket
 //-----------------------------------------------------------------------------
-void CWebSocket::ConnContext_s::SetParams(const ConnParams_s& params) const
+void CWebSocket::ConnContext_s::SetParams(const ConnParams_s& params)
 {
 	Assert(webSocket, "Can't set parameters on a NULL instance!");
 

@@ -174,7 +174,7 @@ public:
 		}
 	}
 };
-GLCheckerTexture g_checkerTexture;
+GLCheckerTexture g_tex;
 
 
 void DebugDrawGL::depthMask(bool state)
@@ -187,7 +187,7 @@ void DebugDrawGL::texture(bool state)
 	if (state)
 	{
 		glEnable(GL_TEXTURE_2D);
-		g_checkerTexture.bind();
+		g_tex.bind();
 	}
 	else
 	{
@@ -195,7 +195,7 @@ void DebugDrawGL::texture(bool state)
 	}
 }
 
-void DebugDrawGL::begin(const duDebugDrawPrimitives prim, const float size, const rdVec3D* offset)
+void DebugDrawGL::begin(const duDebugDrawPrimitives prim, const float size, const float* offset)
 {
 	switch (prim)
 	{
@@ -213,45 +213,43 @@ void DebugDrawGL::begin(const duDebugDrawPrimitives prim, const float size, cons
 		case DU_DRAW_QUADS:
 			glBegin(GL_QUADS);
 			break;
-
-		default:
-			rdAssert(0);
-			break;
 	};
 
 	if (offset)
-		rdVcopy(&m_drawOffset,offset);
+		rdVcopy(m_drawOffset,offset);
 }
 
-void DebugDrawGL::vertex(const rdVec3D* pos, unsigned int color)
+void DebugDrawGL::vertex(const float* pos, unsigned int color)
 {
 	glColor4ubv((GLubyte*)&color);
 
-	rdVec3D opos;
-	rdVadd(&opos,pos,&m_drawOffset);
+	float opos[3];
+	rdVadd(opos,pos,m_drawOffset);
 
-	glVertex3fv((GLfloat*)&opos);
+	glVertex3fv(opos);
 }
 
 void DebugDrawGL::vertex(const float x, const float y, const float z, unsigned int color)
 {
 	glColor4ubv((GLubyte*)&color);
 
-	rdVec3D opos(x,y,z);
-	rdVadd(&opos,&opos,&m_drawOffset);
+	float opos[3];
 
-	glVertex3fv((GLfloat*)&opos);
+	rdVset(opos, x,y,z);
+	rdVadd(opos,opos,m_drawOffset);
+
+	glVertex3fv(opos);
 }
 
-void DebugDrawGL::vertex(const rdVec3D* pos, unsigned int color, const rdVec2D* uv)
+void DebugDrawGL::vertex(const float* pos, unsigned int color, const float* uv)
 {
 	glColor4ubv((GLubyte*)&color);
-	glTexCoord2fv((GLfloat*)uv);
+	glTexCoord2fv(uv);
 
-	rdVec3D opos;
-	rdVadd(&opos,pos,&m_drawOffset);
+	float opos[3];
+	rdVadd(opos,pos,m_drawOffset);
 
-	glVertex3fv((GLfloat*)&opos);
+	glVertex3fv(opos);
 }
 
 void DebugDrawGL::vertex(const float x, const float y, const float z, unsigned int color, const float u, const float v)
@@ -259,10 +257,12 @@ void DebugDrawGL::vertex(const float x, const float y, const float z, unsigned i
 	glColor4ubv((GLubyte*)&color);
 	glTexCoord2f(u,v);
 
-	rdVec3D opos(x,y,z);
-	rdVadd(&opos,&opos,&m_drawOffset);
+	float opos[3];
 
-	glVertex3fv((GLfloat*)&opos);
+	rdVset(opos, x,y,z);
+	rdVadd(opos,opos,m_drawOffset);
+
+	glVertex3fv(opos);
 }
 
 void DebugDrawGL::end()
@@ -271,7 +271,7 @@ void DebugDrawGL::end()
 	glLineWidth(1.0f);
 	glPointSize(1.0f);
 
-	m_drawOffset.init(0.0f,0.0f,0.0f);
+	rdVset(m_drawOffset, 0.0f,0.0f,0.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -328,3 +328,5 @@ bool FileIO::read(void* ptr, const rdSizeType size)
 	size_t readLen = fread(ptr, size, 1, m_fp);
 	return readLen == 1;
 }
+
+

@@ -8,12 +8,11 @@
 #include "core/stdafx.h"
 #include "tier0/frametask.h"
 #include "engine/host.h"
-#include "engine/debugoverlay.h"
 #ifndef DEDICATED
 #include "windows/id3dx.h"
 #include "geforce/reflex.h"
 #include "vgui/vgui_debugpanel.h"
-#include "materialsystem/cmaterialsystem.h"
+#include <materialsystem/cmaterialsystem.h>
 #endif // !DEDICATED
 
 CCommonHostState* g_pCommonHostState = nullptr;
@@ -76,11 +75,7 @@ void _Host_RunFrame(void* unused, float time)
 	g_TextOverlay.ShouldDraw(time);
 #endif // !DEDICATED
 
-#ifdef DEDICATED
-	DebugOverlay_HandleDecayed();
-#endif // DEDICATED
-
-	v_Host_RunFrame(unused, time);
+	return v_Host_RunFrame(unused, time);
 }
 
 void Host_Error(const char* const error, ...)

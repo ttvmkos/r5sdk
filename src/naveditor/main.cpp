@@ -26,9 +26,8 @@
 #include "NavEditor/Include/Editor_SoloMesh.h"
 #include "NavEditor/Include/Editor_TileMesh.h"
 #include "NavEditor/Include/Editor_Debug.h"
-#include "NavEditor/Include/DroidSans.h"
-#include "NavEditor/Include/Icon.h"
-#include "NavEditor/Include/CameraUtils.h"
+#include "NavEditor/include/DroidSans.h"
+#include "NavEditor/include/Icon.h"
 
 using std::string;
 using std::vector;
@@ -157,21 +156,21 @@ void auto_load(const char* path, BuildContext& ctx, Editor*& editor,InputGeom*& 
 	}
 }
 
-static void update_camera(const rdVec3D* bmin, const rdVec3D* bmax, rdVec3D* cameraPos, rdVec2D* cameraEulers,float& camr)
+void update_camera(const float* bmin, const float* bmax,float* cameraPos,float* cameraEulers,float& camr)
 {
 	// Reset camera and fog to match the mesh bounds.
 	if (bmin && bmax)
 	{
-		camr = sqrtf(rdSqr(bmax->x - bmin->x) +
-					 rdSqr(bmax->y - bmin->y) +
-					 rdSqr(bmax->z - bmin->z)) / 2;
-		cameraPos->x = (bmax->x + bmin->x) / 2 + camr;
-		cameraPos->y = (bmax->y + bmin->y) / 2 + camr;
-		cameraPos->z = (bmax->z + bmin->z) / 2 + camr;
+		camr = sqrtf(rdSqr(bmax[0] - bmin[0]) +
+			rdSqr(bmax[1] - bmin[1]) +
+			rdSqr(bmax[2] - bmin[2])) / 2;
+		cameraPos[0] = (bmax[0] + bmin[0]) / 2 + camr;
+		cameraPos[1] = (bmax[1] + bmin[1]) / 2 + camr;
+		cameraPos[2] = (bmax[2] + bmin[2]) / 2 + camr;
 		camr *= 3;
 	}
-	cameraEulers->x = 45;
-	cameraEulers->y = -125;
+	cameraEulers[0] = 45;
+	cameraEulers[1] = -125;
 	glFogf(GL_FOG_START, camr * 0.1f);
 	glFogf(GL_FOG_END, camr * 1.25f);
 }
@@ -497,17 +496,17 @@ int not_main(int argc, char** argv)
 		}
 	}
 
-	rdVec2D cameraEulers(45, 45);
-	rdVec3D cameraPos(0, 0, 0);
+	float cameraEulers[] = {45, 45};
+	float cameraPos[] = {0, 0, 0};
 	float camr = 1000;
-	rdVec2D origCameraEulers(0, 0); // Used to compute rotational changes across frames.
+	float origCameraEulers[] = {0, 0}; // Used to compute rotational changes across frames.
 	
 	vector<string> files;
 	const string meshesFolder = "Levels";
 	string meshName;
 	const string testCasesFolder = "TestCases";
 	
-	rdVec3D markerPosition(0, 0, 0);
+	float markerPosition[3] = {0, 0, 0};
 	bool markerPositionSet = false;
 	
 	InputGeom* geom = nullptr;
@@ -528,8 +527,8 @@ int not_main(int argc, char** argv)
 		auto_load(autoLoad, ctx, editor, geom, meshName);
 		if (geom || editor)
 		{
-			const rdVec3D* bmin = 0;
-			const rdVec3D* bmax = 0;
+			const float* bmin = 0;
+			const float* bmax = 0;
 			if (geom)
 			{
 				bmin = geom->getOriginalNavMeshBoundsMin();
@@ -537,7 +536,7 @@ int not_main(int argc, char** argv)
 			}
 			if (!commandLine)
 			{
-				update_camera(bmin, bmax, &cameraPos, &cameraEulers, camr);
+				update_camera(bmin, bmax, cameraPos, cameraEulers, camr);
 			}
 		}
 		if (argc > 2)
@@ -560,8 +559,8 @@ int not_main(int argc, char** argv)
 
 	float moveFront = 0.0f, moveBack = 0.0f, moveLeft = 0.0f, moveRight = 0.0f, moveUp = 0.0f, moveDown = 0.0f;
 
-	rdVec3D rayStart(0.0f,0.0f,0.0f);
-	rdVec3D rayEnd(0.0f,0.0f,0.0f);
+	float rayStart[3] = { 0.0f };
+	float rayEnd[3] = { 0.0f };
 	float scrollSide = 0.0f;
 	float scrollZoom = 0.0f;
 	bool rotate = false;
@@ -637,8 +636,8 @@ int not_main(int argc, char** argv)
 							BuildSettings settings;
 							memset(&settings, 0, sizeof(settings));
 
-							settings.navMeshBMin = *geom->getNavMeshBoundsMin();
-							settings.navMeshBMax = *geom->getNavMeshBoundsMax();
+							rdVcopy(settings.navMeshBMin, geom->getNavMeshBoundsMin());
+							rdVcopy(settings.navMeshBMax, geom->getNavMeshBoundsMax());
 
 							editor->collectSettings(settings);
 
@@ -792,7 +791,7 @@ int not_main(int argc, char** argv)
 			float hitTime;
 			int volumeIndex;
 
-			bool hit = geom->raycastMesh(&rayStart, &rayEnd, TRACE_ALL, &volumeIndex, &hitTime);
+			bool hit = geom->raycastMesh(rayStart, rayEnd, TRACE_ALL, &volumeIndex, &hitTime);
 			
 			if (hit)
 			{
@@ -800,17 +799,17 @@ int not_main(int argc, char** argv)
 				{
 					// Marker
 					markerPositionSet = true;
-					markerPosition.x = rayStart.x + (rayEnd.x - rayStart.x) * hitTime;
-					markerPosition.y = rayStart.y + (rayEnd.y - rayStart.y) * hitTime;
-					markerPosition.z = rayStart.z + (rayEnd.z - rayStart.z) * hitTime;
+					markerPosition[0] = rayStart[0] + (rayEnd[0] - rayStart[0]) * hitTime;
+					markerPosition[1] = rayStart[1] + (rayEnd[1] - rayStart[1]) * hitTime;
+					markerPosition[2] = rayStart[2] + (rayEnd[2] - rayStart[2]) * hitTime;
 				}
 				else
 				{
-					rdVec3D pos;
-					pos.x = rayStart.x + (rayEnd.x - rayStart.x) * hitTime;
-					pos.y = rayStart.y + (rayEnd.y - rayStart.y) * hitTime;
-					pos.z = rayStart.z + (rayEnd.z - rayStart.z) * hitTime;
-					editor->handleClick(&rayStart, &pos, volumeIndex, processHitTestShift);
+					float pos[3];
+					pos[0] = rayStart[0] + (rayEnd[0] - rayStart[0]) * hitTime;
+					pos[1] = rayStart[1] + (rayEnd[1] - rayStart[1]) * hitTime;
+					pos[2] = rayStart[2] + (rayEnd[2] - rayStart[2]) * hitTime;
+					editor->handleClick(rayStart, pos, volumeIndex, processHitTestShift);
 				}
 			}
 			else
@@ -920,15 +919,15 @@ int not_main(int argc, char** argv)
 			scrollSide = 0.0f;
 			scrollZoom = 0.0f;
 			
-			cameraPos.x += movex * static_cast<float>(modelviewMatrix[0]);
-			cameraPos.y += movex * static_cast<float>(modelviewMatrix[4]);
-			cameraPos.z += movex * static_cast<float>(modelviewMatrix[8]);
+			cameraPos[0] += movex * static_cast<float>(modelviewMatrix[0]);
+			cameraPos[1] += movex * static_cast<float>(modelviewMatrix[4]);
+			cameraPos[2] += movex * static_cast<float>(modelviewMatrix[8]);
 
-			cameraPos.x += movey * static_cast<float>(modelviewMatrix[2]);
-			cameraPos.y += movey * static_cast<float>(modelviewMatrix[6]);
-			cameraPos.z += movey * static_cast<float>(modelviewMatrix[10]);
+			cameraPos[0] += movey * static_cast<float>(modelviewMatrix[2]);
+			cameraPos[1] += movey * static_cast<float>(modelviewMatrix[6]);
+			cameraPos[2] += movey * static_cast<float>(modelviewMatrix[10]);
 
-			cameraPos.z += (moveUp - moveDown) * keybSpeed * dt;
+			cameraPos[2] += (moveUp - moveDown) * keybSpeed * dt;
 		}
 
 		glEnable(GL_FOG);
@@ -958,13 +957,12 @@ int not_main(int argc, char** argv)
 		
 		if (editor)
 		{
-			editor->handleRenderOverlay(reinterpret_cast<double*>(modelviewMatrix),
-				reinterpret_cast<double*>(projectionMatrix), reinterpret_cast<int*>(viewport));
+			editor->handleRenderOverlay(reinterpret_cast<double*>(projectionMatrix), 
+				reinterpret_cast<double*>(modelviewMatrix), reinterpret_cast<int*>(viewport));
 		}
 		if (test)
 		{
-			test->handleRenderOverlay(reinterpret_cast<double*>(modelviewMatrix),
-				reinterpret_cast<double*>(projectionMatrix), reinterpret_cast<int*>(viewport));
+			test->handleRenderOverlay(reinterpret_cast<double*>(projectionMatrix), reinterpret_cast<double*>(modelviewMatrix), reinterpret_cast<int*>(viewport));
 		}
 
 		// Help text.
@@ -1116,15 +1114,15 @@ int not_main(int argc, char** argv)
 			static int levelScroll = 0;
 			if (geom || editor)
 			{
-				const rdVec3D* bmin = 0;
-				const rdVec3D* bmax = 0;
+				const float* bmin = 0;
+				const float* bmax = 0;
 				if (geom)
 				{
 					bmin = geom->getMeshBoundsMin();
 					bmax = geom->getMeshBoundsMax();
 				}
 				// Reset camera and fog to match the mesh bounds.
-				update_camera(bmin, bmax, &cameraPos, &cameraEulers, camr);
+				update_camera(bmin, bmax, cameraPos, cameraEulers, camr);
 			}
 			
 			//ImGui::EndChild();
@@ -1189,15 +1187,15 @@ int not_main(int argc, char** argv)
 
 			if (geom || editor)
 			{
-				const rdVec3D* bmin = 0;
-				const rdVec3D* bmax = 0;
+				const float* bmin = 0;
+				const float* bmax = 0;
 				if (geom)
 				{
 					bmin = geom->getMeshBoundsMin();
 					bmax = geom->getMeshBoundsMax();
 				}
 				// Reset camera and fog to match the mesh bounds.
-				update_camera(bmin, bmax, &cameraPos, &cameraEulers, camr);
+				update_camera(bmin, bmax, cameraPos, cameraEulers, camr);
 			}
 		}
 		// Test cases
@@ -1273,15 +1271,15 @@ int not_main(int argc, char** argv)
 
 						if (geom || editor)
 						{
-							const rdVec3D* bmin = 0;
-							const rdVec3D* bmax = 0;
+							const float* bmin = 0;
+							const float* bmax = 0;
 							if (geom)
 							{
 								bmin = geom->getNavMeshBoundsMin();
 								bmax = geom->getNavMeshBoundsMax();
 							}
 							// Reset camera and fog to match the mesh bounds.
-							update_camera(bmin, bmax, &cameraPos, &cameraEulers, camr);
+							update_camera(bmin, bmax, cameraPos, cameraEulers, camr);
 						}
 
 						// Do the tests.
@@ -1326,9 +1324,10 @@ int not_main(int argc, char** argv)
 			ImGui::End();
 		}
 		
-
-		rdVec2D screenPos; // Marker
-		if (markerPositionSet && worldToScreen(modelviewMatrix, projectionMatrix, viewport, markerPosition.x, markerPosition.y, markerPosition.z, screenPos))
+		// Marker
+		if (markerPositionSet && gluProject(static_cast<GLdouble>(markerPosition[0]), 
+			static_cast<GLdouble>(markerPosition[1]), static_cast<GLdouble>(markerPosition[2]),
+								  modelviewMatrix, projectionMatrix, viewport, &x, &y, &z))
 		{
 			// Draw marker circle
 			glLineWidth(5.0f);
@@ -1338,8 +1337,8 @@ int not_main(int argc, char** argv)
 			for (int i = 0; i < 20; ++i)
 			{
 				const float a = (float)i / 20.0f * RD_PI*2;
-				const float fx = screenPos.x + cosf(a)*r;
-				const float fy = screenPos.y + sinf(a)*r;
+				const float fx = (float)x + cosf(a)*r;
+				const float fy = (float)y + sinf(a)*r;
 				glVertex2f(fx,fy);
 			}
 			glEnd();

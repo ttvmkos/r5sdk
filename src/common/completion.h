@@ -1,5 +1,5 @@
 #pragma once
-#include "tier1/iconvar.h"
+#include "public/iconvar.h"
 #include "vstdlib/autocompletefilelist.h"
 
 int Host_SSMap_f_CompletionFunc(char const* partial, char commands[COMMAND_COMPLETION_MAXITEMS][COMMAND_COMPLETION_ITEM_LENGTH]);

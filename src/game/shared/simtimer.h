@@ -5,6 +5,7 @@
 // $NoKeywords: $
 //=============================================================================//
 
+#include <game/server/gameinterface.h>
 #ifndef SIMTIMER_H
 #define SIMTIMER_H
 
@@ -51,13 +52,14 @@ public:
 		m_next = gpGlobals->curTime + interval;
 	}
 
-	void Set( float minInterval, float maxInterval )
-	{ 
-		if ( maxInterval > 0.0 )
-			m_next = gpGlobals->curTime + g_randomStream->RandomFloat( minInterval, maxInterval );
-		else
-			m_next = gpGlobals->curTime + minInterval;
-	}
+	// TODO: get CUniformRandomStream global, see 141809528 for global!!!
+	//void Set( float minInterval, float maxInterval )
+	//{ 
+	//	if ( maxInterval > 0.0 )
+	//		m_next = gpGlobals->m_flCurTime + random->RandomFloat( minInterval, maxInterval );
+	//	else
+	//		m_next = gpGlobals->m_flCurTime + minInterval;
+	//}
 
 	float GetRemaining() const
 	{
@@ -119,36 +121,37 @@ private:
 class CRandSimTimer : public CSimpleSimTimer
 {
 public:
-	CRandSimTimer( float minInterval = 0.0, float maxInterval = 0.0, bool startExpired = true )	
-	{ 
-		Set( minInterval, maxInterval, startExpired );
-	}
+	// TODO: get CUniformRandomStream global, see 141809528 for global!!!
+	//CRandSimTimer( float minInterval = 0.0, float maxInterval = 0.0, bool startExpired = true )	
+	//{ 
+	//	Set( minInterval, maxInterval, startExpired );
+	//}
 	
-	void Set( float minInterval, float maxInterval = 0.0, bool startExpired = true )
-	{ 
-		m_minInterval = minInterval;
-		m_maxInterval = maxInterval;
-		
-		if (startExpired)
-		{
-			m_next = -1;
-		}
-		else
-		{
-			if ( m_maxInterval == 0 )
-				m_next = gpGlobals->curTime + m_minInterval;
-			else
-				m_next = gpGlobals->curTime + g_randomStream->RandomFloat( m_minInterval, m_maxInterval );
-		}
-	}
+	//void Set( float minInterval, float maxInterval = 0.0, bool startExpired = true )
+	//{ 
+	//	m_minInterval = minInterval;
+	//	m_maxInterval = maxInterval;
+	//	
+	//	if (startExpired)
+	//	{
+	//		m_next = -1;
+	//	}
+	//	else
+	//	{
+	//		if ( m_maxInterval == 0 )
+	//			m_next = gpGlobals->m_flCurTime + m_minInterval;
+	//		else
+	//			m_next = gpGlobals->m_flCurTime + random->RandomFloat( m_minInterval, m_maxInterval );
+	//	}
+	//}
 
-	void Reset()
-	{
-		if ( m_maxInterval == 0 )
-			m_next = gpGlobals->curTime + m_minInterval;
-		else
-			m_next = gpGlobals->curTime + g_randomStream->RandomFloat( m_minInterval, m_maxInterval );
-	}
+	//void Reset()
+	//{
+	//	if ( m_maxInterval == 0 )
+	//		m_next = gpGlobals->m_flCurTime + m_minInterval;
+	//	else
+	//		m_next = gpGlobals->m_flCurTime + random->RandomFloat( m_minInterval, m_maxInterval );
+	//}
 
 	float GetMinInterval() const
 	{
@@ -203,11 +206,12 @@ protected:
 class CSimpleStopwatch  : public CStopwatchBase
 {
 public:
-	void Start( float minCountdown, float maxCountdown = 0.0 )
-	{ 
-		m_fIsRunning = true;
-		CSimpleSimTimer::Set( minCountdown, maxCountdown );
-	}
+	// TODO: get CUniformRandomStream global, see 141809528 for global!!!
+	//void Start( float minCountdown, float maxCountdown = 0.0 )
+	//{ 
+	//	m_fIsRunning = true;
+	//	CSimpleSimTimer::Set( minCountdown, maxCountdown );
+	//}
 
 	void Stop()
 	{
@@ -272,19 +276,20 @@ public:
 		m_maxInterval = maxInterval;
 	}
 
-	void Start( float minOverride, float maxOverride = 0.0 )
-	{ 
-		m_fIsRunning = true;
-		if ( maxOverride == 0 )
-			m_next = gpGlobals->curTime + minOverride;
-		else
-			m_next = gpGlobals->curTime + g_randomStream->RandomFloat( minOverride, maxOverride );
-	}
+	// TODO: get CUniformRandomStream global, see 141809528 for global!!!
+	//void Start( float minOverride, float maxOverride = 0.0 )
+	//{ 
+	//	m_fIsRunning = true;
+	//	if ( maxOverride == 0 )
+	//		m_next = gpGlobals->m_flCurTime + minOverride;
+	//	else
+	//		m_next = gpGlobals->m_flCurTime + random->RandomFloat( minOverride, maxOverride );
+	//}
 
-	void Start()
-	{
-		Start( m_minInterval, m_maxInterval );
-	}
+	//void Start()
+	//{
+	//	Start( m_minInterval, m_maxInterval );
+	//}
 	
 	float GetInterval() const
 	{

@@ -1,5 +1,5 @@
-#ifndef TIER1_ICONVAR_H
-#define TIER1_ICONVAR_H
+#ifndef ICONVAR_H
+#define ICONVAR_H
 
 //-----------------------------------------------------------------------------
 // Forward declarations
@@ -128,4 +128,4 @@ public:
 	virtual int GetSplitScreenPlayerSlot() const = 0;
 };
 
-#endif // TIER1_ICONVAR_H
+#endif // ICONVAR_H

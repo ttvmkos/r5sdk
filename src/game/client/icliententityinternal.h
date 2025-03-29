@@ -10,7 +10,7 @@
 #pragma once
 #endif
 
-#include "game/client/icliententity.h"
+#include "icliententity.h"
 //#include "clientleafsystem.h"
 
 //-----------------------------------------------------------------------------

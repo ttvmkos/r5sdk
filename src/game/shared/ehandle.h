@@ -17,8 +17,9 @@
 #endif
 
 
-#include "const.h"
-#include "game/shared/basehandle.h"
+#include "public/const.h"
+#include "public/basehandle.h"
+//#include "entitylist_base.h"
 
 
 class IHandleEntity;

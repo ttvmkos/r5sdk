@@ -1,5 +1,5 @@
 #pragma once
-#include "game/shared/basehandle.h"
+#include "basehandle.h"
 #include "iclientnetworkable.h"
 #include "icliententity.h"
 

@@ -57,7 +57,6 @@ private:
 	bool m_initialized;
 
 	std::atomic_bool m_hasNewFrame;
-	std::atomic_bool m_repeatFrame;
 };
 
 CImguiSystem* ImguiSystem();
