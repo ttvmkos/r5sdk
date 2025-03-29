@@ -62,18 +62,18 @@ add_sources( SOURCE_GROUP "Tools/Include"
 )
 
 add_sources( SOURCE_GROUP "Utils"
+    "CameraUtils.cpp"
     "Editor_Debug.cpp"
     "EditorInterfaces.cpp"
-    "GameUtils.cpp"
     "PerfTimer.cpp"
     "TestCase.cpp"
     "ValueHistory.cpp"
 )
 
 add_sources( SOURCE_GROUP "Utils/Include"
+    "include/CameraUtils.h"
     "include/Editor_Debug.h"
     "include/EditorInterfaces.h"
-    "include/GameUtils.h"
     "include/PerfTimer.h"
     "include/TestCase.h"
     "include/ValueHistory.h"

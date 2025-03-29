@@ -3,10 +3,9 @@
 #include "tier1/mempool.h"
 #include "common/protocol.h"
 #include "public/inetmsghandler.h"
-#include "public/isnapshotmgr.h"
+#include "engine/isnapshotmgr.h"
 #include "engine/net_chan.h"
 #include "engine/networkstringtable.h"
-#include "engine/debugoverlay.h"
 #include "engine/clockdriftmgr.h"
 #include "engine/framesnapshot.h"
 #include "engine/packed_entity.h"
@@ -68,6 +67,8 @@ public:
 	void Reconnect();
 
 	void RegisterNetMsgs(CNetChan* chan);
+
+	inline int GetServerCount() const { return m_nServerCount; }
 
 protected:
 	FORCEINLINE CClientState* GetShiftedBasePointer(void)

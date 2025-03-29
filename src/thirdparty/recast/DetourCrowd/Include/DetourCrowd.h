@@ -73,6 +73,7 @@ enum CrowdAgentState
 	DT_CROWDAGENT_STATE_INVALID,		///< The agent is not in a valid state.
 	DT_CROWDAGENT_STATE_WALKING,		///< The agent is traversing a normal navigation mesh polygon.
 	DT_CROWDAGENT_STATE_OFFMESH,		///< The agent is traversing an off-mesh connection.
+	DT_CROWDAGENT_STATE_TRAVERSE,		///< The agent is traversing a traverse portal.
 };
 
 /// Configuration parameters for a crowd agent.
@@ -103,7 +104,7 @@ struct dtCrowdAgentParams
 	/// [Limits: 0 <= value <= #DT_CROWD_MAX_OBSTAVOIDANCE_PARAMS]
 	unsigned char obstacleAvoidanceType;	
 
-	/// The index of the query filter used by this agent.
+	/// The index of the query filter used by this agent, dictated by #traverseAnimType.
 	unsigned char queryFilterType;
 
 	/// User defined data attached to the agent.
@@ -152,17 +153,17 @@ struct dtCrowdAgent
 	/// The desired speed.
 	float desiredSpeed;
 
-	float npos[3];		///< The current agent position. [(x, y, z)]
-	float disp[3];		///< A temporary value used to accumulate agent displacement during iterative collision resolution. [(x, y, z)]
-	float dvel[3];		///< The desired velocity of the agent. Based on the current path, calculated from scratch each frame. [(x, y, z)]
-	float nvel[3];		///< The desired velocity adjusted by obstacle avoidance, calculated from scratch each frame. [(x, y, z)]
-	float vel[3];		///< The actual velocity of the agent. The change from nvel -> vel is constrained by max acceleration. [(x, y, z)]
+	rdVec3D npos;		///< The current agent position. [(x, y, z)]
+	rdVec3D disp;		///< A temporary value used to accumulate agent displacement during iterative collision resolution. [(x, y, z)]
+	rdVec3D dvel;		///< The desired velocity of the agent. Based on the current path, calculated from scratch each frame. [(x, y, z)]
+	rdVec3D nvel;		///< The desired velocity adjusted by obstacle avoidance, calculated from scratch each frame. [(x, y, z)]
+	rdVec3D vel;		///< The actual velocity of the agent. The change from nvel -> vel is constrained by max acceleration. [(x, y, z)]
 
 	/// The agent's configuration parameters.
 	dtCrowdAgentParams params;
 
-	/// The local path corridor corners for the agent. (Staight path.) [(x, y, z) * #ncorners]
-	float cornerVerts[DT_CROWDAGENT_MAX_CORNERS*3];
+	/// The local path corridor corners for the agent. (Straight path.) [(x, y, z) * #ncorners]
+	rdVec3D cornerVerts[DT_CROWDAGENT_MAX_CORNERS];
 
 	/// The local path corridor corner flags. (See: #dtStraightPathFlags) [(flags) * #ncorners]
 	unsigned char cornerFlags[DT_CROWDAGENT_MAX_CORNERS];
@@ -178,7 +179,7 @@ struct dtCrowdAgent
 	
 	unsigned char targetState;			///< State of the movement request.
 	dtPolyRef targetRef;				///< Target polyref of the movement request.
-	float targetPos[3];					///< Target position of the movement request (or velocity in case of DT_CROWDAGENT_TARGET_VELOCITY).
+	rdVec3D targetPos;					///< Target position of the movement request (or velocity in case of DT_CROWDAGENT_TARGET_VELOCITY).
 	dtPathQueueRef targetPathqRef;		///< Path finder ref.
 	bool targetReplan;					///< Flag indicating that the current path is being replanned.
 	float targetReplanTime;				/// <Time since the agent's target was replanned.
@@ -187,7 +188,7 @@ struct dtCrowdAgent
 struct dtCrowdAgentAnimation
 {
 	bool active;
-	float initPos[3], startPos[3], endPos[3];
+	rdVec3D initPos, startPos, endPos;
 	dtPolyRef polyRef;
 	float t, tmax;
 };
@@ -207,7 +208,7 @@ enum UpdateFlags
 struct dtCrowdAgentDebugInfo
 {
 	int idx;
-	float optStart[3], optEnd[3];
+	rdVec3D optStart, optEnd;
 	dtObstacleAvoidanceDebugData* vod;
 };
 
@@ -228,9 +229,10 @@ class dtCrowd
 	dtProximityGrid* m_grid;
 	
 	dtPolyRef* m_pathResult;
+	unsigned char* m_jumpResult;
 	int m_maxPathResult;
 	
-	float m_agentPlacementHalfExtents[3];
+	rdVec3D m_agentPlacementHalfExtents;
 
 	dtQueryFilter m_filters[DT_CROWD_MAX_QUERY_FILTER_TYPE];
 
@@ -246,7 +248,7 @@ class dtCrowd
 
 	inline int getAgentIndex(const dtCrowdAgent* agent) const  { return (int)(agent - m_agents); }
 
-	bool requestMoveTargetReplan(const int idx, dtPolyRef ref, const float* pos);
+	bool requestMoveTargetReplan(const int idx, dtPolyRef ref, const rdVec3D* pos);
 
 	void purge();
 	
@@ -290,7 +292,7 @@ public:
 	///  @param[in]		pos		The requested position of the agent. [(x, y, z)]
 	///  @param[in]		params	The configutation of the agent.
 	/// @return The index of the agent in the agent pool. Or -1 if the agent could not be added.
-	int addAgent(const float* pos, const dtCrowdAgentParams* params);
+	int addAgent(const rdVec3D* pos, const dtCrowdAgentParams* params);
 
 	/// Updates the specified agent's configuration.
 	///  @param[in]		idx		The agent index. [Limits: 0 <= value < #getAgentCount()]
@@ -306,13 +308,13 @@ public:
 	///  @param[in]		ref		The position's polygon reference.
 	///  @param[in]		pos		The position within the polygon. [(x, y, z)]
 	/// @return True if the request was successfully submitted.
-	bool requestMoveTarget(const int idx, dtPolyRef ref, const float* pos);
+	bool requestMoveTarget(const int idx, dtPolyRef ref, const rdVec3D* pos);
 
 	/// Submits a new move request for the specified agent.
 	///  @param[in]		idx		The agent index. [Limits: 0 <= value < #getAgentCount()]
 	///  @param[in]		vel		The movement velocity. [(x, y, z)]
 	/// @return True if the request was successfully submitted.
-	bool requestMoveVelocity(const int idx, const float* vel);
+	bool requestMoveVelocity(const int idx, const rdVec3D* vel);
 
 	/// Resets any request for the specified agent.
 	///  @param[in]		idx		The agent index. [Limits: 0 <= value < #getAgentCount()]
@@ -340,11 +342,11 @@ public:
 
 	/// Gets the search halfExtents [(x, y, z)] used by the crowd for query operations. 
 	/// @return The search halfExtents used by the crowd. [(x, y, z)]
-	const float* getQueryHalfExtents() const { return m_agentPlacementHalfExtents; }
+	const rdVec3D* getQueryHalfExtents() const { return &m_agentPlacementHalfExtents; }
 
 	/// Same as getQueryHalfExtents. Left to maintain backwards compatibility.
 	/// @return The search halfExtents used by the crowd. [(x, y, z)]
-	const float* getQueryExtents() const { return m_agentPlacementHalfExtents; }
+	const rdVec3D* getQueryExtents() const { return &m_agentPlacementHalfExtents; }
 	
 	/// Gets the velocity sample count.
 	/// @return The velocity sample count.

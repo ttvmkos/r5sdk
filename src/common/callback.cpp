@@ -18,7 +18,6 @@
 #ifndef DEDICATED
 #include "engine/gl_screen.h"
 #include "engine/client/cl_rcon.h"
-#include "engine/client/cdll_engine_int.h"
 #include "engine/client/clientstate.h"
 #endif // !DEDICATED
 #include "engine/client/client.h"
@@ -27,6 +26,7 @@
 #include "engine/host_cmd.h"
 #include "engine/host_state.h"
 #include "engine/enginetrace.h"
+#include "engine/debugoverlay.h"
 
 #include "rtech/pak/pakencode.h"
 #include "rtech/pak/pakdecode.h"
@@ -61,7 +61,6 @@
 #endif // !DEDICATED
 #include "public/bspflags.h"
 #include "public/cmodel.h"
-#include "public/idebugoverlay.h"
 #include "public/localize/ilocalize.h"
 #ifndef CLIENT_DLL
 #include "game/server/detour_impl.h"
@@ -365,7 +364,33 @@ void Line_f(const CCommand& args)
 		end[i] = float(atof(args[i + 4]));
 	}
 
-	g_pDebugOverlay->AddLineOverlay(start, end, 255, 255, 0, !r_debug_draw_depth_test.GetBool(), 100);
+	g_pDebugOverlay->AddLineOverlay(start, end, 255, 255, 0, true, 100);
+}
+
+/*
+=====================
+Triangle_f
+
+  Draws a triangle at p1<x1 y1 z1>
+  p2<x2 y2 z2> p3 <x3 y3 z3>.
+=====================
+*/
+void Triangle_f(const CCommand& args)
+{
+	if (args.ArgC() != 10)
+	{
+		Msg(eDLL_T::CLIENT, "Usage 'triangle': p1(vector) p2(vector) p3(vector)\n");
+		return;
+	}
+
+	Vector3D p1, p2, p3;
+	for (int i = 0; i < 3; ++i)
+	{
+		p1[i] = float(atof(args[i + 1]));
+		p2[i] = float(atof(args[i + 4]));
+		p3[i] = float(atof(args[i + 7]));
+	}
+	g_pDebugOverlay->AddTriangleOverlay(p1, p2, p3, 230, 40, 20, 200, true, 100);
 }
 
 /*
@@ -390,11 +415,11 @@ void Sphere_f(const CCommand& args)
 		start[i] = float(atof(args[i + 1]));
 	}
 
-	float radius = float(atof(args[4]));
-	int theta = atoi(args[5]);
-	int phi = atoi(args[6]);
+	const float radius = float(atof(args[4]));
+	const int theta = atoi(args[5]);
+	const int phi = atoi(args[6]);
 
-	g_pDebugOverlay->AddSphereOverlay(start, radius, theta, phi, 20, 210, 255, 0, 100);
+	g_pDebugOverlay->AddSphereOverlay(start, radius, theta, phi, 20, 210, 255, 80, true, 100);
 }
 
 /*
@@ -407,26 +432,27 @@ Capsule_f
 */
 void Capsule_f(const CCommand& args)
 {
-	if (args.ArgC() != 10)
+	if (args.ArgC() != 8)
 	{
-		Msg(eDLL_T::CLIENT, "Usage 'capsule': start(vector) end(vector) radius(vector)\n");
+		Msg(eDLL_T::CLIENT, "Usage 'capsule': start(vector) end(vector) radius(float)\n");
 		return;
 	}
 
-	Vector3D start, end, radius;
+	Vector3D start, end;
 	for (int i = 0; i < 3; ++i)
 	{
 		start[i] = float(atof(args[i + 1]));
 		end[i] = float(atof(args[i + 4]));
-		radius[i] = float(atof(args[i + 7]));
 	}
-	g_pDebugOverlay->AddCapsuleOverlay(start, end, radius, { 0,0,0 }, { 0,0,0 }, 141, 233, 135, 0, 100);
+
+	const float radius = float(atof(args[7]));
+	g_pDebugOverlay->AddCapsuleOverlay(start, end, radius, 141, 233, 135, 200, true, 100);
 }
 #endif // !DEDICATED
 
 // TODO: move to other file?
 static ConVar bhit_depth_test("bhit_depth_test", "0", FCVAR_DEVELOPMENTONLY | FCVAR_REPLICATED, "Use depth test for bullet ray trace overlay");
-static ConVar bhit_abs_origin("bhit_abs_origin", "1", FCVAR_DEVELOPMENTONLY | FCVAR_REPLICATED, "Draw entity's predicted abs origin upon bullet impact for trajectory debugging (requires 'r_visualizetraces' to be set!)");
+static ConVar bhit_abs_origin("bhit_abs_origin", "1", FCVAR_DEVELOPMENTONLY | FCVAR_REPLICATED, "Draw entity's predicted absolute origin upon bullet impact for trajectory debugging (requires 'r_visualizetraces' to be set!)");
 /*
 =====================
 BHit_f
@@ -475,10 +501,12 @@ void BHit_f(const CCommand& args)
 	if (bhit_abs_origin.GetBool() && r_visualizetraces->GetBool())
 	{
 		const int iEnt = atoi(args[2]);
-		if (const IClientEntity* pEntity = g_pClientEntityList->GetClientEntity(iEnt))
+		const IClientEntity* const pEntity = g_pClientEntityList->GetClientEntity(iEnt);
+
+		if (pEntity)
 		{
 			g_pDebugOverlay->AddSphereOverlay( // Render a debug sphere at the client's predicted entity origin.
-				pEntity->GetAbsOrigin(), 10.f, 8, 6, 20, 60, 255, 0, r_visualizetraces_duration->GetFloat());
+				pEntity->GetAbsOrigin(), 10.f, 8, 6, 20, 60, 255, 255, !bhit_depth_test.GetBool(), r_visualizetraces_duration->GetFloat());
 		}
 	}
 #endif // !DEDICATED

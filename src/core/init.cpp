@@ -19,6 +19,7 @@
 #include "tier1/cmd.h"
 #include "tier1/cvar.h"
 #include "tier1/keyvalues_iface.h"
+#include "tier2/renderutils.h"
 #include "vpc/IAppSystem.h"
 #include "vpc/interfaces.h"
 #include "common/callback.h"
@@ -42,6 +43,7 @@
 #include "vphysics/QHull.h"
 #include "engine/staticpropmgr.h"
 #include "materialsystem/cmaterialsystem.h"
+#include "materialsystem/cmatqueuedrendercontext.h"
 #ifndef DEDICATED
 #include "materialsystem/cmaterialglue.h"
 #include "materialsystem/texturestreaming.h"
@@ -51,6 +53,7 @@
 #include "vgui/vgui_controls/RichText.h"
 #include "vguimatsurface/MatSystemSurface.h"
 #include "particles/particles.h"
+#include "particles/particle_overlay.h"
 #include "engine/client/vengineclient_impl.h"
 #include "engine/client/cdll_engine_int.h"
 #include "engine/client/datablock_receiver.h"
@@ -99,6 +102,7 @@
 #include "engine/net.h"
 #include "engine/net_chan.h"
 #include "engine/networkstringtable.h"
+#include "engine/debugoverlay.h"
 #ifndef CLIENT_DLL
 #include "engine/server/sv_main.h"
 #include "engine/server/sv_rcon.h"
@@ -117,7 +121,6 @@
 #include "engine/gl_drawlights.h"
 #include "engine/gl_screen.h"
 #include "engine/gl_rsurf.h"
-#include "engine/debugoverlay.h"
 #include "engine/keys.h"
 #endif // !DEDICATED
 #include "vscript/languages/squirrel_re/include/squirrel.h"
@@ -131,6 +134,7 @@
 #include "game/shared/animation.h"
 #include "game/shared/vscript_shared.h"
 #ifndef CLIENT_DLL
+#include "game/server/util_server.h"
 #include "game/server/ai_node.h"
 #include "game/server/ai_network.h"
 #include "game/server/ai_networkmanager.h"
@@ -159,7 +163,6 @@
 #endif // !DEDICATED
 #include "public/edict.h"
 #ifndef DEDICATED
-#include "public/idebugoverlay.h"
 #include "inputsystem/inputsystem.h"
 #include "inputsystem/inputstacksystem.h"
 #include "windows/id3dx.h"
@@ -516,6 +519,9 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 	REGISTER(VCommandLine);
 	REGISTER(VCVar);
 
+	// Tier2
+	REGISTER(V_RenderUtils);
+
 	// VPC
 	REGISTER(VAppSystem);
 	REGISTER(VKeyValues);
@@ -566,6 +572,7 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 
 	// MaterialSystem
 	REGISTER(VMaterialSystem);
+	REGISTER(VMatQueuedRenderContext);
 #ifndef DEDICATED
 	REGISTER(VMaterialGlue);
 	REGISTER(VShaderGlue);
@@ -582,6 +589,7 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 
 	// Particles
 	REGISTER(VParticles);
+	REGISTER(VParticleOverlay);
 
 	// Client
 	REGISTER(HVEngineClient);
@@ -662,10 +670,10 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 #ifndef DEDICATED
 	REGISTER(VGame); // REGISTER CLIENT ONLY!
 	REGISTER(VGL_RSurf);
-
-	REGISTER(VDebugOverlay); // !TODO: This also needs to be exposed to server dll!!!
 	REGISTER(VKeys);
 #endif // !DEDICATED
+
+	REGISTER(VDebugOverlay);
 
 	// VScript
 	REGISTER(VSquirrel);
@@ -686,7 +694,7 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 	// Game/shared
 	REGISTER(VUserCmd);
 	REGISTER(VAnimation);
-	REGISTER(VUtil_Shared);
+	REGISTER(V_UTIL_Shared);
 
 #ifndef CLIENT_DLL
 
@@ -706,6 +714,8 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 	REGISTER(VPlayerMove);
 	REGISTER(VServerEntityList);
 	REGISTER(VCBaseEntity);
+
+	REGISTER(V_UTIL_Server);
 
 #endif // !CLIENT_DLL
 

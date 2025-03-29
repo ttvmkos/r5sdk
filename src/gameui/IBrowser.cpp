@@ -202,21 +202,24 @@ bool CBrowser::DrawSurface(void)
         return false;
     }
 
-    ImGui::BeginTabBar("CompMenu");
-    if (ImGui::BeginTabItem("Browsing"))
+    if (ImGui::BeginTabBar("CompMenu"))
     {
-        DrawBrowserPanel();
-        ImGui::EndTabItem();
-    }
+        if (ImGui::BeginTabItem("Browsing"))
+        {
+            DrawBrowserPanel();
+            ImGui::EndTabItem();
+        }
 #ifndef CLIENT_DLL
-    if (ImGui::BeginTabItem("Hosting"))
-    {
-        DrawHostPanel();
-        ImGui::EndTabItem();
-    }
+        if (ImGui::BeginTabItem("Hosting"))
+        {
+            DrawHostPanel();
+            ImGui::EndTabItem();
+        }
 #endif // !CLIENT_DLL
 
-    ImGui::EndTabBar();
+        ImGui::EndTabBar();
+    }
+
     ImGui::End();
 
     return true;
@@ -564,6 +567,7 @@ void CBrowser::DrawHostPanel(void)
     }
 
     ImGui::Spacing();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f)); // Make drop down borders consistent.
 
     if (ImGui::BeginCombo("Mode", m_gameMode.c_str()))
     {
@@ -599,6 +603,8 @@ void CBrowser::DrawHostPanel(void)
         g_InstalledMapsMutex.Unlock();
         ImGui::EndCombo();
     }
+
+    ImGui::PopStyleVar();
 
     m_queryGlobalBanList = sv_globalBanlist.GetBool(); // Sync toggle with 'sv_globalBanlist'.
     if (ImGui::Checkbox("Load global banned list", &m_queryGlobalBanList))

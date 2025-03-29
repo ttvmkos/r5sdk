@@ -4,7 +4,7 @@
 #include "networksystem/pylon.h"
 #include "engine/client/client.h"
 #include "engine/networkstringtable.h"
-#include "public/iserver.h"
+#include "inetmsghandler.h"
 #ifndef CLIENT_DLL
 #include "vengineserver_impl.h"
 #endif // !CLIENT_DLL
@@ -30,8 +30,10 @@ struct user_creds_s
 class CServer : public IConnectionlessPacketHandler
 {
 public:
-	int	GetTick(void) const { return m_nTickCount; }
-#ifndef CLIENT_DLL // Only the connectionless packet handler is implemented on the client via the IServer base class.
+	inline int GetTick(void) const { return m_nTickCount; }
+	inline bool CanApplyOverlays(void) const { return m_bApplyOverlays; }
+
+#ifndef CLIENT_DLL // Only the connectionless packet handler is implemented on the client engine.
 	int GetNumHumanPlayers(void) const;
 	int GetNumFakeClients(void) const;
 	int GetNumClients(void) const;
@@ -61,7 +63,6 @@ public:
 
 	void BroadcastMessage(CNetMessage* const msg, const bool onlyActive, const bool reliable);
 	static void RunFrame(CServer* pServer);
-	static void FrameJob(double flFrameTime, bool bRunOverlays, bool bUpdateFrame);
 #endif // !CLIENT_DLL
 
 private:
@@ -79,7 +80,7 @@ private:
 	CNetworkStringTable*          m_pLightStyleTable;            // lightstyles
 	CNetworkStringTable*          m_pUserInfoTable;              // userinfo
 	CNetworkStringTable*          m_pServerQueryTable;           // server_query_inf
-	bool                          m_bReplay;                     // MAYBE
+	bool                          m_bApplyOverlays;              // add and run overlays
 	bool                          m_bUpdateFrame;                // perform snapshot update
 	bool                          m_bUseReputation;              // use of player reputation on the server
 	bool                          m_bSimulating;                 // are we simulating or not
@@ -117,7 +118,6 @@ extern ConVar sv_globalBanlist;
 extern ConVar sv_banlistRefreshRate;
 
 /* ==== CSERVER ========================================================================================================================================================= */
-inline void(*CServer__FrameJob)(double flFrameTime, bool bRunOverlays, bool bUpdateFrame);
 inline void(*CServer__RunFrame)(CServer* pServer);
 inline CClient*(*CServer__ConnectClient)(CServer* pServer, user_creds_s* pCreds);
 inline void*(*CServer__RejectConnection)(CServer* pServer, int iSocket, netadr_t* pNetAdr, const char* szMessage);
@@ -130,7 +130,6 @@ class VServer : public IDetour
 	virtual void GetAdr(void) const
 	{
 #ifndef CLIENT_DLL
-		LogFunAdr("CServer::FrameJob", CServer__FrameJob);
 		LogFunAdr("CServer::RunFrame", CServer__RunFrame);
 		LogFunAdr("CServer::ConnectClient", CServer__ConnectClient);
 		LogFunAdr("CServer::RejectConnection", CServer__RejectConnection);
@@ -142,7 +141,6 @@ class VServer : public IDetour
 	virtual void GetFun(void) const
 	{
 #ifndef CLIENT_DLL
-		Module_FindPattern(g_GameDll, "48 89 6C 24 ?? 56 41 54 41 56").GetPtr(CServer__FrameJob);
 		Module_FindPattern(g_GameDll, "40 55 57 41 55 41 57 48 8D AC 24 ?? ?? ?? ??").GetPtr(CServer__ConnectClient);
 
 		Module_FindPattern(g_GameDll, "E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 88 05 ?? ?? ?? ??").FollowNearCallSelf().GetPtr(CServer__RunFrame);

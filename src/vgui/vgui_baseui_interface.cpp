@@ -8,6 +8,7 @@
 #include <core/stdafx.h>
 #include <tier1/cvar.h>
 #include <engine/sys_utils.h>
+#include <engine/debugoverlay.h>
 #include <vgui/vgui_debugpanel.h>
 #include <vgui/vgui_baseui_interface.h>
 #include <vguimatsurface/MatSystemSurface.h>
@@ -17,11 +18,18 @@
 //-----------------------------------------------------------------------------
 int CEngineVGui::VPaint(CEngineVGui* const thisptr, const PaintMode_t mode)
 {
-	int result = CEngineVGui__Paint(thisptr, mode);
+	const int result = CEngineVGui__Paint(thisptr, mode);
 
-	if (/*mode == PaintMode_t::PAINT_UIPANELS ||*/ mode == PaintMode_t::PAINT_INGAMEPANELS) // Render in-main menu and in-game.
+	if (mode == PaintMode_t::PAINT_UIPANELS)
 	{
-		g_TextOverlay.Update();
+		if (r_drawvgui->GetBool())
+			g_TextOverlay.UpdateMiniConsole();
+	}
+
+	if (mode == PaintMode_t::PAINT_INGAMEPANELS)
+	{
+		if (r_drawvgui->GetBool())
+			g_TextOverlay.UpdateInGamePanels();
 	}
 
 	return result;

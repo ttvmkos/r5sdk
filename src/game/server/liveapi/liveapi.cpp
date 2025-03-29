@@ -353,7 +353,7 @@ static void LiveAPI_SetCommonMessageFields(T const msg, const eLiveAPI_EventType
 		msg->set_category(LiveAPI_EventTypeToString(eventType));
 }
 
-static void LiveAPI_SetVector3D(rtech::liveapi::Vector3* const msgVec, const Vector3D* const dataVec)
+static void LiveAPI_SetVector3D(rtech::liveapi::Vector3* const msgVec, const SQVector3D* const dataVec)
 {
 	msgVec->set_x(dataVec->x);
 	msgVec->set_y(dataVec->y);
@@ -435,14 +435,14 @@ static bool LiveAPI_SetPlayerIdentityFields(HSQUIRRELVM const v, const SQTable* 
 		case rtech::liveapi::Player::kPosFieldNumber:
 		{
 			LIVEAPI_ENSURE_TYPE(v, obj, OT_VECTOR, playerMsg, fieldNum);
-			LiveAPI_SetVector3D(playerMsg->mutable_pos(), _vector3d(obj));
+			LiveAPI_SetVector3D(playerMsg->mutable_pos(), _vector(obj));
 
 			break;
 		}
 		case rtech::liveapi::Player::kAnglesFieldNumber:
 		{
 			LIVEAPI_ENSURE_TYPE(v, obj, OT_VECTOR, playerMsg, fieldNum);
-			LiveAPI_SetVector3D(playerMsg->mutable_angles(), _vector3d(obj));
+			LiveAPI_SetVector3D(playerMsg->mutable_angles(), _vector(obj));
 
 			break;
 		}
@@ -1428,7 +1428,7 @@ static bool LiveAPI_HandleRingFinishedClosing(HSQUIRRELVM const v, const SQObjec
 	case event->kCenterFieldNumber:
 	{
 		LIVEAPI_ENSURE_TYPE(v, obj, OT_VECTOR, event, fieldNum);
-		LiveAPI_SetVector3D(event->mutable_center(), _vector3d(obj));
+		LiveAPI_SetVector3D(event->mutable_center(), _vector(obj));
 
 		break;
 	}
@@ -1470,7 +1470,7 @@ static bool LiveAPI_HandleDeathFieldStartClosing(HSQUIRRELVM const v, const SQOb
 	case rtech::liveapi::RingStartClosing::kCenterFieldNumber:
 	{
 		LIVEAPI_ENSURE_TYPE(v, obj, OT_VECTOR, event, fieldNum);
-		LiveAPI_SetVector3D(event->mutable_center(), _vector3d(obj));
+		LiveAPI_SetVector3D(event->mutable_center(), _vector(obj));
 
 		break;
 	}
@@ -1820,7 +1820,7 @@ static bool LiveAPI_HandlePlayerStatChanged(HSQUIRRELVM const v, const SQObject&
 	return true;
 }
 
-static void LiveAPI_SetCustomVectorField(google::protobuf::Struct* const structData, const Vector3D* const vecData)
+static void LiveAPI_SetCustomVectorField(google::protobuf::Struct* const structData, const SQVector3D* const vecData)
 {
 	google::protobuf::Map<std::string, google::protobuf::Value>* const fieldData = structData->mutable_fields();
 
@@ -1865,7 +1865,7 @@ static bool LiveAPI_SetCustomArrayFields(HSQUIRRELVM const v, google::protobuf::
 			listData->add_values()->set_string_value(_string(valueObj)->_val, _string(valueObj)->_len);
 			break;
 		case OT_VECTOR:
-			LiveAPI_SetCustomVectorField(listData->add_values()->mutable_struct_value(), _vector3d(valueObj));
+			LiveAPI_SetCustomVectorField(listData->add_values()->mutable_struct_value(), _vector(valueObj));
 			break;
 		case OT_ARRAY:
 			LIVEAPI_CHECK_RECURSION_DEPTH(v, counter.Get());
@@ -1942,7 +1942,7 @@ static bool LiveAPI_SetCustomTableFields(HSQUIRRELVM const v, google::protobuf::
 			(*structData->mutable_fields())[std::string(keyView)].set_string_value(_string(node.val)->_val, _string(node.val)->_len);
 			break;
 		case OT_VECTOR:
-			LiveAPI_SetCustomVectorField((*structData->mutable_fields())[std::string(keyView)].mutable_struct_value(), _vector3d(node.val));
+			LiveAPI_SetCustomVectorField((*structData->mutable_fields())[std::string(keyView)].mutable_struct_value(), _vector(node.val));
 			break;
 		case OT_ARRAY:
 			LIVEAPI_CHECK_RECURSION_DEPTH(v, counter.Get());
@@ -2233,25 +2233,13 @@ static bool LiveAPI_HandleEventByCategory(HSQUIRRELVM const v, const SQTable* co
 	Code exposed to scripts
 */
 
-namespace VScriptCode
-{
-	namespace Server
-	{
-		SQRESULT LiveAPI_IsValidToRun(HSQUIRRELVM v);
-		SQRESULT LiveAPI_LogRaw(HSQUIRRELVM v);
-
-		SQRESULT LiveAPI_StartLogging(HSQUIRRELVM v);
-		SQRESULT LiveAPI_StopLogging(HSQUIRRELVM v);
-	}
-}
-
-SQRESULT VScriptCode::Server::LiveAPI_IsValidToRun(HSQUIRRELVM v)
+static SQRESULT ServerScript_LiveAPI_IsValidToRun(HSQUIRRELVM v)
 {
 	sq_pushbool(v, LiveAPISystem()->IsValidToRun());
 	SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
-SQRESULT VScriptCode::Server::LiveAPI_LogRaw(HSQUIRRELVM v)
+static SQRESULT ServerScript_LiveAPI_LogRaw(HSQUIRRELVM v)
 {
 	if (!LiveAPISystem()->IsEnabled())
 		SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -2281,13 +2269,13 @@ SQRESULT VScriptCode::Server::LiveAPI_LogRaw(HSQUIRRELVM v)
 	SCRIPT_CHECK_AND_RETURN(v, result);
 }
 
-SQRESULT VScriptCode::Server::LiveAPI_StartLogging(HSQUIRRELVM v)
+static SQRESULT ServerScript_LiveAPI_StartLogging(HSQUIRRELVM v)
 {
 	LiveAPISystem()->CreateLogger();
 	SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
-SQRESULT VScriptCode::Server::LiveAPI_StopLogging(HSQUIRRELVM v)
+static SQRESULT ServerScript_LiveAPI_StopLogging(HSQUIRRELVM v)
 {
 	LiveAPISystem()->DestroyLogger();
 	SCRIPT_CHECK_AND_RETURN(v, SQ_OK);

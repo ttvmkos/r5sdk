@@ -14,9 +14,10 @@
 // Constructors/Destructors.
 //-----------------------------------------------------------------------------
 CImguiSystem::CImguiSystem()
-	: m_enabled(true)
+	: m_enabled(false)
 	, m_initialized(false)
 	, m_hasNewFrame(false)
+	, m_repeatFrame(false)
 {
 }
 
@@ -158,7 +159,9 @@ void CImguiSystem::SwapBuffers()
 	AUTO_LOCK(m_snapshotBufferMutex);
 
 	m_snapshotData.SnapUsingSwap(drawData, ImGui::GetTime());
+
 	m_hasNewFrame = true;
+	m_repeatFrame = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -168,7 +171,7 @@ void CImguiSystem::RenderFrame()
 {
 	Assert(IsInitialized());
 
-	if (!m_hasNewFrame.exchange(false))
+	if (!m_hasNewFrame.exchange(false) && !m_repeatFrame.exchange(false))
 		return;
 
 	AUTO_LOCK(m_snapshotBufferMutex);

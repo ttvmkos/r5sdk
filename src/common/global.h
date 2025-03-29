@@ -39,6 +39,7 @@ extern ConVar* mp_gamemode;
 #ifndef DEDICATED
 extern ConVar* r_visualizetraces;
 extern ConVar* r_visualizetraces_duration;
+extern ConVar* r_drawvgui;
 
 extern ConVar* stream_overlay;
 extern ConVar* stream_overlay_mode;
@@ -63,6 +64,7 @@ extern ConVar* name_cvar;
 // SERVER                                                                 |
 #ifndef CLIENT_DLL
 extern ConVar* ai_script_nodes_draw;
+extern ConVar* navmesh_move_along_surface_asserts;
 
 extern ConVar* sv_forceChatToTeamOnly;
 
@@ -90,6 +92,7 @@ extern ConVar* playerframetimekick_decayrate;
 extern ConVar* player_userCmdsQueueWarning;
 extern ConVar* player_disallow_negative_frametime;
 
+extern ConVar* script_server_fps;
 #endif // CLIENT_DLL
 extern ConVar* sv_cheats;
 extern ConVar* sv_visualizetraces;
@@ -106,6 +109,10 @@ extern ConVar* discord_updatePresence;
 extern ConVar* gamepad_custom_enabled;
 extern ConVar* gamepad_custom_assist_on;
 extern ConVar* gamepad_look_curve;
+
+extern ConVar* particle_overlay;
+extern ConVar* particle_overlay_old;
+extern ConVar* particle_overlay_list_tally;
 #endif // !DEDICATED
 //-------------------------------------------------------------------------
 // FILESYSTEM                                                             |
