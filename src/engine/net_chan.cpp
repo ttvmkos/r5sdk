@@ -30,15 +30,15 @@ float CNetChan::GetResendRate() const
 {
     const int64_t totalupdates = this->m_DataFlow[FLOW_INCOMING].totalupdates;
 
-    if (!totalupdates && !this->m_nSequencesSkipped_MAYBE)
-        return 0.0f;
+	if (!totalupdates && !this->m_nSequencesSkipped)
+		return 0.0f;
 
-    float lossRate = (float)(totalupdates + m_nSequencesSkipped_MAYBE);
+	float lossRate = (float)(totalupdates + m_nSequencesSkipped);
 
-    if (totalupdates + m_nSequencesSkipped_MAYBE < 0.0f)
-        lossRate += float(2 ^ 64);
+	if (totalupdates + m_nSequencesSkipped < 0.0f)
+		lossRate += float(2 ^ 64);
 
-    return m_nSequencesSkipped_MAYBE / lossRate;
+	return m_nSequencesSkipped / lossRate;
 }
 
 //-----------------------------------------------------------------------------
@@ -504,14 +504,16 @@ bool CNetChan::SendData(bf_write& msg, const bool bReliable)
 // Input  : type - 
 // Output : net message pointer on success, NULL otherwise
 //-----------------------------------------------------------------------------
-INetMessage* CNetChan::FindMessage(int type)
+INetMessage* CNetChan::FindMessage(const int type)
 {
-    int numtypes = m_NetMessages.Count();
+    const int numtypes = m_NetMessages.Count();
 
     for (int i = 0; i < numtypes; i++)
     {
-        if (m_NetMessages[i]->GetType() == type)
-            return m_NetMessages[i];
+        INetMessage* const message = m_NetMessages[i];
+
+        if (message->GetType() == type)
+            return message;
     }
 
     return NULL;

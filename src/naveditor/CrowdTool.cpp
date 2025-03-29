@@ -585,7 +585,7 @@ void CrowdToolState::handleRenderOverlay(double* model, double* proj, int* view)
 		ImVec2* totalSample = m_crowdTotalTime.getSampleBuffer();
 		ImVec2* crowdSample = m_crowdSampleCount.getSampleBuffer();
 
-		ImGui::SetNextWindowPos(ImVec2(250.f+30.f, 10.f), ImGuiCond_Once);
+		ImGui::SetNextWindowPos(ImVec2(270.f+30.f, 10.f), ImGuiCond_Once);
 		ImGui::SetNextWindowSizeConstraints(ImVec2(420, 200), ImVec2(FLT_MAX, FLT_MAX));
 
 		if (ImGui::Begin("Graph", nullptr))

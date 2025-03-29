@@ -192,6 +192,7 @@ static void ImGui_ImplSDL2_PlatformSetImeData(ImGuiContext*, ImGuiViewport*, ImG
 ImGuiKey ImGui_ImplSDL2_KeyEventToImGuiKey(SDL_Keycode keycode, SDL_Scancode scancode);
 ImGuiKey ImGui_ImplSDL2_KeyEventToImGuiKey(SDL_Keycode keycode, SDL_Scancode scancode)
 {
+    IM_UNUSED(scancode);
     switch (keycode)
     {
         case SDLK_TAB: return ImGuiKey_Tab;
