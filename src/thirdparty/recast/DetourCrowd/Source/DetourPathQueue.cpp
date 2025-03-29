@@ -30,7 +30,10 @@ dtPathQueue::dtPathQueue() :
 	m_navquery(0)
 {
 	for (int i = 0; i < MAX_QUEUE; ++i)
+	{
 		m_queue[i].path = 0;
+		m_queue[i].jump = 0;
+	}
 }
 
 dtPathQueue::~dtPathQueue()
@@ -46,6 +49,8 @@ void dtPathQueue::purge()
 	{
 		rdFree(m_queue[i].path);
 		m_queue[i].path = 0;
+		rdFree(m_queue[i].jump);
+		m_queue[i].jump = 0;
 	}
 }
 
@@ -65,6 +70,9 @@ bool dtPathQueue::init(const int maxPathSize, const int maxSearchNodeCount, dtNa
 		m_queue[i].ref = DT_PATHQ_INVALID;
 		m_queue[i].path = (dtPolyRef*)rdAlloc(sizeof(dtPolyRef)*m_maxPathSize, RD_ALLOC_PERM);
 		if (!m_queue[i].path)
+			return false;
+		m_queue[i].jump = (unsigned char*)rdAlloc(sizeof(unsigned char)*m_maxPathSize, RD_ALLOC_PERM);
+		if (!m_queue[i].jump)
 			return false;
 	}
 	
@@ -110,7 +118,7 @@ void dtPathQueue::update(const int maxIters)
 		// Handle query start.
 		if (q.status == 0)
 		{
-			q.status = m_navquery->initSlicedFindPath(q.startRef, q.endRef, q.startPos, q.endPos);
+			q.status = m_navquery->initSlicedFindPath(q.startRef, q.endRef, &q.startPos, &q.endPos);
 		}		
 		// Handle query in progress.
 		if (dtStatusInProgress(q.status))
@@ -121,7 +129,7 @@ void dtPathQueue::update(const int maxIters)
 		}
 		if (dtStatusSucceed(q.status))
 		{
-			q.status = m_navquery->finalizeSlicedFindPath(q.path, &q.npath, m_maxPathSize, q.filter);
+			q.status = m_navquery->finalizeSlicedFindPath(q.path, q.jump, &q.npath, m_maxPathSize, q.filter);
 		}
 
 		if (iterCount <= 0)
@@ -132,7 +140,7 @@ void dtPathQueue::update(const int maxIters)
 }
 
 dtPathQueueRef dtPathQueue::request(dtPolyRef startRef, dtPolyRef endRef,
-									const float* startPos, const float* endPos,
+									const rdVec3D* startPos, const rdVec3D* endPos,
 									const dtQueryFilter* filter)
 {
 	// Find empty slot
@@ -154,9 +162,9 @@ dtPathQueueRef dtPathQueue::request(dtPolyRef startRef, dtPolyRef endRef,
 	
 	PathQuery& q = m_queue[slot];
 	q.ref = ref;
-	rdVcopy(q.startPos, startPos);
+	q.startPos = *startPos;
 	q.startRef = startRef;
-	rdVcopy(q.endPos, endPos);
+	q.endPos = *endPos;
 	q.endRef = endRef;
 	
 	q.status = 0;
@@ -177,7 +185,7 @@ dtStatus dtPathQueue::getRequestStatus(dtPathQueueRef ref) const
 	return DT_FAILURE;
 }
 
-dtStatus dtPathQueue::getPathResult(dtPathQueueRef ref, dtPolyRef* path, int* pathSize, const int maxPath)
+dtStatus dtPathQueue::getPathResult(dtPathQueueRef ref, dtPolyRef* path, unsigned char* jump, int* pathSize, const int maxPath)
 {
 	for (int i = 0; i < MAX_QUEUE; ++i)
 	{
@@ -189,8 +197,9 @@ dtStatus dtPathQueue::getPathResult(dtPathQueueRef ref, dtPolyRef* path, int* pa
 			q.ref = DT_PATHQ_INVALID;
 			q.status = 0;
 			// Copy path
-			int n = rdMin(q.npath, maxPath);
+			const int n = rdMin(q.npath, maxPath);
 			memcpy(path, q.path, sizeof(dtPolyRef)*n);
+			memcpy(jump, q.jump, sizeof(unsigned char)*n);
 			*pathSize = n;
 			return details | DT_SUCCESS;
 		}

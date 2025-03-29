@@ -53,34 +53,34 @@ class NavMeshTesterTool : public EditorTool
 
 	int m_straightPathOptions;
 	
-	static const int MAX_POLYS = 256;
+	static const int MAX_POLYS = 512;
 	static const int MAX_SMOOTH = 2048;
 	
 	dtPolyRef m_startRef;
 	dtPolyRef m_endRef;
 	dtPolyRef m_polys[MAX_POLYS];
 	dtPolyRef m_parent[MAX_POLYS];
-	unsigned char m_jumpTypes[MAX_POLYS];
+	unsigned char m_jumps[MAX_POLYS];
 	int m_npolys;
-	float m_straightPath[MAX_POLYS*3];
+	rdVec3D m_straightPath[MAX_POLYS];
 	unsigned char m_straightPathFlags[MAX_POLYS];
 	dtPolyRef m_straightPathPolys[MAX_POLYS];
 	unsigned char m_straightPathJumps[MAX_POLYS];
 	int m_nstraightPath;
-	float m_polyPickExt[3];
-	float m_smoothPath[MAX_SMOOTH*3];
+	rdVec3D m_polyPickExt;
+	rdVec3D m_smoothPath[MAX_SMOOTH];
 	int m_nsmoothPath;
-	float m_queryPoly[4*3];
+	rdVec3D m_queryPoly[4];
 
 	static const int MAX_RAND_POINTS = 64;
-	float m_randPoints[MAX_RAND_POINTS*3];
+	rdVec3D m_randPoints[MAX_RAND_POINTS];
 	int m_nrandPoints;
 	bool m_randPointsInCircle;
 	
-	float m_spos[3];
-	float m_epos[3];
-	float m_hitPos[3];
-	float m_hitNormal[3];
+	rdVec3D m_spos;
+	rdVec3D m_epos;
+	rdVec3D m_hitPos;
+	rdVec3D m_hitNormal;
 	bool m_hitResult;
 	float m_distanceToWall;
 	float m_neighbourhoodRadius;
@@ -89,12 +89,13 @@ class NavMeshTesterTool : public EditorTool
 	bool m_eposSet;
 
 	int m_pathIterNum;
-	dtPolyRef m_pathIterPolys[MAX_POLYS]; 
+	dtPolyRef m_pathIterPolys[MAX_POLYS];
+	unsigned char m_pathIterJumps[MAX_POLYS];
 	int m_pathIterPolyCount;
-	float m_prevIterPos[3], m_iterPos[3], m_steerPos[3], m_targetPos[3];
+	rdVec3D m_prevIterPos, m_iterPos, m_steerPos, m_targetPos;
 	
 	static const int MAX_STEER_POINTS = 10;
-	float m_steerPoints[MAX_STEER_POINTS*3];
+	rdVec3D m_steerPoints[MAX_STEER_POINTS];
 	int m_steerPointCount;
 	
 public:
@@ -104,15 +105,18 @@ public:
 	virtual void init(Editor* editor);
 	virtual void reset();
 	virtual void handleMenu();
-	virtual void handleClick(const float* s, const float* p, const int v, bool shift);
+	virtual void handleClick(const rdVec3D* s, const rdVec3D* p, const int v, bool shift);
 	virtual void handleToggle();
 	virtual void handleStep();
 	virtual void handleUpdate(const float dt);
 	virtual void handleRender();
-	virtual void handleRenderOverlay(double* proj, double* model, int* view);
+	virtual void handleRenderOverlay(double* model, double* proj, int* view);
 
+	void handleStraightPathMenu();
 	void recalc();
-	void drawAgent(const float* pos, float r, float h, float c, const unsigned int col);
+	void updateTraverseCosts();
+
+	void drawAgent(const rdVec3D* pos, float r, float h, float c, const unsigned int col);
 };
 
 #endif // NAVMESHTESTERTOOL_H

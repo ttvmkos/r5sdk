@@ -41,6 +41,7 @@ class dtQueryFilter
 	
 public:
 	dtQueryFilter();
+	void resetTraverseCosts();
 	
 #ifdef DT_VIRTUAL_QUERYFILTER
 	virtual ~dtQueryFilter() { }
@@ -60,7 +61,7 @@ public:
 #ifdef DT_VIRTUAL_QUERYFILTER
 	virtual
 #endif
-	bool traverseFilter(const dtPolyRef ref,
+	bool traverseFilter(const dtLink* link,
 			const dtMeshTile* tile,
 			const dtPoly* poly) const;
 
@@ -81,7 +82,7 @@ public:
 #ifdef DT_VIRTUAL_QUERYFILTER
 	virtual 
 #endif
-	float getCost(const float* pa, const float* pb, const dtLink* link,
+	float getCost(const rdVec3D* pa, const rdVec3D* pb, const dtLink* link,
 						  const dtPolyRef prevRef, const dtMeshTile* prevTile, const dtPoly* prevPoly,
 						  const dtPolyRef curRef, const dtMeshTile* curTile, const dtPoly* curPoly,
 						  const dtPolyRef nextRef, const dtMeshTile* nextTile, const dtPoly* nextPoly) const;
@@ -92,12 +93,12 @@ public:
 	/// Returns the traversal cost of the area.
 	///  @param[in]		i		The id of the area.
 	/// @returns The traversal cost of the area.
-	inline float getAreaCost(const int i) const { return m_traverseCost[i]; }
+	inline float getTraverseCost(const int i) const { return m_traverseCost[i]; }
 
 	/// Sets the traversal cost of the area.
 	///  @param[in]		i		The id of the area.
 	///  @param[in]		cost	The new cost of traversing the area.
-	inline void setAreaCost(const int i, const float cost) { m_traverseCost[i] = cost; } 
+	inline void setTraverseCost(const int i, const float cost) { m_traverseCost[i] = cost; }
 
 	/// Returns the include flags for the filter.
 	/// Any polygons that include one or more of these flags will be
@@ -113,12 +114,20 @@ public:
 	/// excluded from the operation.
 	inline unsigned short getExcludeFlags() const { return m_excludeFlags; }
 
-	/// Sets the exclude flags for the filter.
+	/// Sets the traverse flags for the filter.
 	/// @param[in]		flags		The new flags.
-	inline void setExcludeFlags(const unsigned short flags) { m_excludeFlags = flags; }	
+	inline void setExcludeFlags(const unsigned short flags) { m_excludeFlags = flags; }
+
+	/// Returns the traverse flags for the filter.
+	/// Any polygons that include one ore more of these flags will be
+	/// included in the operation.
+	inline unsigned int getTraverseFlags() const { return m_traverseFlags; }
+
+	/// Sets the traverse flags for the filter.
+	/// @param[in]		flags		The new flags.
+	inline void setTraverseFlags(const unsigned int flags) { m_traverseFlags = flags; }
 
 	///@}
-
 };
 
 /// Provides information about raycast hit
@@ -133,7 +142,7 @@ struct dtRaycastHit
 	float t; 
 	
 	/// hitNormal	The normal of the nearest wall hit. [(x, y, z)]
-	float hitNormal[3];
+	rdVec3D hitNormal;
 	
 	/// The number of visited polygons. [opt]
 	int pathCount;
@@ -157,19 +166,31 @@ struct dtStraightPathResult
 	int pathCount;
 
 	/// The points describing the straight path.
-	float path[3][DT_STRAIGHT_PATH_RESOLUTION];
+	rdVec3D path[DT_DEFAULT_STRAIGHT_PATH_RESOLUTION];
 
 	/// The array of polygon references that represent the path corridor.
-	dtPolyRef polys[DT_STRAIGHT_PATH_RESOLUTION];
+	dtPolyRef polys[DT_DEFAULT_STRAIGHT_PATH_RESOLUTION];
 
 	/// The jumps describing each point.
-	unsigned char jumps[DT_STRAIGHT_PATH_RESOLUTION];
+	unsigned char jumps[DT_DEFAULT_STRAIGHT_PATH_RESOLUTION];
 
 	/// The flags describing each point.
-	unsigned char flags[DT_STRAIGHT_PATH_RESOLUTION];
+	unsigned char flags[DT_DEFAULT_STRAIGHT_PATH_RESOLUTION];
 
 	/// Whether the end of the path is the goal destination.
 	bool pathEndIsGoal;
+};
+
+/// Provides information about poly wall segments
+/// filled by dtNavMeshQuery::getPolyWallSegments
+/// @ingroup detour
+struct dtPolyWallSegment
+{
+	/// The first vertex describing the segment.
+	rdVec3D verta;
+
+	/// The second vertex describing the segment.
+	rdVec3D vertb;
 };
 
 /// Provides custom polygon query behavior.
@@ -209,19 +230,22 @@ public:
 	///  @param[in]		startPos	A position within the start polygon. [(x, y, z)]
 	///  @param[in]		endPos		A position within the end polygon. [(x, y, z)]
 	///  @param[in]		filter		The polygon filter to apply to the query.
-	///  @param[out]	path		An ordered list of polygon references representing the path. (Start to end.) 
+	///  @param[out]	path		An ordered list of polygon references representing the path. (Start to end.)
 	///  							[(polyRef) * @p pathCount]
+	///  @param[out]	jump		An ordered list of polygon references representing the path. (Start to end.)
+	///  							[(uchar) * @p pathCount]
 	///  @param[out]	pathCount	The number of polygons returned in the @p path array.
 	///  @param[in]		maxPath		The maximum number of polygons the @p path array can hold. [Limit: >= 1]
 	dtStatus findPath(dtPolyRef startRef, dtPolyRef endRef,
-					  const float* startPos, const float* endPos,
-					  const dtQueryFilter* filter,
-					  dtPolyRef* path, int* pathCount, const int maxPath) const;
+					  const rdVec3D* startPos, const rdVec3D* endPos,
+					  const dtQueryFilter* filter, dtPolyRef* path,
+					  unsigned char* jump, int* pathCount, const int maxPath) const;
 
 	/// Finds the straight path from the start to the end position within the polygon corridor.
 	///  @param[in]		startPos			Path start position. [(x, y, z)]
 	///  @param[in]		endPos				Path end position. [(x, y, z)]
 	///  @param[in]		path				An array of polygon references that represent the path corridor.
+	///  @param[in]		jumpTypes			An array of jump types that represent the traversal corridor.
 	///  @param[in]		pathSize			The number of polygons in the @p path array.
 	///  @param[out]	straightPath		Points describing the straight path. [(x, y, z) * @p straightPathCount].
 	///  @param[out]	straightPathFlags	Flags describing each point. (See: #dtStraightPathFlags) [opt]
@@ -229,13 +253,28 @@ public:
 	///  @param[out]	straightPathJumps	The jump types that is being entered at each point. [opt]
 	///  @param[out]	straightPathCount	The number of points in the straight path.
 	///  @param[in]		maxStraightPath		The maximum number of points the straight path arrays can hold.  [Limit: > 0]
+	///  @param[in]		jumpFilter			A mask containing all the jump types to be considered when adding jump verts.
 	///  @param[in]		options				Query options. (see: #dtStraightPathOptions)
 	/// @returns The status flags for the query.
-	dtStatus findStraightPath(const float* startPos, const float* endPos,
+	dtStatus findStraightPath(const rdVec3D* startPos, const rdVec3D* endPos,
 							  const dtPolyRef* path, const unsigned char* jumpTypes, const int pathSize,
-							  float* straightPath, unsigned char* straightPathFlags, dtPolyRef* straightPathRefs,
+							  rdVec3D* straightPath, unsigned char* straightPathFlags, dtPolyRef* straightPathRefs,
 							  unsigned char* straightPathJumps, int* straightPathCount, const int maxStraightPath,
-							  const int options = 0) const;
+							  const int jumpFilter, const int options = 0) const;
+
+	/// Finds the straight path from the start to the end position within the polygon corridor.
+	///  @param[in]		startPos			Path start position. [(x, y, z)]
+	///  @param[in]		endPos				Path end position. [(x, y, z)]
+	///  @param[in]		path				An array of polygon references that represent the path corridor.
+	///  @param[in]		jumpTypes			An array of jump types that represent the traversal corridor.
+	///  @param[in]		pathSize			The number of polygons in the @p path array.
+	///  @param[out]	result				The result of the straight path.
+	///  @param[in]		maxStraightPath		The maximum number of points the straight path arrays can hold.  [Limit: > 0]
+	///  @param[in]		jumpFilter			A mask containing all the jump types to be considered when adding jump verts.
+	///  @param[in]		options				Query options. (see: #dtStraightPathOptions)
+	/// @returns The status flags for the query.
+	dtStatus findStraightPath(const rdVec3D* startPos, const rdVec3D* endPos, const dtPolyRef* path, const unsigned char* jumpTypes, const int pathSize,
+							  dtStraightPathResult& result, const int maxStraightPath, const int jumpFilter, const int options = 0) const;
 
 	///@}
 	/// @name Sliced Pathfinding Functions
@@ -253,7 +292,7 @@ public:
 	///  @param[in]		options		query options (see: #dtFindPathOptions)
 	/// @returns The status flags for the query.
 	dtStatus initSlicedFindPath(dtPolyRef startRef, dtPolyRef endRef,
-								const float* startPos, const float* endPos,
+								const rdVec3D* startPos, const rdVec3D* endPos,
 								const unsigned int options = 0);
 
 	/// Updates an in-progress sliced path query.
@@ -264,13 +303,15 @@ public:
 	dtStatus updateSlicedFindPath(const int maxIter, int* doneIters, const dtQueryFilter* filter);
 
 	/// Finalizes and returns the results of a sliced path query.
-	///  @param[out]	path		An ordered list of polygon references representing the path. (Start to end.) 
+	///  @param[out]	path		An ordered list of polygon references representing the path. (Start to end.)
 	///  							[(polyRef) * @p pathCount]
+	///  @param[out]	jump		An ordered list of jump types representing the traversal path. (Start to end.)
+	///  							[(uchar) * @p pathCount]
 	///  @param[out]	pathCount	The number of polygons returned in the @p path array.
 	///  @param[in]		maxPath		The max number of polygons the path array can hold. [Limit: >= 1]
 	///  @param[in]		filter		The polygon filter to apply to the query.
 	/// @returns The status flags for the query.
-	dtStatus finalizeSlicedFindPath(dtPolyRef* path, int* pathCount, const int maxPath, const dtQueryFilter* filter);
+	dtStatus finalizeSlicedFindPath(dtPolyRef* path, unsigned char* jumps, int* pathCount, const int maxPath, const dtQueryFilter* filter);
 	
 	/// Finalizes and returns the results of an incomplete sliced path query, returning the path to the furthest
 	/// polygon on the existing path that was visited during the search.
@@ -278,13 +319,15 @@ public:
 	///  @param[in]		existingSize	The number of polygon in the @p existing array.
 	///  @param[out]	path			An ordered list of polygon references representing the path. (Start to end.) 
 	///  								[(polyRef) * @p pathCount]
+	///  @param[out]	jump			An ordered list of jump types representing the traversal path. (Start to end.) 
+	///  								[(uchar) * @p pathCount]
 	///  @param[out]	pathCount		The number of polygons returned in the @p path array.
 	///  @param[in]		maxPath			The max number of polygons the @p path array can hold. [Limit: >= 1]
 	///  @param[in]		filter		The polygon filter to apply to the query.
 	/// @returns The status flags for the query.
 	dtStatus finalizeSlicedFindPathPartial(const dtPolyRef* existing, const int existingSize,
-										   dtPolyRef* path, int* pathCount, const int maxPath,
-										   const dtQueryFilter* filter);
+										   dtPolyRef* path, unsigned char* jump, int* pathCount,
+										   const int maxPath, const dtQueryFilter* filter);
 
 	///@}
 	/// @name Dijkstra Search Functions
@@ -302,7 +345,7 @@ public:
 	///  @param[out]	resultCount		The number of polygons found. [opt]
 	///  @param[in]		maxResult		The maximum number of polygons the result arrays can hold.
 	/// @returns The status flags for the query.
-	dtStatus findPolysAroundCircle(dtPolyRef startRef, const float* centerPos, const float radius,
+	dtStatus findPolysAroundCircle(dtPolyRef startRef, const rdVec3D* centerPos, const float radius,
 								   const dtQueryFilter* filter,
 								   dtPolyRef* resultRef, dtPolyRef* resultParent, float* resultCost,
 								   int* resultCount, const int maxResult) const;
@@ -320,7 +363,7 @@ public:
 	///  @param[out]	resultCount		The number of polygons found.
 	///  @param[in]		maxResult		The maximum number of polygons the result arrays can hold.
 	/// @returns The status flags for the query.
-	dtStatus findPolysAroundShape(dtPolyRef startRef, const float* verts, const int nverts,
+	dtStatus findPolysAroundShape(dtPolyRef startRef, const rdVec3D* verts, const int nverts,
 								  const dtQueryFilter* filter,
 								  dtPolyRef* resultRef, dtPolyRef* resultParent, float* resultCost,
 								  int* resultCount, const int maxResult) const;
@@ -329,6 +372,8 @@ public:
 	///  @param[in]		endRef		The reference id of the end polygon.
 	///  @param[out]	path		An ordered list of polygon references representing the path. (Start to end.)
 	///  							[(polyRef) * @p pathCount]
+	///  @param[out]	jump		An ordered list of jump types representing the traversal path. (Start to end.)
+	///  							[(uchar) * @p pathCount]
 	///  @param[out]	pathCount	The number of polygons returned in the @p path array.
 	///  @param[in]		maxPath		The maximum number of polygons the @p path array can hold. [Limit: >= 0]
 	///  @returns		The status flags. Returns DT_FAILURE | DT_INVALID_PARAM if any parameter is wrong, or if
@@ -337,24 +382,11 @@ public:
 	///  				Otherwise returns DT_SUCCESS.
 	///  @remarks		The result of this function depends on the state of the query object. For that reason it should only
 	///  				be used immediately after one of the two Dijkstra searches, findPolysAroundCircle or findPolysAroundShape.
-	dtStatus getPathFromDijkstraSearch(dtPolyRef endRef, dtPolyRef* path, int* pathCount, int maxPath) const;
+	dtStatus getPathFromDijkstraSearch(dtPolyRef endRef, dtPolyRef* path, unsigned char* jump, int* pathCount, int maxPath) const;
 
 	/// @}
 	/// @name Local Query Functions
 	///@{
-
-	/// Finds the polygon nearest to the specified center point.
-	/// [opt] means the specified parameter can be a null pointer, in that case the output parameter will not be set.
-	///
-	///  @param[in]		center		The center of the search box. [(x, y, z)]
-	///  @param[in]		halfExtents	The search distance along each axis. [(x, y, z)]
-	///  @param[in]		filter		The polygon filter to apply to the query.
-	///  @param[out]	nearestRef	The reference id of the nearest polygon. Will be set to 0 if no polygon is found.
-	///  @param[out]	nearestPt	The nearest point on the polygon. Unchanged if no polygon is found. [opt] [(x, y, z)]
-	/// @returns The status flags for the query.
-	dtStatus findNearestPoly(const float* center, const float* halfExtents,
-							 const dtQueryFilter* filter,
-							 dtPolyRef* nearestRef, float* nearestPt) const;
 
 	/// Finds the polygon nearest to the specified center point.
 	/// [opt] means the specified parameter can be a null pointer, in that case the output parameter will not be set.
@@ -366,10 +398,10 @@ public:
 	///  @param[out]	nearestPt	The nearest point on the polygon. Unchanged if no polygon is found. [opt] [(x, y, z)]
 	///  @param[out]	isOverPoly 	Set to true if the point's X/Z coordinate lies inside the polygon, false otherwise. Unchanged if no polygon is found. [opt]
 	/// @returns The status flags for the query.
-	dtStatus findNearestPoly(const float* center, const float* halfExtents,
+	dtStatus findNearestPoly(const rdVec3D* center, const rdVec3D* halfExtents,
 							 const dtQueryFilter* filter,
-							 dtPolyRef* nearestRef, float* nearestPt, bool* isOverPoly) const;
-	
+							 dtPolyRef* nearestRef, rdVec3D* nearestPt, bool* isOverPoly = nullptr) const;
+
 	/// Finds polygons that overlap the search box.
 	///  @param[in]		center		The center of the search box. [(x, y, z)]
 	///  @param[in]		halfExtents		The search distance along each axis. [(x, y, z)]
@@ -378,17 +410,33 @@ public:
 	///  @param[out]	polyCount	The number of polygons in the search result.
 	///  @param[in]		maxPolys	The maximum number of polygons the search result can hold.
 	/// @returns The status flags for the query.
-	dtStatus queryPolygons(const float* center, const float* halfExtents,
+	dtStatus queryPolygons(const rdVec3D* center, const rdVec3D* halfExtents,
 						   const dtQueryFilter* filter,
 						   dtPolyRef* polys, int* polyCount, const int maxPolys) const;
 
-	/// Finds polygons that overlap the search box.
+	/// Finds polygons that overlap the search box. (Auto-selects the best algorithm for @p halfExtents.)
 	///  @param[in]		center		The center of the search box. [(x, y, z)]
 	///  @param[in]		halfExtents		The search distance along each axis. [(x, y, z)]
 	///  @param[in]		filter		The polygon filter to apply to the query.
 	///  @param[in]		query		The query. Polygons found will be batched together and passed to this query.
-	dtStatus queryPolygons(const float* center, const float* halfExtents,
-						   const dtQueryFilter* filter, dtPolyQuery* query) const;
+	dtStatus queryPolygonsInArea(const rdVec3D* center, const rdVec3D* halfExtents,
+								 const dtQueryFilter* filter, dtPolyQuery* query) const;
+
+	/// Finds polygons that overlap the search box. (Works best when: ||@p halfExtents||^2 < #dtNavMeshParams::tileWidth^2.)
+	///  @param[in]		center		The center of the search box. [(x, y, z)]
+	///  @param[in]		halfExtents		The search distance along each axis. [(x, y, z)]
+	///  @param[in]		filter		The polygon filter to apply to the query.
+	///  @param[in]		query		The query. Polygons found will be batched together and passed to this query.
+	dtStatus queryPolygonsSmallArea(const rdVec3D* center, const rdVec3D* halfExtents,
+									const dtQueryFilter* filter, dtPolyQuery* query) const;
+
+	/// Finds polygons that overlap the search box. (Works best when: ||@p halfExtents||^2 >= #dtNavMeshParams::tileWidth^2.)
+	///  @param[in]		center		The center of the search box. [(x, y, z)]
+	///  @param[in]		halfExtents		The search distance along each axis. [(x, y, z)]
+	///  @param[in]		filter		The polygon filter to apply to the query.
+	///  @param[in]		query		The query. Polygons found will be batched together and passed to this query.
+	dtStatus queryPolygonsLargeArea(const rdVec3D* center, const rdVec3D* halfExtents,
+									const dtQueryFilter* filter, dtPolyQuery* query) const;
 
 	/// Finds the non-overlapping navigation polygons in the local neighbourhood around the center position.
 	///  @param[in]		startRef		The reference id of the polygon where the search starts.
@@ -401,7 +449,7 @@ public:
 	///  @param[out]	resultCount		The number of polygons found.
 	///  @param[in]		maxResult		The maximum number of polygons the result arrays can hold.
 	/// @returns The status flags for the query.
-	dtStatus findLocalNeighbourhood(dtPolyRef startRef, const float* centerPos, const float radius,
+	dtStatus findLocalNeighbourhood(dtPolyRef startRef, const rdVec3D* centerPos, const float radius,
 									const dtQueryFilter* filter,
 									dtPolyRef* resultRef, dtPolyRef* resultParent,
 									int* resultCount, const int maxResult) const;
@@ -412,13 +460,14 @@ public:
 	///  @param[in]		endPos			The desired end position of the mover. [(x, y, z)]
 	///  @param[in]		filter			The polygon filter to apply to the query.
 	///  @param[out]	resultPos		The result position of the mover. [(x, y, z)]
-	///  @param[out]	visited			The reference ids of the polygons visited during the move.
+	///  @param[out]	visitedPolys	The reference ids of the polygons visited during the move.
 	///  @param[out]	visitedCount	The number of polygons visited during the move.
 	///  @param[in]		maxVisitedSize	The maximum number of polygons the @p visited array can hold.
+	///  @param[in]		options			govern how moveAlongSurface behaves. See dtMoveAlongSurfaceOptions.
 	/// @returns The status flags for the query.
-	dtStatus moveAlongSurface(dtPolyRef startRef, const float* startPos, const float* endPos,
-							  const dtQueryFilter* filter,
-							  float* resultPos, dtPolyRef* visited, int* visitedCount, const int maxVisitedSize) const;
+	dtStatus moveAlongSurface(dtPolyRef startRef, const rdVec3D* startPos, const rdVec3D* endPos,
+							  const dtQueryFilter* filter, rdVec3D* resultPos, dtPolyRef* visitedPolys,
+							  int* visitedCount, const int maxVisitedSize, const unsigned char options) const;
 	
 	/// Casts a 'walkability' ray along the surface of the navigation mesh from 
 	/// the start position toward the end position.
@@ -434,9 +483,9 @@ public:
 	///  @param[out]	pathCount	The number of visited polygons. [opt]
 	///  @param[in]		maxPath		The maximum number of polygons the @p path array can hold.
 	/// @returns The status flags for the query.
-	dtStatus raycast(dtPolyRef startRef, const float* startPos, const float* endPos,
-					 const dtQueryFilter* filter,
-					 float* t, float* hitNormal, dtPolyRef* path, int* pathCount, const int maxPath) const;
+	dtStatus raycast(dtPolyRef startRef, const rdVec3D* startPos, const rdVec3D* endPos,
+					 const dtQueryFilter* filter, float* t, rdVec3D* hitNormal, dtPolyRef* path,
+					 int* pathCount, const int maxPath) const;
 	
 	/// Casts a 'walkability' ray along the surface of the navigation mesh from 
 	/// the start position toward the end position.
@@ -445,11 +494,11 @@ public:
 	///  							the start of the ray. [(x, y, z)]
 	///  @param[in]		endPos		The position to cast the ray toward. [(x, y, z)]
 	///  @param[in]		filter		The polygon filter to apply to the query.
-	///  @param[in]		flags		govern how the raycast behaves. See dtRaycastOptions
+	///  @param[in]		options		govern how the raycast behaves. See dtRaycastOptions.
 	///  @param[out]	hit			Pointer to a raycast hit structure which will be filled by the results.
 	///  @param[in]		prevRef		parent of start ref. Used during for cost calculation [opt]
 	/// @returns The status flags for the query.
-	dtStatus raycast(dtPolyRef startRef, const float* startPos, const float* endPos,
+	dtStatus raycast(dtPolyRef startRef, const rdVec3D* startPos, const rdVec3D* endPos,
 					 const dtQueryFilter* filter, const unsigned int options,
 					 dtRaycastHit* hit, dtPolyRef prevRef = 0) const;
 
@@ -464,21 +513,21 @@ public:
 	///  @param[out]	hitNormal		The normalized ray formed from the wall point to the 
 	///  								source point. [(x, y, z)]
 	/// @returns The status flags for the query.
-	dtStatus findDistanceToWall(dtPolyRef startRef, const float* centerPos, const float maxRadius,
+	dtStatus findDistanceToWall(dtPolyRef startRef, const rdVec3D* centerPos, const float maxRadius,
 								const dtQueryFilter* filter,
-								float* hitDist, float* hitPos, float* hitNormal) const;
+								float* hitDist, rdVec3D* hitPos, rdVec3D* hitNormal) const;
 	
 	/// Returns the segments for the specified polygon, optionally including portals.
 	///  @param[in]		ref				The reference id of the polygon.
 	///  @param[in]		filter			The polygon filter to apply to the query.
-	///  @param[out]	segmentVerts	The segments. [(ax, ay, az, bx, by, bz) * segmentCount]
+	///  @param[out]	segments		The segments. [(polyWallSegment) * segmentCount]
 	///  @param[out]	segmentRefs		The reference ids of each segment's neighbor polygon. 
 	///  								Or zero if the segment is a wall. [opt] [(parentRef) * @p segmentCount] 
 	///  @param[out]	segmentCount	The number of segments returned.
 	///  @param[in]		maxSegments		The maximum number of segments the result arrays can hold.
 	/// @returns The status flags for the query.
 	dtStatus getPolyWallSegments(dtPolyRef ref, const dtQueryFilter* filter,
-								 float* segmentVerts, dtPolyRef* segmentRefs, int* segmentCount,
+								 dtPolyWallSegment* segments, dtPolyRef* segmentRefs, int* segmentCount,
 								 const int maxSegments) const;
 
 	/// Returns random location on navmesh.
@@ -489,7 +538,7 @@ public:
 	///  @param[out]	randomPt		The random location. 
 	/// @returns The status flags for the query.
 	dtStatus findRandomPoint(const dtQueryFilter* filter, float (*frand)(),
-							 dtPolyRef* randomRef, float* randomPt) const;
+							 dtPolyRef* randomRef, rdVec3D* randomPt) const;
 
 	/// Returns random location on navmesh within the reach of specified location.
 	/// Polygons are chosen weighted by area. The search runs in linear related to number of polygon.
@@ -501,32 +550,36 @@ public:
 	///  @param[out]	randomRef		The reference id of the random location.
 	///  @param[out]	randomPt		The random location. [(x, y, z)]
 	/// @returns The status flags for the query.
-	dtStatus findRandomPointAroundCircle(dtPolyRef startRef, const float* centerPos, const float maxRadius,
+	dtStatus findRandomPointAroundCircle(dtPolyRef startRef, const rdVec3D* centerPos, const float maxRadius,
 										 const dtQueryFilter* filter, float (*frand)(),
-										 dtPolyRef* randomRef, float* randomPt) const;
+										 dtPolyRef* randomRef, rdVec3D* randomPt) const;
 	
 	/// Finds the closest point on the specified polygon.
 	///  @param[in]		ref			The reference id of the polygon.
 	///  @param[in]		pos			The position to check. [(x, y, z)]
 	///  @param[out]	closest		The closest point on the polygon. [(x, y, z)]
 	///  @param[out]	posOverPoly	True of the position is over the polygon.
+	///  @param[out]	normal		The normal of the triangle the point resides in. [(x, y, z)]
+	///  @param[out]	dist		The distance from @p pos to the nearest polygon edge.
 	/// @returns The status flags for the query.
-	dtStatus closestPointOnPoly(dtPolyRef ref, const float* pos, float* closest, bool* posOverPoly) const;
+	dtStatus closestPointOnPoly(dtPolyRef ref, const rdVec3D* pos, rdVec3D* closest, bool* posOverPoly, float* dist = nullptr, rdVec3D* normal = nullptr) const;
 	
 	/// Returns a point on the boundary closest to the source point if the source point is outside the 
 	/// polygon's xy-bounds.
 	///  @param[in]		ref			The reference id to the polygon.
 	///  @param[in]		pos			The position to check. [(x, y, z)]
 	///  @param[out]	closest		The closest point. [(x, y, z)]
+	///  @param[out]	dist		The distance from @p pos to the nearest polygon edge.
 	/// @returns The status flags for the query.
-	dtStatus closestPointOnPolyBoundary(dtPolyRef ref, const float* pos, float* closest) const;
+	dtStatus closestPointOnPolyBoundary(dtPolyRef ref, const rdVec3D* pos, rdVec3D* closest, float* dist = nullptr) const;
 	
 	/// Gets the height of the polygon at the provided position using the height detail. (Most accurate.)
 	///  @param[in]		ref			The reference id of the polygon.
 	///  @param[in]		pos			A position within the xy-bounds of the polygon. [(x, y, z)]
 	///  @param[out]	height		The height at the surface of the polygon.
+	///  @param[out]	normal		The normal of the triangle the point resides in. [(x, y, z)]
 	/// @returns The status flags for the query.
-	dtStatus getPolyHeight(dtPolyRef ref, const float* pos, float* height) const;
+	dtStatus getPolyHeight(dtPolyRef ref, const rdVec3D* pos, float* height, rdVec3D* normal = nullptr) const;
 
 	/// @}
 	/// @name Miscellaneous Functions
@@ -569,7 +622,7 @@ public:
 	///  @param[in]		to			The reference to the end poly.
 	///  @param[out]	mid			The mid point of the edge.
 	/// @returns The status flags for the query.
-	dtStatus getEdgeMidPoint(dtPolyRef from, dtPolyRef to, float* mid) const;
+	dtStatus getEdgeMidPoint(dtPolyRef from, dtPolyRef to, rdVec3D* mid) const;
 
 	/// Returns edge mid point between two polygons.
 	///  @param[in]		from		The reference to the start poly.
@@ -582,14 +635,14 @@ public:
 	/// @returns The status flags for the query.
 	dtStatus getEdgeMidPoint(dtPolyRef from, const dtPoly* fromPoly, const dtMeshTile* fromTile,
 							 dtPolyRef to, const dtPoly* toPoly, const dtMeshTile* toTile,
-							 float* mid) const;
+							 rdVec3D* mid) const;
 
 	/// Returns edge normal between two polygons.
 	///  @param[in]		from		The reference to the start poly.
 	///  @param[in]		to			The reference to the end poly.
 	///  @param[out]	norm		The normal of the edge.
 	/// @returns The status flags for the query.
-	dtStatus getEdgeNormal(dtPolyRef from, dtPolyRef to, float* norm) const;
+	dtStatus getEdgeNormal(dtPolyRef from, dtPolyRef to, rdVec2D* norm) const;
 
 	/// Returns edge normal between two polygons.
 	///  @param[in]		from		The reference to the start poly.
@@ -602,7 +655,7 @@ public:
 	/// @returns The status flags for the query.
 	dtStatus getEdgeNormal(dtPolyRef from, const dtPoly* fromPoly, const dtMeshTile* fromTile,
 							 dtPolyRef to, const dtPoly* toPoly, const dtMeshTile* toTile,
-							 float* mid) const;
+							 rdVec2D* mid) const;
 	/// @}
 	
 private:
@@ -611,30 +664,35 @@ private:
 	dtNavMeshQuery& operator=(const dtNavMeshQuery&);
 	
 	/// Queries polygons within a tile.
-	void queryPolygonsInTile(const dtMeshTile* tile, const float* qmin, const float* qmax,
+	int queryPolygonsInTile(const dtMeshTile* tile, const rdVec3D* qmin, const rdVec3D* qmax,
 							 const dtQueryFilter* filter, dtPolyQuery* query) const;
 
 	/// Returns portal points between two polygons.
-	dtStatus getPortalPoints(dtPolyRef from, dtPolyRef to, float* left, float* right,
+	dtStatus getPortalPoints(dtPolyRef from, dtPolyRef to, rdVec3D* left, rdVec3D* right,
 							 unsigned char& fromType, unsigned char& toType) const;
 	dtStatus getPortalPoints(dtPolyRef from, const dtPoly* fromPoly, const dtMeshTile* fromTile,
 							 dtPolyRef to, const dtPoly* toPoly, const dtMeshTile* toTile,
-							 const dtLink* inLink, float* left, float* right) const;
+							 const dtLink* inLink, rdVec3D* left, rdVec3D* right) const;
 
 	// Appends vertex to a straight path
-	dtStatus appendVertex(const float* pos, const unsigned char flags, const dtPolyRef ref,
-						  const unsigned char jump,  float* straightPath, unsigned char* straightPathFlags,
+	dtStatus appendVertex(const rdVec3D* pos, const unsigned char flags, const dtPolyRef ref,
+						  const unsigned char jump, rdVec3D* straightPath, unsigned char* straightPathFlags,
 						  dtPolyRef* straightPathRefs, unsigned char* straightPathJumps, int* straightPathCount,
 						  const int maxStraightPath) const;
 
 	// Appends intermediate portal points to a straight path.
-	dtStatus appendPortals(const int startIdx, const int endIdx, const float* endPos, const dtPolyRef* path,
-						   float* straightPath, unsigned char* straightPathFlags, dtPolyRef* straightPathRefs,
-						   unsigned char* straightPathJumps, int* straightPathCount, const int maxStraightPath,
-						   const int options) const;
+	dtStatus appendPortals(const int startIdx, const int endIdx, const rdVec3D* endPos, const dtPolyRef* path,
+						   const unsigned char* jumpTypes, rdVec3D* straightPath, unsigned char* straightPathFlags,
+						   dtPolyRef* straightPathRefs, unsigned char* straightPathJumps, int* straightPathCount,
+						   const int maxStraightPath, const int jumpFilter, const int options) const;
+
+	// Appends traversal portal points to a straight path.
+	dtStatus appendPortalVertex(const rdVec3D* startPos, const rdVec3D* endPos, const int startIdx, const dtPolyRef* path,
+								rdVec3D* straightPath, unsigned char* straightPathFlags, dtPolyRef* straightPathRefs,
+								unsigned char* straightPathJumps, int* straightPathCount, const int maxStraightPath) const;
 
 	// Gets the path leading to the specified end node.
-	dtStatus getPathToNode(struct dtNode* endNode, dtPolyRef* path, int* pathCount, int maxPath) const;
+	dtStatus getPathToNode(struct dtNode* endNode, dtPolyRef* path, unsigned char* jump, int* pathCount, int maxPath) const;
 	
 	const dtNavMesh* m_nav;				///< Pointer to navmesh data.
 
@@ -644,7 +702,7 @@ private:
 		struct dtNode* lastBestNode;
 		float lastBestNodeCost;
 		dtPolyRef startRef, endRef;
-		float startPos[3], endPos[3];
+		rdVec3D startPos, endPos;
 		unsigned int options;
 		float raycastLimitSqr;
 	};
@@ -655,6 +713,34 @@ private:
 	class dtNodePool* m_nodePool;		///< Pointer to node pool.
 	class dtNodeQueue* m_openList;		///< Pointer to open list queue.
 };
+
+/// Test whether this waypoint is the start in the straight path.
+/// @param	flag[in]		The waypoint flag.
+/// @ingroup detour
+inline bool dtIsStraightPathStart(const unsigned char flag)
+{
+	return flag & DT_STRAIGHTPATH_START;
+}
+
+/// Test whether this waypoint is the end in the straight path.
+/// @param	flag[in]		The waypoint flag.
+/// @ingroup detour
+inline bool dtIsStraightPathEnd(const unsigned char flag)
+{
+	return flag & (DT_STRAIGHTPATH_END_GOAL
+#if DT_NAVMESH_SET_VERSION >= 7
+		| DT_STRAIGHTPATH_END_PARTIAL
+#endif
+		);
+}
+
+/// Test whether this waypoint is an off-mesh connection.
+/// @param	flag[in]		The waypoint flag.
+/// @ingroup detour
+inline bool dtIsStraightPathOffmeshConnection(const unsigned char flag)
+{
+	return flag & DT_STRAIGHTPATH_OFFMESH_CONNECTION;
+}
 
 /// Allocates a query object using the Detour allocator.
 /// @return An allocated query object, or null on failure.

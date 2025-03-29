@@ -485,6 +485,64 @@ static bool walkContour(dtTileCacheLayer& layer, int x, int y, dtTempContour& co
 		
 		if (rn != layer.regs[x+y*w])
 		{
+			// Changes by Guerrilla (Carles):
+			//
+			// The simplifyContour function will create an initial polygon from those vertices
+			// that begin a new neighbour region (then it iteratively adds vertices to it until
+			// the deviation error is less than the desired one).
+			// Having one segment for neighbour region ensures that the simplification is
+			// performed starting on coincident segments for both contours, resulting on the
+			// same simplified contour segment for the two neighbour regions.
+			//
+			// Unfortunately, as neighbourhood is checked in 4 directions instead of 8,
+			// this approach misses the special case in which a contour touches another one
+			// only in diagonal, while a third contour is neighbour of the other two.
+			//
+			// For example:
+			//             __________
+			//        ____|   ___    |
+			//       |    |  | 2 |   |
+			//       |    |__|___|   |
+			//       |  1    |     3 |
+			//       |_______|_______|
+			//
+			// In this case the contour for region 1 thinks that it's only neighbour to the
+			// contour for region 3, while the contour for region 3, around the same vertex,
+			// thinks it's neighbour to both region 1 and 2. Then, during the simplifyContour,
+			// for the first contour only one segment will be created for the initial polygon,
+			// while for the third contour two segments will be created instead. This will
+			// then, most likely, cause a different simplification for both contours, and then
+			// a wrong navmesh as a result.
+			//
+			// To fix this, here we detect the situation where a neighbour region is touched
+			// in diagonal. Then the relevant vertex is flagged by setting its region's MSB
+			// (most significant bit) to 1.
+			// The simplifyContour function will later check this bit and add the vertex to
+			// the initial polygon (and clear the MSB).
+			if (cont.nverts > 0 && rn < 0xf8)
+			{
+				// There shouldn't be more than 0x80 regions (other parts of Recast assumes so),
+				// but check just in case.
+				rdAssert(rn < 0x80);
+
+				// Check if p (previous position) has the same neighbour region as the current position.
+				const int pi = (cont.nverts-1)*4;
+				const int pr = cont.verts[pi+3];
+				if (rn == pr)
+				{
+					// Check if d (diagonal position, between the current and the previous positions) has a new neighbour region.
+					const int dx = x + getDirOffsetX(dir);
+					const int dy = y + getDirOffsetY(dir);
+					const int ddir = (dir+3) & 0x3; // Rotate CCW
+					const unsigned short rd = getNeighbourReg(layer, dx, dy, ddir);
+					if (rd < 0x80 && rn != rd && rd != layer.regs[x+y*w])
+					{
+						// Change of neighbour region found along the diagonal -> Let simplifyContour know about it.
+						cont.verts[pi+3] |= 0x80;
+					}
+				}
+			}
+
 			// Solid edge.
 			int px = x;
 			int py = y;
@@ -560,12 +618,39 @@ static void simplifyContour(dtTempContour& cont, const float maxError)
 	{
 		int j = (i+1) % cont.nverts;
 		// Check for start of a wall segment.
-		unsigned char ra = cont.verts[j*4+3];
-		unsigned char rb = cont.verts[i*4+3];
-		if (ra != rb)
+		//
+		// Changes by Guerrilla (Carles):
+		// On the original Recast code the initial polygon was formed by those vertices
+		// that begin a new neighbour region. To fix a special case that this approach
+		// was missing (see comment in walkContour) walkContour flags those additional
+		// vertices that also have to form the initial polygon by setting the MSB
+		// (most significant bit) of the region's position to 1.
+		// After adding the vertex, the region's MSB is cleared as expected by the
+		// rest of the code.
+
+		unsigned short ra = cont.verts[i*4+3];
+		unsigned short rb = cont.verts[j*4+3];
+
+		unsigned short unmasked_a = (ra >= 0xf8 ? ra : ra & ~0x80);
+		unsigned short unmasked_b = (rb >= 0xf8 ? rb : rb & ~0x80);
+
+		if (unmasked_a != unmasked_b || unmasked_a != ra)
 			cont.poly[cont.npoly++] = (unsigned short)i;
+
+		if (unmasked_a != ra)
+			cont.verts[i*4+3] &= ~0x80;
 	}
-	if (cont.npoly < 2)
+	// Changes by Guerrilla (Carles):
+	// With the fix for contours that are neighbours only in diagonal (see comment
+	// above and in walkContour), it's possible now for an interior contour
+	// to have only one vertex in the initial polygon. To ensure it's simplified
+	// the same way as the contour of the surrounding region, add as the second
+	// vertex the same as the first (this is what the surrounding contour does).
+	if (cont.npoly == 1)
+	{
+		cont.poly[cont.npoly++] = cont.poly[0];
+	}
+	else if (cont.npoly == 0)
 	{
 		// If there is no transitions at all,
 		// create some initial points for the simplification process. 
@@ -593,24 +678,30 @@ static void simplifyContour(dtTempContour& cont, const float maxError)
 				uri = i;
 			}
 		}
-		cont.npoly = 0;
 		cont.poly[cont.npoly++] = (unsigned short)lli;
 		cont.poly[cont.npoly++] = (unsigned short)uri;
 	}
 	
 	// Add points until all raw points are within
 	// error tolerance to the simplified shape.
+	//
+	// Changes by Guerrilla (Carles):
+	// Ensure that the parameters given to distancePtSeg below (to calculate the
+	// deviation error for a point) are passed in the same order for opposite contours.
+	// Not doing so sometimes makes distancePtSeg return a slightly different result
+	// due to floating error inaccuracies, which can make the opposite contour
+	// generate a different simplification.
 	for (int i = 0; i < cont.npoly; )
 	{
 		int ii = (i+1) % cont.npoly;
 		
-		const int ai = (int)cont.poly[i];
-		const int ax = (int)cont.verts[ai*4+0];
-		const int ay = (int)cont.verts[ai*4+1];
+		int ai = (int)cont.poly[i];
+		int ax = (int)cont.verts[ai*4+0];
+		int ay = (int)cont.verts[ai*4+1];
 		
-		const int bi = (int)cont.poly[ii];
-		const int bx = (int)cont.verts[bi*4+0];
-		const int by = (int)cont.verts[bi*4+1];
+		int bi = (int)cont.poly[ii];
+		int bx = (int)cont.verts[bi*4+0];
+		int by = (int)cont.verts[bi*4+1];
 		
 		// Find maximum deviation from the segment.
 		float maxd = 0;
@@ -623,15 +714,17 @@ static void simplifyContour(dtTempContour& cont, const float maxError)
 		if (bx > ax || (bx == ax && by > ay))
 		{
 			cinc = 1;
-			ci = (ai+cinc) % cont.nverts;
-			endi = bi;
 		}
 		else
 		{
 			cinc = cont.nverts-1;
-			ci = (bi+cinc) % cont.nverts;
-			endi = ai;
+			rdSwap(ai, bi);
+			rdSwap(ax, bx);
+			rdSwap(ay, by);
 		}
+
+		ci = (ai+cinc) % cont.nverts;
+		endi = bi;
 		
 		// Tessellate only outer edges or edges between areas.
 		while (ci != endi)
@@ -1997,16 +2090,16 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 	return DT_SUCCESS;
 }
 
-dtStatus dtMarkCylinderArea(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
-							const float* pos, const float radius, const float height, const unsigned char areaId)
+dtStatus dtMarkCylinderArea(dtTileCacheLayer& layer, const rdVec3D* orig, const float cs, const float ch,
+							const rdVec3D* pos, const float radius, const float height, const unsigned char areaId)
 {
-	float bmin[3], bmax[3];
-	bmin[0] = pos[0] - radius;
-	bmin[1] = pos[1] - radius;
-	bmin[2] = pos[2];
-	bmax[0] = pos[0] + radius;
-	bmax[1] = pos[1] + radius;
-	bmax[2] = pos[2] + height;
+	rdVec3D bmin, bmax;
+	bmin.x = pos->x - radius;
+	bmin.y = pos->y - radius;
+	bmin.z = pos->z;
+	bmax.x = pos->x + radius;
+	bmax.y = pos->y + radius;
+	bmax.z = pos->z + height;
 	const float r2 = rdSqr(radius/cs + 0.5f);
 
 	const int w = (int)layer.header->width;
@@ -2014,15 +2107,15 @@ dtStatus dtMarkCylinderArea(dtTileCacheLayer& layer, const float* orig, const fl
 	const float ics = 1.0f/cs;
 	const float ich = 1.0f/ch;
 	
-	const float px = (pos[0]-orig[0])*ics;
-	const float py = (pos[1]-orig[1])*ics;
+	const float px = (pos->x-orig->x)*ics;
+	const float py = (pos->y-orig->y)*ics;
 	
-	int minx = (int)rdMathFloorf((bmin[0]-orig[0])*ics);
-	int miny = (int)rdMathFloorf((bmin[1]-orig[1])*ics);
-	int minz = (int)rdMathFloorf((bmin[2]-orig[2])*ich);
-	int maxx = (int)rdMathFloorf((bmax[0]-orig[0])*ics);
-	int maxy = (int)rdMathFloorf((bmax[1]-orig[1])*ics);
-	int maxz = (int)rdMathFloorf((bmax[2]-orig[2])*ich);
+	int minx = (int)rdMathFloorf((bmin.x-orig->x)*ics);
+	int miny = (int)rdMathFloorf((bmin.y-orig->y)*ics);
+	int minz = (int)rdMathFloorf((bmin.z-orig->z)*ich);
+	int maxx = (int)rdMathFloorf((bmax.x-orig->x)*ics);
+	int maxy = (int)rdMathFloorf((bmax.y-orig->y)*ics);
+	int maxz = (int)rdMathFloorf((bmax.z-orig->z)*ich);
 
 	if (maxx < 0) return DT_SUCCESS;
 	if (minx >= w) return DT_SUCCESS;
@@ -2052,20 +2145,20 @@ dtStatus dtMarkCylinderArea(dtTileCacheLayer& layer, const float* orig, const fl
 	return DT_SUCCESS;
 }
 
-dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
-					   const float* bmin, const float* bmax, const unsigned char areaId)
+dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const rdVec3D* orig, const float cs, const float ch,
+					   const rdVec3D* bmin, const rdVec3D* bmax, const unsigned char areaId)
 {
 	const int w = (int)layer.header->width;
 	const int h = (int)layer.header->height;
 	const float ics = 1.0f/cs;
 	const float ich = 1.0f/ch;
 
-	int minx = (int)rdMathFloorf((bmin[0]-orig[0])*ics);
-	int miny = (int)rdMathFloorf((bmin[1]-orig[1])*ics);
-	int minz = (int)rdMathFloorf((bmin[2]-orig[2])*ich);
-	int maxx = (int)rdMathFloorf((bmax[0]-orig[0])*ics);
-	int maxy = (int)rdMathFloorf((bmax[1]-orig[1])*ics);
-	int maxz = (int)rdMathFloorf((bmax[2]-orig[2])*ich);
+	int minx = (int)rdMathFloorf((bmin->x-orig->x)*ics);
+	int miny = (int)rdMathFloorf((bmin->y-orig->y)*ics);
+	int minz = (int)rdMathFloorf((bmin->z-orig->z)*ich);
+	int maxx = (int)rdMathFloorf((bmax->x-orig->x)*ics);
+	int maxy = (int)rdMathFloorf((bmax->y-orig->y)*ics);
+	int maxz = (int)rdMathFloorf((bmax->z-orig->z)*ich);
 	
 	if (maxx < 0) return DT_SUCCESS;
 	if (minx >= w) return DT_SUCCESS;
@@ -2091,24 +2184,24 @@ dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const float* orig, const float c
 	return DT_SUCCESS;
 }
 
-dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
-					   const float* center, const float* halfExtents, const float* rotAux, const unsigned char areaId)
+dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const rdVec3D* orig, const float cs, const float ch,
+					   const rdVec3D* center, const rdVec3D* halfExtents, const rdVec2D* rotAux, const unsigned char areaId)
 {
 	const int w = (int)layer.header->width;
 	const int h = (int)layer.header->height;
 	const float ics = 1.0f/cs;
 	const float ich = 1.0f/ch;
 
-	float cx = (center[0] - orig[0])*ics;
-	float cy = (center[1] - orig[1])*ics;
+	float cx = (center->x - orig->x)*ics;
+	float cy = (center->y - orig->y)*ics;
 	
-	float maxr = 1.41f*rdMax(halfExtents[0], halfExtents[1]);
+	float maxr = 1.41f*rdMax(halfExtents->x, halfExtents->y);
 	int minx = (int)rdMathFloorf(cx - maxr*ics);
 	int maxx = (int)rdMathFloorf(cx + maxr*ics);
 	int miny = (int)rdMathFloorf(cy - maxr*ics);
 	int maxy = (int)rdMathFloorf(cy + maxr*ics);
-	int minz = (int)rdMathFloorf((center[2]-halfExtents[2]-orig[2])*ich);
-	int maxz = (int)rdMathFloorf((center[2]+halfExtents[2]-orig[2])*ich);
+	int minz = (int)rdMathFloorf((center->z-halfExtents->z-orig->z)*ich);
+	int maxz = (int)rdMathFloorf((center->z+halfExtents->z-orig->z)*ich);
 
 	if (maxx < 0) return DT_SUCCESS;
 	if (minx >= w) return DT_SUCCESS;
@@ -2120,8 +2213,8 @@ dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const float* orig, const float c
 	if (miny < 0) miny = 0;
 	if (maxy >= h) maxy = h-1;
 	
-	float xhalf = halfExtents[0]*ics + 0.5f;
-	float yhalf = halfExtents[1]*ics + 0.5f;
+	float xhalf = halfExtents->x*ics + 0.5f;
+	float yhalf = halfExtents->y*ics + 0.5f;
 
 	for (int y = miny; y <= maxy; ++y)
 	{
@@ -2129,10 +2222,10 @@ dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const float* orig, const float c
 		{			
 			float x2 = 2.0f*(float(x) - cx);
 			float y2 = 2.0f*(float(y) - cy);
-			float xrot = rotAux[1]*x2 + rotAux[0]*y2;
+			float xrot = rotAux->y*x2 + rotAux->x*y2;
 			if (xrot > xhalf || xrot < -xhalf)
 				continue;
-			float yrot = rotAux[1]*y2 - rotAux[0]*x2;
+			float yrot = rotAux->y*y2 - rotAux->x*x2;
 			if (yrot > yhalf || yrot < -yhalf)
 				continue;
 			const int z = layer.heights[x+y*w];
@@ -2284,12 +2377,12 @@ bool dtTileCacheHeaderSwapEndian(unsigned char* data, const int dataSize)
 	rdSwapEndian(&header->tx);
 	rdSwapEndian(&header->ty);
 	rdSwapEndian(&header->tlayer);
-	rdSwapEndian(&header->bmin[0]);
-	rdSwapEndian(&header->bmin[1]);
-	rdSwapEndian(&header->bmin[2]);
-	rdSwapEndian(&header->bmax[0]);
-	rdSwapEndian(&header->bmax[1]);
-	rdSwapEndian(&header->bmax[2]);
+	rdSwapEndian(&header->bmin.x);
+	rdSwapEndian(&header->bmin.y);
+	rdSwapEndian(&header->bmin.z);
+	rdSwapEndian(&header->bmax.x);
+	rdSwapEndian(&header->bmax.y);
+	rdSwapEndian(&header->bmax.z);
 	rdSwapEndian(&header->hmin);
 	rdSwapEndian(&header->hmax);
 	
