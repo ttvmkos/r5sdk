@@ -2,75 +2,43 @@
 #define VSCRIPT_SERVER_H
 #include "vscript/languages/squirrel_re/vsquirrel.h"
 
-namespace VScriptCode
-{
-	namespace Server
-	{
-		SQRESULT SetAutoReloadState(HSQUIRRELVM v);
-
-		SQRESULT KickPlayerByName(HSQUIRRELVM v);
-		SQRESULT KickPlayerById(HSQUIRRELVM v);
-		SQRESULT BanPlayerByName(HSQUIRRELVM v);
-		SQRESULT BanPlayerById(HSQUIRRELVM v);
-		SQRESULT UnbanPlayer(HSQUIRRELVM v);
-		SQRESULT AddBanByID(HSQUIRRELVM v);
-
-		SQRESULT GetNumHumanPlayers(HSQUIRRELVM v);
-		SQRESULT GetNumFakeClients(HSQUIRRELVM v);
-
-		SQRESULT GetServerID(HSQUIRRELVM v);
-
-		SQRESULT IsServerActive(HSQUIRRELVM v);
-
-		SQRESULT InitializeTrackerLogThread__internal(HSQUIRRELVM v);
-		SQRESULT TrackerLogEvent__internal(HSQUIRRELVM v);
-		SQRESULT TrackerMatchID__internal(HSQUIRRELVM v);
-		SQRESULT TrackerStopLogging__internal(HSQUIRRELVM v);
-		SQRESULT TrackerIsLogging__internal(HSQUIRRELVM v);
-		SQRESULT TrackerGetLogState__internal(HSQUIRRELVM v);
-		SQRESULT TrackerCleanupLogs__internal(HSQUIRRELVM v);
-		SQRESULT TrackerReloadConfig__internal(HSQUIRRELVM v);
-
-		SQRESULT sqprint__internal(HSQUIRRELVM v);
-		SQRESULT sqerror__internal(HSQUIRRELVM v);
-		SQRESULT sqwarning__internal(HSQUIRRELVM v);
-
-		SQRESULT TrackerEAVerify__internal(HSQUIRRELVM v); //select servers only
-		
-		SQRESULT TrackerUpdatePlayerCount__internal(HSQUIRRELVM v);
-		SQRESULT TrackerEndMatchUpdate__internal(HSQUIRRELVM v);
-
-		SQRESULT FetchGlobalTrackerSettings__internal(HSQUIRRELVM v);
-		SQRESULT FetchBatchPersistenceData__internal(HSQUIRRELVM v);
-		SQRESULT FetchPlayerPersistenceData__internal(HSQUIRRELVM v);
-		SQRESULT GetPlayerPersistenceData__internal(HSQUIRRELVM v); //NEW
-		SQRESULT TrackerUpdateLiveStats__internal(HSQUIRRELVM v);
-		SQRESULT TrackerResetStats__internal(HSQUIRRELVM v);
-
-		SQRESULT TrackerGetSetting__internal(HSQUIRRELVM v);
-		SQRESULT TrackerServerMsg__internal(HSQUIRRELVM v);
-		SQRESULT TrackerCreateServerBot__internal(HSQUIRRELVM v);
-
-		SQRESULT PrintStack(HSQUIRRELVM v);
-
-		//Declare to be used with logger
-		int64_t getMatchID();
-		void setMatchID(int64_t newID);
-	}
-}
-
 void Script_RegisterServerFunctions(CSquirrelVM* s);
 void Script_RegisterCoreServerFunctions(CSquirrelVM* s);
 void Script_RegisterAdminServerFunctions(CSquirrelVM* s);
 
 void Script_RegisterServerEnums(CSquirrelVM* const s);
 
+int64_t getMatchID();
+void setMatchID(int64_t newID);
+
 #define DEFINE_SERVER_SCRIPTFUNC_NAMED(s, functionName, helpString, returnType, parameters, ...) \
 	Script_RegisterFuncNamed(s, MKSTRING(functionName), MKSTRING(Server_Script_##functionName),  \
 	helpString, returnType, parameters, ServerScript_##functionName, __VA_ARGS__)        \
 
-inline SQRESULT (*v_ServerScript_DebugScreenText)(HSQUIRRELVM v);
-inline SQRESULT (*v_ServerScript_DebugScreenTextWithColor)(HSQUIRRELVM v);
+inline SQRESULT(*v_ServerScript_DebugScreenText)(HSQUIRRELVM v);
+inline SQRESULT(*v_ServerScript_DebugScreenTextWithColor)(HSQUIRRELVM v);
+
+inline void (*v_Script_RegisterServerEntityClassFuncs)();
+inline void (*v_Script_RegisterServerPlayerClassFuncs)();
+inline void (*v_Script_RegisterServerCombatCharacterClassFuncs)();
+inline void (*v_Script_RegisterServerAIClassFuncs)();
+inline void (*v_Script_RegisterServerWeaponClassFuncs)();
+inline void (*v_Script_RegisterServerProjectileClassFuncs)();
+inline void (*v_Script_RegisterServerTitanSoulClassFuncs)();
+inline void (*v_Script_RegisterServerPlayerDecoyClassFuncs)();
+inline void (*v_Script_RegisterServerSpawnpointClassFuncs)();
+inline void (*v_Script_RegisterServerFirstPersonProxyClassFuncs)();
+
+inline ScriptClassDescriptor_t* g_serverScriptEntityStruct;
+inline ScriptClassDescriptor_t* g_serverScriptPlayerStruct;
+inline ScriptClassDescriptor_t* g_serverScriptCombatCharacterStruct;
+inline ScriptClassDescriptor_t* g_serverScriptAIStruct;
+inline ScriptClassDescriptor_t* g_serverScriptWeaponStruct;
+inline ScriptClassDescriptor_t* g_serverScriptProjectileStruct;
+inline ScriptClassDescriptor_t* g_serverScriptTitanSoulStruct;
+inline ScriptClassDescriptor_t* g_serverScriptPlayerDecoyStruct;
+inline ScriptClassDescriptor_t* g_serverScriptSpawnpointStruct;
+inline ScriptClassDescriptor_t* g_serverScriptFirstPersonProxyStruct;
 
 //------------------------------------------------------------------------------
 // Purpose: Converts arguments into ScriptVariant_t objects. By default, it copies
@@ -160,28 +128,6 @@ inline bool CallServerScriptFunction(const char* functionName, Args&&... args)
 
 #define CALL_SERVER_SCRIPT_FUNC( funcName, ... ) CallServerScriptFunction( funcName, __VA_ARGS__ )
 
-inline void (*v_Script_RegisterServerEntityClassFuncs)();
-inline void (*v_Script_RegisterServerPlayerClassFuncs)();
-inline void (*v_Script_RegisterServerCombatCharacterClassFuncs)();
-inline void (*v_Script_RegisterServerAIClassFuncs)();
-inline void (*v_Script_RegisterServerWeaponClassFuncs)();
-inline void (*v_Script_RegisterServerProjectileClassFuncs)();
-inline void (*v_Script_RegisterServerTitanSoulClassFuncs)();
-inline void (*v_Script_RegisterServerPlayerDecoyClassFuncs)();
-inline void (*v_Script_RegisterServerSpawnpointClassFuncs)();
-inline void (*v_Script_RegisterServerFirstPersonProxyClassFuncs)();
-
-inline ScriptClassDescriptor_t* g_serverScriptEntityStruct;
-inline ScriptClassDescriptor_t* g_serverScriptPlayerStruct;
-inline ScriptClassDescriptor_t* g_serverScriptCombatCharacterStruct;
-inline ScriptClassDescriptor_t* g_serverScriptAIStruct;
-inline ScriptClassDescriptor_t* g_serverScriptWeaponStruct;
-inline ScriptClassDescriptor_t* g_serverScriptProjectileStruct;
-inline ScriptClassDescriptor_t* g_serverScriptTitanSoulStruct;
-inline ScriptClassDescriptor_t* g_serverScriptPlayerDecoyStruct;
-inline ScriptClassDescriptor_t* g_serverScriptSpawnpointStruct;
-inline ScriptClassDescriptor_t* g_serverScriptFirstPersonProxyStruct;
-
 ///////////////////////////////////////////////////////////////////////////////
 class VScriptServer : public IDetour
 {
@@ -263,9 +209,8 @@ class VScriptServer : public IDetour
 		CMemory(v_Script_RegisterServerSpawnpointClassFuncs).Offset(0x50).FindPatternSelf("48 8D 15", CMemory::Direction::DOWN, 150).ResolveRelativeAddressSelf(0x3, 0x7).GetPtr(g_serverScriptSpawnpointStruct);
 		CMemory(v_Script_RegisterServerFirstPersonProxyClassFuncs).Offset(0x50).FindPatternSelf("48 8D 15", CMemory::Direction::DOWN, 150).ResolveRelativeAddressSelf(0x3, 0x7).GetPtr(g_serverScriptFirstPersonProxyStruct);
 	}
-	virtual void GetCon(void) const { }
+	virtual void GetCon(void) const {}
 	virtual void Detour(const bool bAttach) const;
 };
 ///////////////////////////////////////////////////////////////////////////////
-
 #endif // VSCRIPT_SERVER_H

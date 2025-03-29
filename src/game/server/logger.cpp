@@ -557,7 +557,7 @@ namespace LOGGER
 
     void LOGGER::SaveEndingMatchID()
     {
-        last_match_id.store(VScriptCode::Server::getMatchID());
+        last_match_id.store(getMatchID());
     }
 
 
@@ -1918,11 +1918,10 @@ namespace LOGGER
     //Log controlled stop logging
     void Logger::stopLoggingThread()
     {
-
         if (isLogging())
         {
             finished = true;
-            VScriptCode::Server::setMatchID(0);
+            setMatchID(0);
 
             {
                 std::unique_lock<std::mutex> lock(mtx);
@@ -2016,7 +2015,7 @@ namespace LOGGER
         {
             std::unique_lock<std::mutex> lock(mtx);
             finished = true;
-            VScriptCode::Server::setMatchID(0);
+            setMatchID(0);
             cvLog.notify_all();
         }
 
@@ -2178,7 +2177,7 @@ namespace LOGGER
             stopLoggingThread();
         }
 
-        const std::string matchID = std::to_string(VScriptCode::Server::getMatchID());
+        const std::string matchID = std::to_string(getMatchID());
         UpdateMatchId(matchID);
         std::filesystem::path* pFilePath = InitializeAndGetLogPath();
 
