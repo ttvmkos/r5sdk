@@ -8,6 +8,7 @@
 #include "tier0/crashhandler.h"
 #include "tier0/commandline.h"
 #include "tier2/crashreporter.h"
+#include "rtech/pak/pakstate.h"
 /*****************************************************************************/
 #ifndef DEDICATED
 #include "windows/id3dx.h"
@@ -146,6 +147,14 @@ void SDK_Init()
 #ifndef DEDICATED
     Input_Init();
 #endif // !DEDICATED
+
+#ifndef DEDICATED
+    Pak_SetBaseLoadPath("paks\\Win64\\");
+    Pak_SetOverrideLoadPath("paks\\Win64_override\\");
+#else
+    Pak_SetBaseLoadPath("paks\\Win64_server\\");
+    Pak_SetOverrideLoadPath("paks\\Win64_server_override\\");
+#endif
 
     g_bSdkInitialized = true;
 }

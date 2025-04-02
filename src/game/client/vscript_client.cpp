@@ -22,15 +22,16 @@
 #include "tier1/keyvalues.h"
 #include "engine/cmodel_bsp.h"
 #include "engine/host_state.h"
-#include "engine/client/cl_main.h"
 #include "engine/debugoverlay.h"
 #include "networksystem/pylon.h"
 #include "networksystem/listmanager.h"
 #include "networksystem/hostmanager.h"
-#include "game/shared/vscript_shared.h"
 
 #include "vscript/vscript.h"
 #include "vscript/languages/squirrel_re/include/sqvm.h"
+
+#include "game/shared/vscript_shared.h"
+#include "game/shared/vscript_debug_overlay_shared.h"
 
 #include "vscript_client.h"
 
@@ -68,6 +69,30 @@ static void SQVM_UIScript_f(const CCommand& args)
 
 static ConCommand script_client("script_client", SQVM_ClientScript_f, "Run input code as CLIENT script on the VM", FCVAR_DEVELOPMENTONLY | FCVAR_CLIENTDLL | FCVAR_CHEAT);
 static ConCommand script_ui("script_ui", SQVM_UIScript_f, "Run input code as UI script on the VM", FCVAR_DEVELOPMENTONLY | FCVAR_CLIENTDLL | FCVAR_CHEAT);
+
+//-----------------------------------------------------------------------------
+// Purpose: client NDebugOverlay proxies
+//-----------------------------------------------------------------------------
+static SQRESULT ClientScript_DebugDrawSolidBox(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawSolidBox(v);
+}
+static SQRESULT ClientScript_DebugDrawSweptBox(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawSweptBox(v);
+}
+static SQRESULT ClientScript_DebugDrawTriangle(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawTriangle(v);
+}
+static SQRESULT ClientScript_DebugDrawSolidSphere(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawSolidSphere(v);
+}
+static SQRESULT ClientScript_DebugDrawCapsule(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawCapsule(v);
+}
 
 //-----------------------------------------------------------------------------
 // Purpose: internal handler for adding debug texts on screen through scripts
@@ -117,11 +142,7 @@ static SQRESULT ClientScript_DebugScreenTextWithColor(HSQUIRRELVM v)
         sq_getstring(v, 4, &text);
         sq_getvector(v, 5, &colorVec);
 
-        const Color color(
-            Clamp((int)(colorVec->x * 255), 0, 255),
-            Clamp((int)(colorVec->y * 255), 0, 255),
-            Clamp((int)(colorVec->z * 255), 0, 255), 255);
-
+        const Color color = Script_VectorToColor(colorVec, 1.0f);
         ClientScript_Internal_DebugScreenTextWithColor(v, posX, posY, color, text);
     }
 
@@ -147,15 +168,6 @@ static SQBool Script_CheckServerIndexAndFailure(HSQUIRRELVM v, SQInteger iServer
     }
 
     return true;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: checks whether this SDK build is a client dll
-//-----------------------------------------------------------------------------
-static SQRESULT ClientScript_IsClientDLL(HSQUIRRELVM v)
-{
-    sq_pushbool(v, ::IsClientDLL());
-    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
 static void Internal_UIScript_RequestForServerBrowserListThreaded()
@@ -611,7 +623,11 @@ void Script_RegisterClientFunctions(CSquirrelVM* s)
 //---------------------------------------------------------------------------------
 void Script_RegisterCoreClientFunctions(CSquirrelVM* s)
 {
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, IsClientDLL, "Returns whether this build is client only", "bool", "");
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSolidBox, "Draw a debug overlay solid box", "void", "vector origin, vector mins, vector maxs, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSweptBox, "Draw a debug overlay swept box", "void", "vector start, vector end, vector mins, vector maxs, vector angles, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawTriangle, "Draw a debug overlay triangle", "void", "vector p1, vector p2, vector p3, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSolidSphere, "Draw a debug overlay solid sphere", "void", "vector origin, float radius, int theta, int phi, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawCapsule, "Draw a debug overlay capsule", "void", "vector start, vector end, float radius, vector color, float alpha, bool drawThroughWorld, float duration");
 }
 
 //---------------------------------------------------------------------------------

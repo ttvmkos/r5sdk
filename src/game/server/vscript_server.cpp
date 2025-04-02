@@ -18,9 +18,10 @@
 #include "engine/server/server.h"
 #include "engine/host_state.h"
 #include "engine/debugoverlay.h"
-#include "game/shared/vscript_shared.h"
 #include "vscript/vscript.h"
 #include "vscript/languages/squirrel_re/include/sqvm.h"
+#include "game/shared/vscript_shared.h"
+#include "game/shared/vscript_debug_overlay_shared.h"
 
 #include "liveapi/liveapi.h"
 #include "vscript_server.h"
@@ -49,6 +50,30 @@ static void SQVM_ServerScript_f(const CCommand& args)
     }
 }
 static ConCommand script("script", SQVM_ServerScript_f, "Run input code as SERVER script on the VM", FCVAR_DEVELOPMENTONLY | FCVAR_GAMEDLL | FCVAR_CHEAT | FCVAR_SERVER_FRAME_THREAD);
+
+//-----------------------------------------------------------------------------
+// Purpose: server NDebugOverlay proxies
+//-----------------------------------------------------------------------------
+static SQRESULT ServerScript_DebugDrawSolidBox(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawSolidBox(v);
+}
+static SQRESULT ServerScript_DebugDrawSweptBox(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawSweptBox(v);
+}
+static SQRESULT ServerScript_DebugDrawTriangle(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawTriangle(v);
+}
+static SQRESULT ServerScript_DebugDrawSolidSphere(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawSolidSphere(v);
+}
+static SQRESULT ServerScript_DebugDrawCapsule(HSQUIRRELVM v)
+{
+    return SharedScript_DebugDrawCapsule(v);
+}
 
 //-----------------------------------------------------------------------------
 // Purpose: calculates the duration for the debug text overlay
@@ -117,11 +142,7 @@ static SQRESULT ServerScript_DebugScreenTextWithColor(HSQUIRRELVM v)
         sq_getstring(v, 4, &text);
         sq_getvector(v, 5, &colorVec);
 
-        const Color color(
-            Clamp((int)(colorVec->x * 255), 0, 255),
-            Clamp((int)(colorVec->y * 255), 0, 255),
-            Clamp((int)(colorVec->z * 255), 0, 255), 255);
-
+        const Color color = Script_VectorToColor(colorVec, 1.0f);
         ServerScript_Internal_DebugScreenTextWithColor(v, posX, posY, color, text);
     }
 
@@ -1347,6 +1368,153 @@ static SQRESULT ServerScript_PrintStack(HSQUIRRELVM v)
     return SQ_OK;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: saves a recorded animation on the disk to be used by bakery
+//-----------------------------------------------------------------------------
+static SQRESULT ServerScript_SaveRecordedAnimation(HSQUIRRELVM v)
+{
+    if (!developer->GetBool())
+    {
+        v_SQVM_ScriptError("SaveRecordedAnimation() is dev only!");
+        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+    }
+
+    AnimRecordingAssetHeader_s* const animRecording = v_ServerScript_GetRecordedAnimationFromCurrentStack(v);
+
+    if (!animRecording)
+    {
+        v_SQVM_ScriptError("Parameter must be a recorded animation");
+        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+    }
+
+    if (animRecording->numRecordedFrames == 0)
+    {
+        v_SQVM_ScriptError("Recorded animation has 0 frames");
+        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+    }
+
+    const SQChar* fileName;
+    sq_getstring(v, 3, &fileName);
+
+    char fileNameBuf[MAX_OSPATH];
+    const int fmtResult = snprintf(fileNameBuf, sizeof(fileNameBuf), "anim_recording/%s.anir", fileName);
+
+    if (fmtResult < 0)
+    {
+        v_SQVM_ScriptError("Failed to format recorded animation file name; provided name \"%s\" is invalid", fileName);
+        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+    }
+
+    FileSystem()->CreateDirHierarchy("anim_recording/", "MOD");
+    FileHandle_t animRecordingFile = FileSystem()->Open(fileNameBuf, "wb", "MOD");
+
+    if (animRecordingFile == FILESYSTEM_INVALID_HANDLE)
+    {
+        v_SQVM_ScriptError("Failed to open recorded animation file \"%s\" for write", fileNameBuf);
+        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+    }
+
+    AnimRecordingFileHeader_s fileHdr;
+
+    fileHdr.magic = ANIR_FILE_MAGIC;
+    fileHdr.fileVersion = ANIR_FILE_VERSION;
+    fileHdr.assetVersion = ANIR_ASSET_VERSION;
+
+    fileHdr.startPos = animRecording->startPos;
+    fileHdr.startAngles = animRecording->startAngles;
+
+    fileHdr.stringBufSize = 0;
+
+    fileHdr.numElements = 0;
+    fileHdr.numSequences = 0;
+
+    fileHdr.numRecordedFrames = animRecording->numRecordedFrames;
+    fileHdr.numRecordedOverlays = animRecording->numRecordedOverlays;
+
+    fileHdr.animRecordingId = animRecording->animRecordingId;
+    FileSystem()->Write(&fileHdr, sizeof(AnimRecordingFileHeader_s), animRecordingFile);
+
+    // This information can only be retrieved by counting the number
+    // of valid pose parameter names.
+    int numElems = 0;
+    int stringBufLen = 0;
+
+    // Write out the pose parameters.
+    for (int i = 0; i < ANIR_MAX_ELEMENTS; i++)
+    {
+        const char* const poseParamName = animRecording->poseParamNames[i];
+
+        if (poseParamName)
+            numElems++;
+        else
+            break;
+
+        const ssize_t strLen = (ssize_t)strlen(poseParamName) + 1; // Include the null too.
+        FileSystem()->Write(poseParamName, strLen, animRecordingFile);
+
+        stringBufLen += (int)strLen;
+    }
+
+    // Write out the pose values.
+    for (int i = 0; i < numElems; i++)
+    {
+        const Vector2D* poseParamValue = &animRecording->poseParamValues[i];
+        FileSystem()->Write(poseParamValue, sizeof(Vector2D), animRecordingFile);
+    }
+
+    int numSeqs = 0;
+
+    // Write out the animation sequence names.
+    for (int i = 0; i < ANIR_MAX_SEQUENCES; i++)
+    {
+        const char* const animSequenceName = animRecording->animSequences[i];
+
+        if (animSequenceName)
+            numSeqs++;
+        else
+            break;
+
+        const ssize_t strLen = (ssize_t)strlen(animSequenceName) + 1; // Include the null too.
+        FileSystem()->Write(animSequenceName, strLen, animRecordingFile);
+
+        stringBufLen += (int)strLen;
+    }
+
+    // Write out the recorded frames.
+    for (int i = 0; i < animRecording->numRecordedFrames; i++)
+    {
+        assert(animRecording->recordedFrames);
+
+        const AnimRecordingFrame_s* const frame = &animRecording->recordedFrames[i];
+        FileSystem()->Write(frame, sizeof(AnimRecordingFrame_s), animRecordingFile);
+    }
+
+    // Write out the recorded overlays.
+    for (int i = 0; i < animRecording->numRecordedOverlays; i++)
+    {
+        assert(animRecording->recordedOverlays);
+
+        const AnimRecordingOverlay_s* const overlay = &animRecording->recordedOverlays[i];
+        FileSystem()->Write(overlay, sizeof(AnimRecordingOverlay_s), animRecordingFile);
+    }
+
+    // Update the data in the header if we ended up writing
+    // elements and sequences.
+    if (numElems > 0 || numSeqs > 0)
+    {
+        FileSystem()->Seek(animRecordingFile, offsetof(AnimRecordingFileHeader_s, stringBufSize), FILESYSTEM_SEEK_HEAD);
+
+        FileSystem()->Write(&stringBufLen, sizeof(int), animRecordingFile);
+        FileSystem()->Write(&numElems, sizeof(int), animRecordingFile);
+        FileSystem()->Write(&numSeqs, sizeof(int), animRecordingFile);
+    }
+
+    FileSystem()->Close(animRecordingFile);
+
+    Msg(eDLL_T::SERVER, "Recorded animation saved to \"%s\"\n", fileNameBuf);
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+}
+
 //---------------------------------------------------------------------------------
 // Purpose: registers script functions in SERVER context
 // Input  : *s - 
@@ -1371,6 +1539,12 @@ void Script_RegisterServerEnums(CSquirrelVM* const s)
 //---------------------------------------------------------------------------------
 void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
 {
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSolidBox, "Draw a debug overlay solid box", "void", "vector origin, vector mins, vector maxs, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSweptBox, "Draw a debug overlay swept box", "void", "vector start, vector end, vector mins, vector maxs, vector angles, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawTriangle, "Draw a debug overlay triangle", "void", "vector p1, vector p2, vector p3, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSolidSphere, "Draw a debug overlay solid sphere", "void", "vector origin, float radius, int theta, int phi, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawCapsule, "Draw a debug overlay capsule", "void", "vector start, vector end, float radius, vector color, float alpha, bool drawThroughWorld, float duration");
+
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SetAutoReloadState, "Set whether we can auto-reload the server", "void", "bool canAutoReload");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetServerID, "Gets the current server ID", "string", "");
 
@@ -1410,6 +1584,7 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
     //send a message as a bot. 
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCreateServerBot__internal, "Creates a bot to send messages", "array< int >", "string");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerServerMsg__internal, "Says message from specified senderId", "void", "string,int");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SaveRecordedAnimation, "Saves an anim_recording asset to be used by bakery. (dev only)", "void", "var recordedAnim, string fileName");
 }
 
 //---------------------------------------------------------------------------------

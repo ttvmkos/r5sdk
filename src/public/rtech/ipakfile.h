@@ -84,17 +84,11 @@
 
 // base pak directory containing paks sorted in platform specific subdirectories
 #define PAK_BASE_PATH "paks\\"
-#define PAK_PLATFORM_PATH PAK_BASE_PATH"Win64\\"
-
-// pak override directory; the system will looks for pak files in this directory
-// first before falling back to PAK_PLATFORM_PATH
-#define PAK_PLATFORM_OVERRIDE_PATH PAK_BASE_PATH"Win64_override\\"
 
 // the handle that should be returned when a pak failed to load or process
 #define PAK_INVALID_HANDLE -1
 
 #define PAK_MAX_DISPATCH_LOAD_JOBS 4
-#define PAK_DEFAULT_JOB_GROUP_ID 0x3000
 
 //-----------------------------------------------------------------------------
 // Forward declarations
@@ -278,6 +272,13 @@ struct PakTracker_s
 	char gap_9DC04[522240];
 };
 
+struct PakGuidDescriptor_s
+{
+	int unk1;
+	int unk2;
+	uint64_t unk3;
+};
+
 class PakLoadedInfo_s
 {
 public:
@@ -316,11 +317,11 @@ public:
 	CAlignedMemAlloc* allocator;
 	PakGuid_t* assetGuids; // size of the array is assetCount
 	void* slabBuffers[PAK_SLAB_BUFFER_TYPES];
-	void* guidDestriptors;
+	PakGuidDescriptor_s* guidDestriptors;
 	FILETIME fileTime;
 	PakFile_s* pakFile;
 	StreamingInfo_t streamInfo[STREAMING_SET_COUNT];
-	uint32_t fileHandle;
+	int fileHandle;
 	uint8_t unkAC;
 	HMODULE hModule;
 
@@ -681,7 +682,7 @@ struct PakMemoryData_s
 	size_t fileSize;
 
 	PakHandle_t pakId;
-	JobID_t assetLoadJobId;
+	JobID_t assetLoadJobGroupId;
 	int* loadedAssetIndices;
 	uint8_t** memPageBuffers;
 
@@ -699,7 +700,10 @@ struct PakMemoryData_s
 	PakPage_u* pageDescriptors;
 	uint32_t* fileRelations;
 
-	char gap5E0[32];
+	void* ptr5E0;
+	void* ptr5E8;
+	void* ptr5F0;
+	void* ptr5F8;
 
 	PakPatchDataHeader_s* patchDataHeader;
 	PakAsset_s** ppAssetEntries;

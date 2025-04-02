@@ -1,6 +1,7 @@
 #ifndef VSCRIPT_SERVER_H
 #define VSCRIPT_SERVER_H
 #include "vscript/languages/squirrel_re/vsquirrel.h"
+#include "game/server/anim_recording.h"
 
 void Script_RegisterServerFunctions(CSquirrelVM* s);
 void Script_RegisterCoreServerFunctions(CSquirrelVM* s);
@@ -15,8 +16,9 @@ void setMatchID(int64_t newID);
 	Script_RegisterFuncNamed(s, MKSTRING(functionName), MKSTRING(Server_Script_##functionName),  \
 	helpString, returnType, parameters, ServerScript_##functionName, __VA_ARGS__)        \
 
-inline SQRESULT(*v_ServerScript_DebugScreenText)(HSQUIRRELVM v);
-inline SQRESULT(*v_ServerScript_DebugScreenTextWithColor)(HSQUIRRELVM v);
+inline SQRESULT (*v_ServerScript_DebugScreenText)(HSQUIRRELVM v);
+inline SQRESULT (*v_ServerScript_DebugScreenTextWithColor)(HSQUIRRELVM v);
+inline AnimRecordingAssetHeader_s* (*v_ServerScript_GetRecordedAnimationFromCurrentStack)(HSQUIRRELVM v); // Internally retrieves it from the first arg (index 2).
 
 inline void (*v_Script_RegisterServerEntityClassFuncs)();
 inline void (*v_Script_RegisterServerPlayerClassFuncs)();
@@ -135,6 +137,7 @@ class VScriptServer : public IDetour
 	{
 		LogFunAdr("ServerScript_DebugScreenText", v_ServerScript_DebugScreenText);
 		LogFunAdr("ServerScript_DebugScreenTextWithColor", v_ServerScript_DebugScreenTextWithColor);
+		LogFunAdr("ServerScript_GetRecordedAnimationFromCurrentStack", v_ServerScript_GetRecordedAnimationFromCurrentStack);
 
 		LogFunAdr("Script_RegisterServerEntityClassFuncs", v_Script_RegisterServerEntityClassFuncs);
 		LogFunAdr("Script_RegisterServerPlayerClassFuncs", v_Script_RegisterServerPlayerClassFuncs);
@@ -165,6 +168,9 @@ class VScriptServer : public IDetour
 
 		Module_FindPattern(g_GameDll, "40 53 48 83 EC ? 4C 8B 41 ? 48 8B D9 41 81 78 ? ? ? ? ? 75 ? F3 41 0F 10 48 ? EB ? 66 41 0F 6E 48 ? 0F 5B C9 41 81 78 ? ? ? ? ? 75 ? F3 41 0F 10 40 ? EB ? 66 41 0F 6E 40 ? 0F 5B C0 4D 8D 48 ? 4D 8B 40 ? 49 83 C0 ? E8 ? ? ? ? 48 8B 4B ? 83 B9 ? ? ? ? ? 75 ? 33 C0 48 83 C4 ? 5B C3 48 8B 89 ? ? ? ? 48 8B D3 E8 ? ? ? ? B8 ? ? ? ? 48 83 C4 ? 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC 40 53 48 83 EC ? 4C 8B 41")
 			.GetPtr(v_ServerScript_DebugScreenTextWithColor);
+
+		Module_FindPattern(g_GameDll, "40 53 48 83 EC ?? 33 DB 4C 8D 4C 24")
+			.GetPtr(v_ServerScript_GetRecordedAnimationFromCurrentStack);
 
 		Module_FindPattern(g_GameDll, "48 83 EC ?? 80 3D ?? ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 89 5C 24 ?? 48 89 05 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? C6 05 ?? ?? ?? ?? ?? 48 89 05 ?? ?? ?? ?? 33 D2 48 8D 05 ?? ?? ?? ?? 48 C7 05")
 			.GetPtr(v_Script_RegisterServerEntityClassFuncs);
