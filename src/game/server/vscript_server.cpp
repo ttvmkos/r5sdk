@@ -517,13 +517,13 @@ static SQRESULT ServerScript_AddBanByID(HSQUIRRELVM v)
 std::atomic<int64_t> g_MatchID{ 0 };
 
 //not exposed to sqvm
-static void setMatchID(int64_t newID)
+void setMatchID(int64_t newID)
 {
     g_MatchID.store(newID);
 }
 
 //not exposed to sqvm
-static int64_t getMatchID()
+int64_t getMatchID()
 {
     return g_MatchID.load();
 }
@@ -1242,12 +1242,12 @@ static SQRESULT ServerScript_TrackerCreateServerBot__internal(HSQUIRRELVM v)
 {
     if (!g_pServer->IsActive())
     {
-        SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
-
         //return array with -1 at element[0]
         sq_newarray(v, 0);
         sq_pushinteger(v, -1);
         sq_arrayappend(v, -2);
+
+        SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }
 
     const SQChar* ImmutableName = nullptr;
@@ -1427,6 +1427,7 @@ void Script_RegisterAdminServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByName, "Bans a player from the server by name", "void", "string name, string reason");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerById, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason");
 
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by ip & nucleus id, returns true for success", "bool", "string, string");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle");
 }
 

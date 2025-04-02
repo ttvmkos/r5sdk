@@ -63,7 +63,8 @@ bool ConvertSQObjectPtr(const SQObjectPtr& obj, T& outVal)
 	}
 	else 
 	{
-		Assert( std::is_same_v<T, void>, "Conversion for this type is not supported");
+		bool check = std::is_same_v<T, void>;
+		Assert( check, "Conversion for this type is not supported");
 	}
 }
 
