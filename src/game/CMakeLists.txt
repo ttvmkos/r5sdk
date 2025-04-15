@@ -194,6 +194,11 @@ add_sources( SOURCE_GROUP "LiveAPI"
     "server/liveapi/liveapi.h"
 )
 
+add_sources( SOURCE_GROUP "Recipient Filter"
+    "server/recipientfilter.cpp"
+    "server/recipientfilter.h"
+)
+
 file( GLOB GAME_SERVER_PUBLIC_HEADERS
     "${ENGINE_SOURCE_DIR}/public/game/server/*"
 )

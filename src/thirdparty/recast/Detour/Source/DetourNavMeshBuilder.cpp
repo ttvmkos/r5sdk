@@ -1337,7 +1337,7 @@ bool dtUpdateNavMeshData(dtNavMesh* nav, const unsigned int tileIndex)
 	// Iterate through this tile's polys, indexing them by their new poly ids
 	for (int i = 0; i < header->polyCount; i++)
 	{
-		const dtPoly& poly = tile->polys[i];
+		dtPoly& poly = tile->polys[i];
 
 		// Unlinked polygon, drop it.
 		if (poly.groupId == DT_UNLINKED_POLY_GROUP && (poly.flags & DT_POLYFLAGS_DISABLED))
@@ -1371,10 +1371,11 @@ bool dtUpdateNavMeshData(dtNavMesh* nav, const unsigned int tileIndex)
 				unsigned int pj = DT_NULL_LINK;
 				while (j != DT_NULL_LINK)
 				{
-					if (nav->decodePolyIdPoly(tile->links[j].ref) == (unsigned int)i)
+					const dtLink& currLink = tile->links[j];
+					if (nav->decodePolyIdPoly(currLink.ref) == (unsigned int)i)
 					{
 						// Remove link.
-						unsigned int nk = tile->links[j].next;
+						unsigned int nk = currLink.next;
 						if (pj == DT_NULL_LINK)
 							basePoly.firstLink = nk;
 						else
@@ -1388,9 +1389,14 @@ bool dtUpdateNavMeshData(dtNavMesh* nav, const unsigned int tileIndex)
 					{
 						// Advance
 						pj = j;
-						j = tile->links[j].next;
+						j = currLink.next;
 					}
 				}
+
+				// Remove the link connecting the off-mesh connection
+				// poly to the base poly.
+				tile->freeLink(poly.firstLink);
+				poly.firstLink = DT_NULL_LINK;
 
 				continue;
 			}
@@ -1453,15 +1459,29 @@ bool dtUpdateNavMeshData(dtNavMesh* nav, const unsigned int tileIndex)
 	// after we flagged links from some polygons, meaning that if we process
 	// this during the first iteration, dead off-mesh connection links will
 	// still make it into the rebuilt tile.
-	for (int i = 0; i < header->polyCount; i++)
 	{
-		const dtPoly& poly = tile->polys[i];
-
-		// Flag all links connected to this polygon.
-		for (unsigned int j = poly.firstLink; j != DT_NULL_LINK; j = tile->links[j].next)
+		// note(amos): when rebuilding tiles or surrounding tiles, it seems
+		// possible that the same traverse link appears twice in the linked
+		// list from other polygons. We need to keep track of these and
+		// ensure they are only copied over once.
+		std::set<unsigned int> dedupSet;
+		for (int i = 0; i < header->polyCount; i++)
 		{
-			oldLinkIdMap[maxLinkCount] = j;
-			newLinkIdMap[j] = maxLinkCount++;
+			const dtPoly& poly = tile->polys[i];
+
+			// note(amos): we don't need to check for DT_UNLINKED_POLY_GROUP and
+			// DT_POLYFLAGS_JUMP_LINKED here because in either case, poly.firstLink
+			// will always be DT_NULL_LINK and thus the traversal below won't fire.
+
+			// Flag all links connected to this polygon.
+			for (unsigned int j = poly.firstLink; j != DT_NULL_LINK; j = tile->links[j].next)
+			{
+				if (!dedupSet.insert(j).second)
+					continue; // Already exists.
+
+				oldLinkIdMap[maxLinkCount] = j;
+				newLinkIdMap[j] = maxLinkCount++;
+			}
 		}
 	}
 
@@ -1731,6 +1751,10 @@ bool dtUpdateNavMeshData(dtNavMesh* nav, const unsigned int tileIndex)
 		// had the DT_POLYFLAGS_JUMP_LINKED flag. This means there is a code
 		// bug somewhere. (See dtNavMesh::unconnectLinks for the solution.)
 		rdAssert(landTile);
+
+		// Drop it anyways for release builds. (Might want to add warnings in the future.)
+		if (!landTile)
+			continue;
 
 		if (landTile == tile)
 			continue; // Already dealt with when fixing up internal links.

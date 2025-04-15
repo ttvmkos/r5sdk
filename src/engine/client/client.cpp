@@ -18,6 +18,9 @@
 #include "networksystem/hostmanager.h"
 #include "jwt/include/decode.h"
 #include "mbedtls/include/mbedtls/sha256.h"
+#include "game/server/recipientfilter.h"
+#include "game/server/util_server.h"
+#include "tier1/fmtstr.h"
 #endif
 #include "game/server/gameinterface.h"
 
@@ -33,6 +36,13 @@ void CClient::Clear(void)
 	GetClientExtended()->Reset(); // Reset extended data.
 #endif // !CLIENT_DLL
 	CClient__Clear(this);
+
+	// CClient::Clear() doesn't null this for some reason so we have to do it here,
+	// else when fake clients (bots) get created, they will reuse the last nucleus
+	// id that was assigned to this CClient instance. This happens because CClient
+	// instances are persistent as they originate from a static array within a
+	// static object of type CServer.
+	m_nNucleusID = 0;
 }
 
 //---------------------------------------------------------------------------------
@@ -560,6 +570,69 @@ bool CClient::VProcessSetConVar(CClient* pClient, NET_SetConVar* pMsg)
 	return true;
 }
 
+#ifndef CLIENT_DLL
+//---------------------------------------------------------------------------------
+// Purpose: When the client is muted and they speak send a text chat message to alert them they are banned
+// Input  : *pClient
+//---------------------------------------------------------------------------------
+static void InformClientAboutCommsBanTriggeredByVoice(CClient* const pClient)
+{
+	CClientExtended* const pClientExtended = pClient->GetClientExtended();
+
+	if (!pClientExtended->HasBeenPromptedFromVoiceAboutBan())
+	{
+		CPlayer* const pPlayer = UTIL_PlayerByIndex(pClient->GetHandle());
+
+		if (!pPlayer || !pPlayer->IsConnected())
+			return;	
+
+		CSingleUserRecipientFilter filter(pPlayer);
+		v_UserMessageBegin(&filter, "SayText", 2);
+
+		MessageWriteByte(pPlayer->GetEdict());
+		MessageWriteString(pClient->GetClientExtended()->GetCommsMuteDisplayMessage());
+		MessageWriteBool(true);
+
+		MessageEnd();
+
+		pClientExtended->SetHasBeenPromptedFromVoiceAboutBan(true);
+	}
+}
+
+//---------------------------------------------------------------------------------
+// Purpose: This builds and stores the message we send to a client when they are comms banned
+// Input  : *pszReason -
+//				 *pszExpiryTimestamp - 
+// Output : 
+//---------------------------------------------------------------------------------
+void CClientExtended::BuildCommsBanDisplayMessage(const char* pszReasonStr, const char* pszExpiryTimestamp)
+{
+	CFmtStr fmt;
+
+	//The default bansystem reason for when there is no reason from the MS is this
+	//TODO: Localize this string into what it should be, for now we just give a descriptive default
+	if (pszReasonStr)
+	{
+		if (V_strcmp("#DISCONNECT_BANNED", pszReasonStr) == 0)
+		{
+			pszReasonStr = "Communication Banned";
+		}
+	}
+
+	fmt.Format("You have an active %s communications ban.\nReason: %s\n", 
+		pszExpiryTimestamp ? "temporary" : "permanent",
+		pszReasonStr ? pszReasonStr : "None"
+	);
+
+	if (pszExpiryTimestamp)
+	{
+		fmt.AppendFormat("Expiry: %s", pszExpiryTimestamp);
+	}
+
+	m_MuteDisplayPrompt = fmt;
+}
+#endif
+
 //---------------------------------------------------------------------------------
 // Purpose: process voice data
 // Input  : *pClient - (ADJ)
@@ -576,6 +649,18 @@ bool CClient::VProcessVoiceData(CClient* pClient, CLC_VoiceData* pMsg)
 		return false;
 
 	CClient* const pAdj = AdjustShiftedThisPointer(pClient);
+	
+	//Is our client communication banned
+	if (pAdj->GetClientExtended()->IsClientCommsBanned())
+	{
+		//Should we apply the communication ban based on what the host has decided
+		if (SV_ShouldApplyVoiceChatGlobalMutes())
+		{
+			InformClientAboutCommsBanTriggeredByVoice(pAdj);
+			return true;
+		}
+	}
+
 	SV_BroadcastVoiceData(pAdj, Bits2Bytes(bitsRead), voiceDataBuffer);
 #endif // !CLIENT_DLL
 
@@ -598,6 +683,18 @@ bool CClient::VProcessDurangoVoiceData(CClient* pClient, CLC_DurangoVoiceData* p
 		return false;
 
 	CClient* const pAdj = AdjustShiftedThisPointer(pClient);
+
+	//Is our client communication banned
+	if (pAdj->GetClientExtended()->IsClientCommsBanned())
+	{
+		//Should we apply the communication ban based on what the host has decided
+		if (SV_ShouldApplyVoiceChatGlobalMutes())
+		{
+			InformClientAboutCommsBanTriggeredByVoice(pAdj);
+			return true;
+		}
+	}
+
 	SV_BroadcastDurangoVoiceData(pAdj, Bits2Bytes(bitsRead), voiceDataBuffer,
 		pMsg->m_xid, pMsg->m_unknown, pMsg->m_useVoiceStream, pMsg->m_skipXidCheck);
 #endif // !CLIENT_DLL
