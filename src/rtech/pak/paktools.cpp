@@ -10,53 +10,43 @@
 #include "paktools.h"
 
 //----------------------------------------------------------------------------------
-// checks if the pak base path exists
+// checks if the pak read path exists
 //----------------------------------------------------------------------------------
-bool Pak_BasePathExists()
+bool Pak_ReadPathExists()
 {
-	return IsDirectory(Pak_GetBaseLoadPath());
+	return IsDirectory(Pak_GetReadPath());
 }
 
 //----------------------------------------------------------------------------------
-// creates the pak base path if it doesn't exists
+// checks if the pak write path exists
 //----------------------------------------------------------------------------------
-bool Pak_CreateBasePath()
+bool Pak_WritePathExists()
+{
+	return IsDirectory(Pak_GetWritePath());
+}
+
+//----------------------------------------------------------------------------------
+// creates the pak read path if it doesn't exists
+//----------------------------------------------------------------------------------
+bool Pak_CreateReadPath()
 {
 	// already exists
-	if (Pak_BasePathExists())
+	if (Pak_ReadPathExists())
 		return true;
 
-	return CreateDirHierarchy(Pak_GetBaseLoadPath()) == 0;
+	return CreateDirHierarchy(Pak_GetReadPath()) == 0;
 }
 
 //----------------------------------------------------------------------------------
-// checks if the pak override path exists
+// creates the pak write path if it doesn't exists
 //----------------------------------------------------------------------------------
-bool Pak_OverridePathExists()
-{
-	return IsDirectory(Pak_GetOverrideLoadPath());
-}
-
-//----------------------------------------------------------------------------------
-// creates the pak override path if it doesn't exists
-//----------------------------------------------------------------------------------
-bool Pak_CreateOverridePath()
+bool Pak_CreateWritePath()
 {
 	// already exists
-	if (Pak_OverridePathExists())
+	if (Pak_WritePathExists())
 		return true;
 
-	return CreateDirHierarchy(Pak_GetOverrideLoadPath()) == 0;
-}
-
-//----------------------------------------------------------------------------------
-// checks if an override file exists and returns whether it should be loaded instead
-//----------------------------------------------------------------------------------
-bool Pak_FileOverrideExists(const char* const pakFilePath, char* const outPath, const size_t outBufLen)
-{
-    // check the overrides path
-    snprintf(outPath, outBufLen, "%s%s", Pak_GetOverrideLoadPath(), V_UnqualifiedFileName(pakFilePath));
-    return FileExists(outPath);
+	return CreateDirHierarchy(Pak_GetWritePath()) == 0;
 }
 
 //----------------------------------------------------------------------------------
@@ -64,13 +54,10 @@ bool Pak_FileOverrideExists(const char* const pakFilePath, char* const outPath, 
 //----------------------------------------------------------------------------------
 int Pak_FileExists(const char* const pakFilePath)
 {
-    char fullPath[1024];
-    if (Pak_FileOverrideExists(pakFilePath, fullPath, sizeof(fullPath)))
-        return true;
+    char fullPath[MAX_OSPATH];
 
     // check the platform's default path
-    snprintf(fullPath, sizeof(fullPath), "%s%s", Pak_GetBaseLoadPath(), pakFilePath);
-
+    snprintf(fullPath, sizeof(fullPath), "%s%s", Pak_GetReadPath(), pakFilePath);
     return FileExists(fullPath);
 }
 
@@ -407,17 +394,17 @@ void Pak_ShowHeaderDetails(const PakFileHeader_s* const pakHeader)
 
 	Msg(eDLL_T::RTECH, "______________________________________________________________\n");
 	Msg(eDLL_T::RTECH, "-+ Pak header details ----------------------------------------\n");
-	Msg(eDLL_T::RTECH, " |-- Magic    : '0x%08X'\n", pakHeader->magic);
-	Msg(eDLL_T::RTECH, " |-- Version  : '%hu'\n", pakHeader->version);
-	Msg(eDLL_T::RTECH, " |-- Flags    : '0x%04hX'\n", pakHeader->flags);
-	Msg(eDLL_T::RTECH, " |-- Time     : '%hu-%hu-%hu/%hu %hu:%hu:%hu.%hu'\n",
+	Msg(eDLL_T::RTECH, " |-- Magic    : 0x%08X\n", pakHeader->magic);
+	Msg(eDLL_T::RTECH, " |-- Version  : %hu\n", pakHeader->version);
+	Msg(eDLL_T::RTECH, " |-- Flags    : 0x%04hX\n", pakHeader->flags);
+	Msg(eDLL_T::RTECH, " |-- Time     : %hu-%hu-%hu/%hu %hu:%hu:%hu.%hu\n",
 		systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wDayOfWeek,
 		systemTime.wHour, systemTime.wMinute, systemTime.wSecond, systemTime.wMilliseconds);
-	Msg(eDLL_T::RTECH, " |-- Checksum : '0x%08llX'\n", pakHeader->checksum);
-	Msg(eDLL_T::RTECH, " |-- Assets   : '%u'\n", pakHeader->assetCount);
+	Msg(eDLL_T::RTECH, " |-- Checksum : 0x%08llX\n", pakHeader->checksum);
+	Msg(eDLL_T::RTECH, " |-- Assets   : %u\n", pakHeader->assetCount);
 	Msg(eDLL_T::RTECH, " |-+ Compression ---------------------------------------------\n");
-	Msg(eDLL_T::RTECH, " | |-- Size comp: '%zu'\n", pakHeader->compressedSize);
-	Msg(eDLL_T::RTECH, " | |-- Size decp: '%zu'\n", pakHeader->decompressedSize);
-	Msg(eDLL_T::RTECH, " | |-- Ratio    : '%.02f'\n", (pakHeader->compressedSize * 100.f) / pakHeader->decompressedSize);
+	Msg(eDLL_T::RTECH, " | |-- Size comp: %zu\n", pakHeader->compressedSize);
+	Msg(eDLL_T::RTECH, " | |-- Size decp: %zu\n", pakHeader->decompressedSize);
+	Msg(eDLL_T::RTECH, " | |-- Ratio    : %.02f\n", (pakHeader->compressedSize * 100.f) / pakHeader->decompressedSize);
 	Msg(eDLL_T::RTECH, "--------------------------------------------------------------\n");
 }

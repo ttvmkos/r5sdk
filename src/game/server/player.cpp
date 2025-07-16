@@ -60,20 +60,28 @@ QAngle* CPlayer::EyeAngles(QAngle* pAngles)
 //------------------------------------------------------------------------------
 inline void CPlayer::SetTimeBase(float flTimeBase)
 {
-	const int nRemainderTime = Max(TIME_TO_TICKS(flTimeBase), 0);
-	SetLastUCmdSimulationRemainderTime(nRemainderTime);
+	const float fRemainderTime = Max((float)TIME_TO_TICKS(flTimeBase), 0.0f);
+	SetLastUCmdSimulationRemainderTime(fRemainderTime);
 
 	const float flAttemptedTime = Max(flTimeBase - (m_lastUCmdSimulationRemainderTime * TICK_INTERVAL), 0.0f);
 	SetTotalExtraClientCmdTimeAttempted(flAttemptedTime);
 }
 
 //------------------------------------------------------------------------------
+// Purpose: gets the time base for this player
+//------------------------------------------------------------------------------
+float CPlayer::GetTimeBase() const
+{
+	return TICKS_TO_TIME(m_lastUCmdSimulationTicks) + m_lastUCmdSimulationRemainderTime;
+}
+
+//------------------------------------------------------------------------------
 // Purpose: sets the last user cmd simulation remainder time
 // Input  : nRemainderTime - 
 //------------------------------------------------------------------------------
-void CPlayer::SetLastUCmdSimulationRemainderTime(int nRemainderTime)
+void CPlayer::SetLastUCmdSimulationRemainderTime(float fRemainderTime)
 {
-	if (m_lastUCmdSimulationRemainderTime != nRemainderTime)
+	if (m_lastUCmdSimulationRemainderTime != fRemainderTime)
 	{
 		const edict_t nEdict = NetworkProp()->GetEdict();
 
@@ -82,7 +90,7 @@ void CPlayer::SetLastUCmdSimulationRemainderTime(int nRemainderTime)
 			_InterlockedOr16((SHORT*)gpGlobals->m_pEdicts + nEdict + 32, 0x200u);
 		}
 
-		m_lastUCmdSimulationRemainderTime = nRemainderTime;
+		m_lastUCmdSimulationRemainderTime = fRemainderTime;
 	}
 }
 
@@ -116,7 +124,7 @@ void CPlayer::SetTotalExtraClientCmdTimeAttempted(float flAttemptedTime)
 // TODO: this code is experimental and has reported problems from players with
 // high latency, needs to be debugged or a different approach needs to be taken!
 // Defaulted to OFF for now
-static ConVar sv_unlag_clamp("sv_unlag_clamp", "0", FCVAR_RELEASE, "Clamp the difference between the current time and received command time to sv_maxunlag.");
+static ConVar sv_unlag_clamp("sv_unlag_clamp", "1", FCVAR_RELEASE, "Clamp the difference between player's time base and received command time to sv_maxunlag.");
 
 void CPlayer::ProcessUserCmds(CUserCmd* cmds, int numCmds, int totalCmds,
 	int droppedPackets, bool paused)
@@ -125,9 +133,8 @@ void CPlayer::ProcessUserCmds(CUserCmd* cmds, int numCmds, int totalCmds,
 		return;
 
 	CUserCmd* lastCmd = &m_Commands[MAX_QUEUED_COMMANDS_PROCESS];
-
 	const float maxUnlag = sv_maxunlag->GetFloat();
-	const float currTime = gpGlobals->curTime;
+	const float timeBase = GetTimeBase();
 
 	for (int i = totalCmds - 1; i >= 0; i--)
 	{
@@ -158,7 +165,7 @@ void CPlayer::ProcessUserCmds(CUserCmd* cmds, int numCmds, int totalCmds,
 		// bunch still in the padded bytes, possibly one of them is what we could
 		// and should actually use to get the remote client time since ucmd was sent.
 		if (sv_unlag_clamp.GetBool())
-			cmd->command_time = Min(Max(cmd->command_time, Max(currTime - maxUnlag, 0.0f)), currTime + maxUnlag);
+			cmd->command_time = Min(Max(cmd->command_time, Max(timeBase - maxUnlag, 0.0f)), timeBase + maxUnlag);
 
 		CUserCmd* queuedCmd = &m_Commands[lastCommandNumber];
 		queuedCmd->Copy(cmd);

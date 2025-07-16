@@ -7,9 +7,15 @@
 //=============================================================================//
 
 #include "core/stdafx.h"
+#include "tier0/commandline.h"
 #include "tier2/fileutils.h"
 #include "filesystem/filesystem.h"
 #include "pluginsystem.h"
+
+//-----------------------------------------------------------------------------
+// Console variables
+//-----------------------------------------------------------------------------
+static ConVar pluginsystem_debug("pluginsystem_debug", "0", FCVAR_RELEASE, "Debug the pluginsystem");
 
 //-----------------------------------------------------------------------------
 // Purpose: initialize the plugin system
@@ -17,8 +23,17 @@
 //-----------------------------------------------------------------------------
 void CPluginSystem::Init()
 {
+	if (CommandLine()->CheckParm("-pluginsystem_disable"))
+		return;
+
 	if (!FileSystem()->IsDirectory(PLUGIN_INSTALL_DIR, "GAME"))
 		return; // No plugins to load.
+
+	// plugin system initializes before the first Cbuf_Execute call, which
+	// executes commands/convars over the command line. we check for an
+	// explicit pluginsystem debug flag, and set the convar from here.
+	if (CommandLine()->CheckParm("-pluginsystem_debug"))
+		pluginsystem_debug.SetValue(true);
 
 	CUtlVector< CUtlString > pluginPaths;
 	AddFilesToList(pluginPaths, PLUGIN_INSTALL_DIR, "dll", "GAME");
@@ -26,14 +41,17 @@ void CPluginSystem::Init()
 	for (int i = 0; i < pluginPaths.Count(); ++i)
 	{
 		CUtlString& path = pluginPaths[i];
-
 		bool addInstance = true;
+
 		FOR_EACH_VEC(m_Instances, j)
 		{
 			const PluginInstance_t& instance = m_Instances[j];
 
-			if (instance.m_Path.IsEqual_CaseInsensitive(path.String()) == 0)
-				addInstance = false;
+			if (instance.path.IsEqual_CaseInsensitive(path.String()) == 0)
+			{
+				addInstance = false; // Already exists.
+				break;
+			}
 		}
 
 		if (addInstance)
@@ -42,6 +60,41 @@ void CPluginSystem::Init()
 			m_Instances.AddToTail(PluginInstance_t(baseFileName, path.String()));
 		}
 	}
+
+	FOR_EACH_VEC(m_Instances, i)
+	{
+		CPluginSystem::PluginInstance_t& inst = m_Instances[i];
+
+		if (LoadInstance(inst))
+		{
+			if (pluginsystem_debug.GetBool())
+				Msg(eDLL_T::ENGINE, "Loaded plugin: '%s'\n", inst.name.String());
+		}
+		else
+			Error(eDLL_T::ENGINE, 0, "Failed loading plugin: '%s'\n", inst.name.String());
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: shutdown the plugin system
+// Input  :
+//-----------------------------------------------------------------------------
+void CPluginSystem::Shutdown()
+{
+	FOR_EACH_VEC_BACK(m_Instances, i)
+	{
+		CPluginSystem::PluginInstance_t& inst = m_Instances[i];
+
+		if (UnloadInstance(inst))
+		{
+			if (pluginsystem_debug.GetBool())
+				Msg(eDLL_T::ENGINE, "Unloaded plugin: '%s'\n", inst.name.String());
+		}
+		else
+			Error(eDLL_T::ENGINE, 0, "Failed unloading plugin: '%s'\n", inst.name.String());
+	}
+
+	m_Instances.Purge();
 }
 
 //-----------------------------------------------------------------------------
@@ -51,14 +104,15 @@ void CPluginSystem::Init()
 //-----------------------------------------------------------------------------
 bool CPluginSystem::LoadInstance(PluginInstance_t& pluginInst)
 {
-	if (pluginInst.m_bIsLoaded)
+	if (pluginInst.isLoaded)
 		return false;
 
-	HMODULE loadedPlugin = LoadLibraryA(pluginInst.m_Path.String());
+	HMODULE loadedPlugin = LoadLibraryA(pluginInst.path.String());
+
 	if (loadedPlugin == INVALID_HANDLE_VALUE || loadedPlugin == 0)
 		return false;
 
-	CModule pluginModule(pluginInst.m_Name.String());
+	CModule pluginModule(pluginInst.name.String());
 
 	// Pass selfModule here on load function, we have to do
 	// this because local listen/dedi/client dll's are called
@@ -68,14 +122,14 @@ bool CPluginSystem::LoadInstance(PluginInstance_t& pluginInst)
 
 	Assert(onLoadFn);
 
-	if (!onLoadFn(pluginInst.m_Name.String(), g_SDKDll.GetModuleName().c_str()))
+	if (!onLoadFn || !onLoadFn(pluginInst.name.String(), g_SDKDll.GetModuleName().c_str()))
 	{
 		FreeLibrary(loadedPlugin);
 		return false;
 	}
 
-	pluginInst.m_hModule = pluginModule;
-	return pluginInst.m_bIsLoaded = true;
+	pluginInst.moduleHandle = pluginModule;
+	return pluginInst.isLoaded = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -85,24 +139,24 @@ bool CPluginSystem::LoadInstance(PluginInstance_t& pluginInst)
 //-----------------------------------------------------------------------------
 bool CPluginSystem::UnloadInstance(PluginInstance_t& pluginInst)
 {
-	if (!pluginInst.m_bIsLoaded)
+	if (!pluginInst.isLoaded)
 		return false;
 
 	PluginInstance_t::OnUnload onUnloadFn = 
-		pluginInst.m_hModule.GetExportedSymbol(
+		pluginInst.moduleHandle.GetExportedSymbol(
 		"PluginInstance_OnUnload").RCast<PluginInstance_t::OnUnload>();
 
 	Assert(onUnloadFn);
+	bool unloadOk = false;
 
 	if (onUnloadFn)
-		onUnloadFn();
+		unloadOk = onUnloadFn();
 
-	bool unloadOk = FreeLibrary((HMODULE)pluginInst.m_hModule.GetModuleBase());
-	Assert(unloadOk);
+	const bool freeLibraryOk = FreeLibrary((HMODULE)pluginInst.moduleHandle.GetModuleBase());
+	Assert(freeLibraryOk);
 
-	pluginInst.m_bIsLoaded = false;
-
-	return unloadOk;
+	pluginInst.isLoaded = false;
+	return unloadOk && freeLibraryOk;
 }
 
 //-----------------------------------------------------------------------------
@@ -126,40 +180,74 @@ CUtlVector<CPluginSystem::PluginInstance_t>& CPluginSystem::GetInstances()
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: add plugin callback for function
+// Purpose: install plugin callback for function
 // Input  : *help
 //-----------------------------------------------------------------------------
-void CPluginSystem::AddCallback(PluginHelpWithAnything_t* help)
+void CPluginSystem::InstallCallback(PluginOperation_s* const pio)
 {
 #define ADD_PLUGIN_CALLBACK(fn, callback, function) callback += reinterpret_cast<fn>(function); callback.GetCallbacks().Tail().SetModuleName(moduleName)
 
-	if (!help->m_pFunction)
+	if (!pio->function)
+	{
+		Assert(0);
 		return;
+	}
 
 	// [rexx]: This fetches the path to the module that contains the requested callback function.
 	// The module name is fetched so that callbacks can be identified by the plugin that they came from.
 	// This must use the wide-char version of this func, as file paths may contain non-ASCII characters and we don't really want those to break.
-	wchar_t moduleName[MAX_PATH] = {};
-	GetMappedFileNameW((HANDLE)-1, help->m_pFunction, moduleName, MAX_PATH);
+	wchar_t moduleName[MAX_OSPATH];
 
-	switch (help->m_nCallbackID)
+	if (!GetMappedFileNameW((HANDLE)-1, pio->function, moduleName, MAX_OSPATH))
 	{
-	case PluginHelpWithAnything_t::ePluginCallback::CModAppSystemGroup_Create:
+		Assert(0);
+		return;
+	}
+
+	switch (pio->callbackId)
 	{
-		ADD_PLUGIN_CALLBACK(CreateFn, GetCreateCallbacks(), help->m_pFunction);
+	case PluginOperation_s::PluginCallback_e::CModAppSystemGroup_Create:
+	{
+		ADD_PLUGIN_CALLBACK(OnCreateFn, GetCreateCallbacks(), pio->function);
 		break;
 	}
-	case PluginHelpWithAnything_t::ePluginCallback::CServer_ConnectClient:
+	case PluginOperation_s::PluginCallback_e::CModAppSystemGroup_Destroy:
 	{
-		ADD_PLUGIN_CALLBACK(ConnectClientFn, GetConnectClientCallbacks(), help->m_pFunction);
+		ADD_PLUGIN_CALLBACK(OnDestroyFn, GetDestroyCallbacks(), pio->function);
 		break;
 	}
-	case PluginHelpWithAnything_t::ePluginCallback::OnReceivedChatMessage:
+	case PluginOperation_s::PluginCallback_e::CServer_ConnectClient:
 	{
-		ADD_PLUGIN_CALLBACK(OnChatMessageFn, GetChatMessageCallbacks(), help->m_pFunction);
+		ADD_PLUGIN_CALLBACK(OnConnectClientFn, GetConnectClientCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnReceivedChatMessage:
+	{
+		ADD_PLUGIN_CALLBACK(OnChatMessageFn, GetChatMessageCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterSharedScriptFunctions:
+	{
+		ADD_PLUGIN_CALLBACK(OnRegisterSharedScriptFunctionsFn, GetRegisterSharedScriptFuncsCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterServerScriptFunctions:
+	{
+		ADD_PLUGIN_CALLBACK(OnRegisterServerScriptFunctionsFn, GetRegisterServerScriptFuncsCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterClientScriptFunctions:
+	{
+		ADD_PLUGIN_CALLBACK(OnRegisterClientScriptFunctionsFn, GetRegisterClientScriptFuncsCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterUIScriptFunctions:
+	{
+		ADD_PLUGIN_CALLBACK(OnRegisterUIScriptFunctionsFn, GetRegisterUIScriptFuncsCallbacks(), pio->function);
 		break;
 	}
 	default:
+		Assert(0); // Unimplemented.
 		break;
 	}
 
@@ -170,31 +258,57 @@ void CPluginSystem::AddCallback(PluginHelpWithAnything_t* help)
 // Purpose: remove plugin callback for function
 // Input  : *help
 //-----------------------------------------------------------------------------
-void CPluginSystem::RemoveCallback(PluginHelpWithAnything_t* help)
+void CPluginSystem::RemoveCallback(PluginOperation_s* const pio)
 {
 #define REMOVE_PLUGIN_CALLBACK(fn, callback, function) callback -= reinterpret_cast<fn>(function)
 
-	if (!help->m_pFunction)
+	if (!pio->function)
 		return;
 
-	switch (help->m_nCallbackID)
+	switch (pio->callbackId)
 	{
-	case PluginHelpWithAnything_t::ePluginCallback::CModAppSystemGroup_Create:
+	case PluginOperation_s::PluginCallback_e::CModAppSystemGroup_Create:
 	{
-		REMOVE_PLUGIN_CALLBACK(CreateFn, GetCreateCallbacks(), help->m_pFunction);
+		REMOVE_PLUGIN_CALLBACK(OnCreateFn, GetCreateCallbacks(), pio->function);
 		break;
 	}
-	case PluginHelpWithAnything_t::ePluginCallback::CServer_ConnectClient:
+	case PluginOperation_s::PluginCallback_e::CModAppSystemGroup_Destroy:
 	{
-		REMOVE_PLUGIN_CALLBACK(ConnectClientFn, GetConnectClientCallbacks(), help->m_pFunction);
+		REMOVE_PLUGIN_CALLBACK(OnDestroyFn, GetDestroyCallbacks(), pio->function);
 		break;
 	}
-	case PluginHelpWithAnything_t::ePluginCallback::OnReceivedChatMessage:
+	case PluginOperation_s::PluginCallback_e::CServer_ConnectClient:
 	{
-		REMOVE_PLUGIN_CALLBACK(OnChatMessageFn, GetChatMessageCallbacks(), help->m_pFunction);
+		REMOVE_PLUGIN_CALLBACK(OnConnectClientFn, GetConnectClientCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnReceivedChatMessage:
+	{
+		REMOVE_PLUGIN_CALLBACK(OnChatMessageFn, GetChatMessageCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterSharedScriptFunctions:
+	{
+		REMOVE_PLUGIN_CALLBACK(OnRegisterSharedScriptFunctionsFn, GetRegisterSharedScriptFuncsCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterServerScriptFunctions:
+	{
+		REMOVE_PLUGIN_CALLBACK(OnRegisterServerScriptFunctionsFn, GetRegisterServerScriptFuncsCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterClientScriptFunctions:
+	{
+		REMOVE_PLUGIN_CALLBACK(OnRegisterClientScriptFunctionsFn, GetRegisterClientScriptFuncsCallbacks(), pio->function);
+		break;
+	}
+	case PluginOperation_s::PluginCallback_e::OnRegisterUIScriptFunctions:
+	{
+		REMOVE_PLUGIN_CALLBACK(OnRegisterUIScriptFunctionsFn, GetRegisterUIScriptFuncsCallbacks(), pio->function);
 		break;
 	}
 	default:
+		Assert(0); // Unimplemented.
 		break;
 	}
 
@@ -202,33 +316,67 @@ void CPluginSystem::RemoveCallback(PluginHelpWithAnything_t* help)
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: help plugins with anything
-// Input  : *help
+// Purpose: 
+// Input  : *pio
 // Output : void*
 //-----------------------------------------------------------------------------
-void* CPluginSystem::HelpWithAnything(PluginHelpWithAnything_t* help)
+void* CPluginSystem::RunOperation(PluginOperation_s* const pio)
 {
-	switch (help->m_nHelpID)
+	switch (pio->commandId)
 	{
-	case PluginHelpWithAnything_t::ePluginHelp::PLUGIN_GET_FUNCTION:
+	case PluginOperation_s::PluginCommand_e::PLUGIN_INSTALL_CALLBACK:
 	{
+		InstallCallback(pio);
 		break;
 	}
-	case PluginHelpWithAnything_t::ePluginHelp::PLUGIN_REGISTER_CALLBACK:
+	case PluginOperation_s::PluginCommand_e::PLUGIN_REMOVE_CALLBACK:
 	{
-		AddCallback(help);
-		break;
-	}
-	case PluginHelpWithAnything_t::ePluginHelp::PLUGIN_UNREGISTER_CALLBACK:
-	{
-		RemoveCallback(help);
+		RemoveCallback(pio);
 		break;
 	}
 	default:
+		Assert(0); // Unimplemented.
 		break;
 	}
 
 	return nullptr;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: returns the caller module by return address
+// Input  : *pluginSystem - 
+//          returnAddress - 
+// Output : const char*
+//-----------------------------------------------------------------------------
+static const char* PluginSystem_GetCallerModuleName(CPluginSystem* const pluginSystem, const QWORD returnAddress)
+{
+	FOR_EACH_VEC(pluginSystem->GetInstances(), i)
+	{
+		const CPluginSystem::PluginInstance_t& inst = pluginSystem->GetInstances()[i];
+
+		const QWORD base = inst.moduleHandle.GetModuleBase();
+		const DWORD size = inst.moduleHandle.GetModuleSize();
+
+		if (returnAddress >= base && returnAddress < (base + size))
+			return inst.name.String();
+	}
+
+	Assert(0);
+	return "!!! UNKNOWN PLUGIN !!!";
+}
+
+//-----------------------------------------------------------------------------
+// NOTE: these should only be used from within plugins!
+//-----------------------------------------------------------------------------
+void CPluginSystem::CoreMsgV(LogType_t logType, LogLevel_t logLevel, eDLL_T context,
+	const char* pszLogger, const char* pszFormat, va_list args, const UINT exitCode, const char* pszUptimeOverride)
+{
+	// Prepend the plugin name.
+	const QWORD returnAddress = (QWORD)_ReturnAddress();
+	const char* const pluginName = PluginSystem_GetCallerModuleName(this, returnAddress);
+
+	const string formatted = FormatV(pszFormat, args);
+	CoreMsg(logType, logLevel, context, exitCode, pszLogger, "[%s] %s", pluginName, formatted.c_str());
 }
 
 CPluginSystem g_PluginSystem;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "tier1/utlhash.h"
 #include "tier1/keyvalues.h"
 #include "rtech/rson.h"
 #include "filesystem/filesystem.h"
@@ -8,6 +9,7 @@
 #define MOD_BASE_DIRECTORY "mods"
 #define MOD_STATUS_LIST_FILE MOD_BASE_DIRECTORY"/mods.vdf"
 #define MOD_SETTINGS_FILE "mod.vdf"
+#define MAX_MODS_TO_LOAD 1024
 
 class CModAppSystemGroup;
 
@@ -25,56 +27,74 @@ public:
 
 	struct ModInstance_t
 	{
-		ModInstance_t(const CUtlString& basePath);
+		ModInstance_t(CModSystem* const _parentClass, const CUtlString& basePath);
 		~ModInstance_t();
 
 		bool ParseSettings();
 		void ParseConVars();
 		void ParseLocalizationFiles();
 
-		inline void SetState(eModState state) { m_iState = state; };
+		inline void SetState(const eModState newState) { state = newState; };
 
-		inline bool IsLoaded() const { return m_iState == eModState::LOADED; };
-		inline bool IsEnabled() const { return m_iState == eModState::ENABLED; };
+		inline bool IsLoaded() const { return state == eModState::LOADED; };
+		inline bool IsEnabled() const { return state == eModState::ENABLED; };
 
-		inline const CUtlString& GetBasePath() const { return m_BasePath; };
-		inline CUtlString GetScriptCompileListPath() const { return m_BasePath + GAME_SCRIPT_COMPILELIST; };
+		bool ShouldLoadPaks(const char* const targetPlaylist) const;
 
-		KeyValues* GetRequiredSettingsKey(const char* settingsPath, const char* key) const;
+		inline const CUtlString& GetBasePath() const { return basePath; };
+		inline CUtlString GetScriptCompileListPath() const { return basePath + GAME_SCRIPT_COMPILELIST; };
 
-		inline RSON::Node_t* LoadScriptCompileList() const
+		KeyValues* GetSettingsKeyRequired(const char* settingsPath, const char* key) const;
+
+		inline RSON::Node_t* LoadScriptCompileList(bool* const parseFailure) const
 		{
-			return RSON::LoadFromFile(GetScriptCompileListPath().Get(), "PLATFORM");
+			return RSON::LoadFromFile(GetScriptCompileListPath().Get(), "GAME", parseFailure);
 		};
 
-		KeyValues* m_SettingsKV;
-		eModState m_iState = eModState::UNLOADED;
-		bool m_bHasScriptCompileList; // if this mod has a scripts.rson file that exists
+		CModSystem* parentClass;
+		KeyValues* settingsKV;
 
-		CUtlVector<CUtlString> m_LocalizationFiles;
-		CUtlVector<ConVar*> m_ConVars;
+		UtlHashHandle_t idHashHandle;
 
-		CUtlString m_Name;
-		CUtlString m_ModID;
-		CUtlString m_Description;
-		CUtlString m_Version;
+		eModState state = eModState::UNLOADED;
+		bool hasSearchPath;
+		bool hasPrecompiledScripts;
 
-		CUtlString m_BasePath;
+		CUtlVector<CUtlString> localizationFiles;
+		CUtlVector<ConVar*> conVars;
+
+		CUtlString author;
+		CUtlString name;
+		CUtlString id;
+		CUtlString description;
+		CUtlString version;
+
+		CUtlString basePath;
 	};
 
+	CModSystem();
 	~CModSystem();
 
 	void Init();
+	void Shutdown();
 
 	// load mod enabled/disabled status from file on disk
 	void UpdateModStatusList();
 	void LoadModStatusList(CUtlMap<CUtlString, bool>& enabledList);
 	void WriteModStatusList();
 
+	bool IsEnabled() const;
+
 	const inline CUtlVector<ModInstance_t*>& GetModList() { return m_ModList; };
+	const void LockModList() { m_ModListMutex.Lock(); }
+	const void UnlockModList() { m_ModListMutex.Unlock(); }
+
+	const CUtlString& GetNormalizedModID(const ModInstance_t* const mod) const;
 
 private:
 	CUtlVector<ModInstance_t*> m_ModList;
+	CUtlHash<CUtlString> m_ModIdHashMap;
+	CThreadMutex m_ModListMutex;
 };
 
 extern CModSystem g_ModSystem;

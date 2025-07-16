@@ -31,16 +31,13 @@
 #include "tier0/module.h"
 
 //-----------------------------------------------------------------------------
-// Image statics
+// SDK image statics
 //-----------------------------------------------------------------------------
-static const PEB64* s_ProcessEnvironmentBlock = nullptr;
-static const IMAGE_DOS_HEADER* s_DosHeader = nullptr;
-static const IMAGE_NT_HEADERS64* s_NtHeaders = nullptr;
-static HMODULE s_SdkModule = NULL;
+static HMODULE s_sdkModuleHandle = NULL;
 
 typedef void (*InitFunc)(void);
-static InitFunc s_SdkInitFunc = NULL;
-static InitFunc s_SdkShutdownFunc = NULL;
+static InitFunc s_sdkInitFunc = NULL;
+static InitFunc s_sdkShutdownFunc = NULL;
 
 //-----------------------------------------------------------------------------
 // LauncherMain function pointer
@@ -50,15 +47,19 @@ static int (*v_LauncherMain)(HINSTANCE, HINSTANCE, LPSTR, int) = nullptr;
 //-----------------------------------------------------------------------------
 // Purpose: Terminates the process with an error when called
 //-----------------------------------------------------------------------------
-static void FatalError(const char* fmt, ...)
+static void Loader_FatalError(const char* const fmt, ...)
 {
+	Assert(0);
+
 	va_list vArgs;
 	va_start(vArgs, fmt);
 
 	char errorBuf[1024];
-	vsnprintf(errorBuf, sizeof(errorBuf), fmt, vArgs);
+	const int ret = V_vsnprintf(errorBuf, sizeof(errorBuf), fmt, vArgs);
 
-	errorBuf[sizeof(errorBuf) - 1] = '\0';
+	if (ret < 0)
+		errorBuf[0] = '\0';
+
 	va_end(vArgs);
 
 	MessageBoxA(NULL, errorBuf, "Loader Error", MB_ICONERROR | MB_OK);
@@ -68,19 +69,22 @@ static void FatalError(const char* fmt, ...)
 //-----------------------------------------------------------------------------
 // Purpose: Loads the SDK module
 //-----------------------------------------------------------------------------
-static void InitGameSDK(const LPSTR lpCmdLine)
+static void Loader_InitGameSDK(const LPSTR lpCmdLine)
 {
 	if (V_strstr(lpCmdLine, "-noworkerdll"))
 		return;
 
-	char moduleName[MAX_PATH];
+	char moduleName[MAX_OSPATH];
 
-	if (!GetModuleFileNameA((HMODULE)s_DosHeader,
+	if (!GetModuleFileNameA((HMODULE)NtCurrentPeb()->ImageBaseAddress,
 		moduleName, sizeof(moduleName)))
+	{
+		Loader_FatalError("Failed to retrieve process module name: error code = %08x\n", GetLastError());
 		return;
+	}
 
 	// Prune the path.
-	const char* pModuleName = strrchr(moduleName, '\\') + 1;
+	const char* const pModuleName = strrchr(moduleName, '\\') + 1;
 	const bool bDedicated = V_stricmp(pModuleName, SERVER_GAME_DLL) == NULL;
 
 	// The dedicated server has its own SDK module,
@@ -92,58 +96,55 @@ static void InitGameSDK(const LPSTR lpCmdLine)
 		// as this command lime parameter prevents the
 		// server dll from initializing in the engine.
 		if (V_strstr(lpCmdLine, "-noserverdll"))
-			s_SdkModule = LoadLibraryA(CLIENT_WORKER_DLL);
+			s_sdkModuleHandle = LoadLibraryA(CLIENT_WORKER_DLL);
 		else
-			s_SdkModule = LoadLibraryA(MAIN_WORKER_DLL);
+			s_sdkModuleHandle = LoadLibraryA(MAIN_WORKER_DLL);
 	}
 	else
-		s_SdkModule = LoadLibraryA(SERVER_WORKER_DLL);
+		s_sdkModuleHandle = LoadLibraryA(SERVER_WORKER_DLL);
 
-	if (!s_SdkModule)
+	if (!s_sdkModuleHandle)
 	{
-		Assert(0);
-		FatalError("Failed to load SDK: error code = %08x\n", GetLastError());
-
+		Loader_FatalError("Failed to load SDK module: error code = %08x\n", GetLastError());
 		return;
 	}
 
-	s_SdkInitFunc = (InitFunc)GetProcAddress(s_SdkModule, "SDK_Init");
-	if (s_SdkInitFunc)
-		s_SdkShutdownFunc = (InitFunc)GetProcAddress(s_SdkModule, "SDK_Shutdown");
+	s_sdkInitFunc = (InitFunc)GetProcAddress(s_sdkModuleHandle, "SDK_Init");
 
-	if (!s_SdkInitFunc || !s_SdkShutdownFunc)
+	if (s_sdkInitFunc)
+		s_sdkShutdownFunc = (InitFunc)GetProcAddress(s_sdkModuleHandle, "SDK_Shutdown");
+
+	if (!s_sdkInitFunc || !s_sdkShutdownFunc)
 	{
-		Assert(0);
-		FatalError("Loaded SDK is invalid: error code = %08x\n", GetLastError());
-
+		Loader_FatalError("Loaded SDK module is invalid: error code = %08x\n", GetLastError());
 		return;
 	}
 
-	s_SdkInitFunc();
+	s_sdkInitFunc();
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Unloads the SDK module
 //-----------------------------------------------------------------------------
-static void ShutdownGameSDK()
+static void Loader_ShutdownGameSDK()
 {
-	if (s_SdkModule)
+	if (s_sdkModuleHandle)
 	{
-		s_SdkShutdownFunc();
+		s_sdkShutdownFunc();
 
-		FreeLibrary(s_SdkModule);
-		s_SdkModule = NULL;
+		FreeLibrary(s_sdkModuleHandle);
+		s_sdkModuleHandle = NULL;
 	}
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: LauncherMain hook; loads the SDK before the game inits
 //-----------------------------------------------------------------------------
-int WINAPI hLauncherMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+static int WINAPI hkLauncherMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
-	InitGameSDK(lpCmdLine); // Init GameSDK, internal function calls LauncherMain.
+	Loader_InitGameSDK(lpCmdLine); // Init GameSDK, internal function calls LauncherMain.
 	const int ret = v_LauncherMain(hInstance, hPrevInstance, lpCmdLine, nShowCmd);
-	ShutdownGameSDK();
+	Loader_ShutdownGameSDK();
 
 	return ret;
 }
@@ -151,31 +152,28 @@ int WINAPI hLauncherMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpC
 //-----------------------------------------------------------------------------
 // Purpose: hooks the entry point
 //-----------------------------------------------------------------------------
-static void AttachEP()
+static void Loader_AttachToEntryPoint()
 {
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 
-	DetourAttach(&v_LauncherMain, &hLauncherMain);
+	DetourAttach(&v_LauncherMain, &hkLauncherMain);
+	const HRESULT hr = DetourTransactionCommit();
 
-	HRESULT hr = DetourTransactionCommit();
 	if (hr != NO_ERROR) // Failed to hook into the process, terminate...
-	{
-		Assert(0);
-		FatalError("Failed to detour process: error code = %08x\n", hr);
-	}
+		Loader_FatalError("Failed to detour process: error code = %08x\n", hr);
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: unhooks the entry point
 //-----------------------------------------------------------------------------
-static void DetachEP()
+static void Loader_DetachFromEntryPoint()
 {
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 
-	DetourDetach(&v_LauncherMain, &hLauncherMain);
-	HRESULT hr = DetourTransactionCommit();
+	DetourDetach(&v_LauncherMain, &hkLauncherMain);
+	const HRESULT hr = DetourTransactionCommit();
 
 	Assert(hr != NO_ERROR);
 	NOTE_UNUSED(hr);
@@ -190,21 +188,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved)
 	{
 	case DLL_PROCESS_ATTACH:
 	{
-		s_ProcessEnvironmentBlock = CModule::GetProcessEnvironmentBlock();
-		s_DosHeader = (IMAGE_DOS_HEADER*)s_ProcessEnvironmentBlock->ImageBaseAddress;
-		s_NtHeaders = (IMAGE_NT_HEADERS64*)((uintptr_t)s_DosHeader
-			+ (uintptr_t)s_DosHeader->e_lfanew);
-
-		v_LauncherMain = CModule::GetExportedSymbol((QWORD)s_DosHeader, "LauncherMain")
+		v_LauncherMain = CModule::GetExportedSymbol(NtCurrentPeb()->ImageBaseAddress, "LauncherMain")
 			.RCast<int (*)(HINSTANCE, HINSTANCE, LPSTR, int)>();
 
-		AttachEP();
+		Loader_AttachToEntryPoint();
 		break;
 	}
 
 	case DLL_PROCESS_DETACH:
 	{
-		DetachEP();
+		Loader_DetachFromEntryPoint();
 		break;
 	}
 	}

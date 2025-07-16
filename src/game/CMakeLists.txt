@@ -47,6 +47,7 @@ add_sources( SOURCE_GROUP "Player"
 
 add_sources( SOURCE_GROUP "Weapon"
     "shared/r1/weapon_playerdata.h"
+    "shared/r1/weapon_parse.h"
     "shared/r1/weapon_bolt.cpp"
     "shared/r1/weapon_bolt.h"
     "shared/r1/grapple.h"
@@ -82,6 +83,12 @@ add_sources( SOURCE_GROUP "Script"
     "shared/vscript_shared.h"
     "shared/vscript_debug_overlay_shared.cpp"
     "shared/vscript_debug_overlay_shared.h"
+    "shared/vscript_gamedll_defs.h"
+)
+
+add_sources( SOURCE_GROUP "ModSystem"
+    "shared/pluginsystem/modsystem.cpp"
+    "shared/pluginsystem/modsystem.h"
 )
 
 endif()

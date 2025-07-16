@@ -9,7 +9,7 @@
 //---------------------------------------------------------------------------------
 static void StreamDB_Init(const char* const pszLevelName)
 {
-	KeyValues* const pSettingsKV = Mod_GetLevelSettings(pszLevelName);
+	KeyValues* const pSettingsKV = Mod_GetLevelCoreSettings(pszLevelName);
 	const char* targetStreamDB = pszLevelName;
 
 	if (pSettingsKV)
@@ -18,6 +18,8 @@ static void StreamDB_Init(const char* const pszLevelName)
 
 		if (pStreamKV)
 			targetStreamDB = pStreamKV->GetString();
+
+		pSettingsKV->DeleteThis();
 	}
 
 	v_StreamDB_Init(targetStreamDB);
@@ -25,7 +27,9 @@ static void StreamDB_Init(const char* const pszLevelName)
 	// If the requested STBSP file doesn't exist, then enable the GPU driven
 	// texture streaming system.
 	const bool gpuDriven = s_textureStreamMgr->fileHandle == FS_ASYNC_FILE_INVALID;
-	gpu_driven_tex_stream->SetValue(gpuDriven);
+
+	if (gpu_driven_tex_stream->GetBool() != gpuDriven)
+		gpu_driven_tex_stream->SetValue(gpuDriven);
 
 	if (!gpuDriven)
 		Msg(eDLL_T::MS, "StreamDB_Init: Loaded STBSP file '%s.stbsp'\n", targetStreamDB);

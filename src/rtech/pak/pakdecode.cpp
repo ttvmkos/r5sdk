@@ -137,10 +137,13 @@ static const unsigned char /*141313180*/ s_defaultDecoderLUT[] =
 //-----------------------------------------------------------------------------
 static bool Pak_HasEnoughDecodeBufferAvailable(PakDecoder_s* const decoder, const size_t outLen)
 {
+	// align to nearest multiple of buffer size
+	const uint64_t bufPosAligned = (decoder->outBufBytePos & ~decoder->outputInvMask);
+	const uint64_t threshold = decoder->outputInvMask + bufPosAligned + 1;
+
 	// make sure caller has copied all data out the ring buffer first before
 	// overwriting it with new decoded data
-	const uint64_t bytesWritten = (decoder->outBufBytePos & ~decoder->outputInvMask);
-	return (outLen >= decoder->outputInvMask + (bytesWritten +1) || outLen >= decoder->decompSize);
+	return (outLen >= threshold || outLen >= decoder->decompSize);
 }
 
 //-----------------------------------------------------------------------------
@@ -573,22 +576,11 @@ LABEL_69:
 static size_t Pak_ZStdDecoderInit(PakDecoder_s* const decoder, const uint8_t* frameHeader,
 	const size_t dataSize, const size_t headerSize)
 {
-	ZSTD_DStream* const dctx = ZSTD_createDStream();
+	ZSTD_DStream* const dctx = decoder->zstreamContext;
 	assert(dctx);
 
-	// failure
-	if (!dctx)
-		return NULL;
-
-	decoder->zstreamContext = dctx;
-
 	if (ZSTD_getFrameHeader(&dctx->fParams, frameHeader, dataSize) != 0)
-	{
-		ZSTD_freeDStream(decoder->zstreamContext);
-		decoder->zstreamContext = nullptr;
-
 		return NULL; // content size error
-	}
 
 	// ideally the frame header of the block gets parsed first, the length
 	// thereof is returned by initDStream and thus being processed first
@@ -639,26 +631,15 @@ static bool Pak_ZStdStreamDecode(PakDecoder_s* const decoder, const PakRingBuffe
 	decoder->outBufBytePos += outBuffer.pos;
 	decoder->inBufBytePos += inBuffer.pos;
 
-	// on the next call, we need at least this amount of data streamed in order
-	// to decode the rest of the pak file, as this is where reading has stopped
-	// this value may equal the currently streamed input size, as its possible
-	// this function is getting called to flush the remainder decoded data into
-	// the out buffer which got truncated off on the call prior due to wrapping
-	//
-	// if the input stream has fully decoded, this should equal the size of the
-	// encoded pak file
-	decoder->bufferSizeNeeded = decoder->inBufBytePos + ZSTD_nextSrcSizeToDecompress(dctx);
+	// NOTE: if inBuffer.pos < inBuffer.size, we made full use of the output
+	// buffer and couldn't decode any more data into it. the decoded data needs
+	// to be copied out to the destination so we can reuse the ring buffer and
+	// process the remainder of this frame. in these cases we do not update the
+	// bufferSizeNeeded objective below as we still have data left to process.
+	if (inBuffer.pos == inBuffer.size)
+		decoder->bufferSizeNeeded = decoder->inBufBytePos + ZSTD_DStreamInSize();
 
-	const bool decoded = ret == NULL;
-
-	// zstd decoder no longer necessary at this point, deallocate
-	if (decoded)
-	{
-		ZSTD_freeDStream(dctx);
-		decoder->zstreamContext = nullptr;
-	}
-
-	return decoded;
+	return ret == NULL;
 }
 
 //-----------------------------------------------------------------------------
@@ -725,7 +706,13 @@ size_t Pak_InitDecoder(PakDecoder_s* const decoder, const uint8_t* const inputBu
 bool Pak_StreamToBufferDecode(PakDecoder_s* const decoder, const size_t inLen, const size_t outLen, const PakDecodeMode_e decodeMode)
 {
 	if (!Pak_HasEnoughStreamedDataForDecode(decoder, inLen))
-		return false;
+	{
+		if (decodeMode != PakDecodeMode_e::MODE_ZSTD)
+			return false;
+
+		if (!decoder->allChunksStreamed)
+			return false; // This only applies to ZStd!
+	}
 
 	if (!Pak_HasEnoughDecodeBufferAvailable(decoder, outLen))
 		return false;
@@ -740,8 +727,12 @@ bool Pak_StreamToBufferDecode(PakDecoder_s* const decoder, const size_t inLen, c
 	// this position in code
 	assert(decoder->zstreamContext && decoder->inBufBytePos <= inLen);
 
-	const PakRingBufferFrame_s outFrame = Pak_DetermineRingBufferFrame(decoder->outputMask, decoder->outBufBytePos , outLen);
-	const PakRingBufferFrame_s inFrame  = Pak_DetermineRingBufferFrame(decoder->inputMask, decoder->inBufBytePos, inLen);
+	const PakRingBufferFrame_s inFrame = Pak_DetermineRingBufferFrame(decoder->inputMask, decoder->inBufBytePos, inLen);
+	// if the file size is smaller than the provided output length, clamp it.
+	// this happens when the buffer is smaller than the default buffer size
+	// defined by 'PAK_DECODE_OUT_RING_BUFFER_SIZE'. just like how the rtech
+	// decoder clamps it internally, we should do it here to avoid an overflow.
+	const PakRingBufferFrame_s outFrame = Pak_DetermineRingBufferFrame(decoder->outputMask, decoder->outBufBytePos, Min(decoder->decompSize, outLen));
 
 	return Pak_ZStdStreamDecode(decoder, outFrame, inFrame);
 }
@@ -754,14 +745,24 @@ bool Pak_BufferToBufferDecode(uint8_t* const inBuf, uint8_t* const outBuf, const
 	assert(decodeMode != PakDecodeMode_e::MODE_DISABLED);
 
 	PakDecoder_s decoder{};
-	const size_t decompressedSize = Pak_InitDecoder(&decoder, inBuf, outBuf, UINT64_MAX, UINT64_MAX, pakSize, NULL, sizeof(PakFileHeader_s), decodeMode);
+	ZSTD_DCtx* dctx = nullptr;
 
+	if (decodeMode == PakDecodeMode_e::MODE_ZSTD)
+	{
+		dctx = ZSTD_createDCtx();
+		decoder.zstreamContext = dctx;
+	}
+
+	const size_t decompressedSize = Pak_InitDecoder(&decoder, inBuf, outBuf, UINT64_MAX, UINT64_MAX, pakSize, NULL, sizeof(PakFileHeader_s), decodeMode);
 	PakFileHeader_s* const inHeader = reinterpret_cast<PakFileHeader_s*>(inBuf);
 
 	if (decompressedSize != inHeader->decompressedSize)
 	{
-		Error(eDLL_T::RTECH, NO_ERROR, "%s: decompressed size: '%zu' expected: '%zu'!\n",
+		Error(eDLL_T::RTECH, NO_ERROR, "%s: decompressed size: %zu, expected: %zu!\n",
 			__FUNCTION__, decompressedSize, inHeader->decompressedSize);
+
+		if (dctx)
+			ZSTD_freeDCtx(dctx);
 
 		return false;
 	}
@@ -771,6 +772,9 @@ bool Pak_BufferToBufferDecode(uint8_t* const inBuf, uint8_t* const outBuf, const
 	{
 		Error(eDLL_T::RTECH, NO_ERROR, "%s: decompression failed!\n",
 			__FUNCTION__);
+
+		if (dctx)
+			ZSTD_freeDCtx(dctx);
 
 		return false;
 	}
@@ -787,6 +791,9 @@ bool Pak_BufferToBufferDecode(uint8_t* const inBuf, uint8_t* const outBuf, const
 	// equal compressed size with decompressed
 	outHeader->compressedSize = outHeader->decompressedSize;
 
+	if (dctx)
+		ZSTD_freeDCtx(dctx);
+
 	return true;
 }
 
@@ -797,7 +804,7 @@ bool Pak_DecodePakFile(const char* const inPakFile, const char* const outPakFile
 {
 	// if this path doesn't exist, we must create it first before trying to
 	// open the out file
-	if (!Pak_CreateOverridePath())
+	if (!Pak_CreateWritePath())
 	{
 		Error(eDLL_T::RTECH, NO_ERROR, "%s: failed to create output path for pak file '%s'!\n",
 			__FUNCTION__, outPakFile);
@@ -863,7 +870,7 @@ bool Pak_DecodePakFile(const char* const inPakFile, const char* const outPakFile
 
 	if (inHeader->compressedSize != fileSize)
 	{
-		Error(eDLL_T::RTECH, NO_ERROR, "%s: pak '%s' appears truncated or corrupt; compressed size: '%zu' expected: '%zu'!\n",
+		Error(eDLL_T::RTECH, NO_ERROR, "%s: pak '%s' appears truncated or corrupt; compressed size: %zu, expected: %zu!\n",
 			__FUNCTION__, inPakFile, fileSize, inHeader->compressedSize);
 
 		return false;

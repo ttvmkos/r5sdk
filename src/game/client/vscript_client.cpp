@@ -23,12 +23,15 @@
 #include "engine/cmodel_bsp.h"
 #include "engine/host_state.h"
 #include "engine/debugoverlay.h"
+#include "pluginsystem/pluginsystem.h"
 #include "networksystem/pylon.h"
 #include "networksystem/listmanager.h"
 #include "networksystem/hostmanager.h"
 
 #include "vscript/vscript.h"
 #include "vscript/languages/squirrel_re/include/sqvm.h"
+
+#include "game/shared/vscript_gamedll_defs.h"
 
 #include "game/shared/vscript_shared.h"
 #include "game/shared/vscript_debug_overlay_shared.h"
@@ -146,6 +149,15 @@ static SQRESULT ClientScript_DebugScreenTextWithColor(HSQUIRRELVM v)
         ClientScript_Internal_DebugScreenTextWithColor(v, posX, posY, color, text);
     }
 
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: gets the most recent server id
+//-----------------------------------------------------------------------------
+static SQRESULT ClientScript_GetServerID(HSQUIRRELVM v)
+{
+    sq_pushstring(v, Host_GetSessionID(), -1);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -374,6 +386,15 @@ static SQRESULT UIScript_GetServerMaxPlayers(HSQUIRRELVM v)
     const SQInteger maxPlayers = g_ServerListManager.m_vServerList[iServer].maxPlayers;
     sq_pushinteger(v, maxPlayers);
 
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: gets the most recent server id
+//-----------------------------------------------------------------------------
+static SQRESULT UIScript_GetServerID(HSQUIRRELVM v)
+{
+    sq_pushstring(v, Host_GetSessionID(), -1);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -615,6 +636,13 @@ void Script_RegisterClientFunctions(CSquirrelVM* s)
 {
     Script_RegisterCommonAbstractions(s);
     Script_RegisterCoreClientFunctions(s);
+
+    // NOTE: plugin functions must always come after SDK functions!
+    for (auto& callback : !PluginSystem()->GetRegisterClientScriptFuncsCallbacks())
+    {
+        // Register script functions inside plugins.
+        callback.Function()(s);
+    }
 }
 
 //---------------------------------------------------------------------------------
@@ -623,11 +651,13 @@ void Script_RegisterClientFunctions(CSquirrelVM* s)
 //---------------------------------------------------------------------------------
 void Script_RegisterCoreClientFunctions(CSquirrelVM* s)
 {
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSolidBox, "Draw a debug overlay solid box", "void", "vector origin, vector mins, vector maxs, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSweptBox, "Draw a debug overlay swept box", "void", "vector start, vector end, vector mins, vector maxs, vector angles, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawTriangle, "Draw a debug overlay triangle", "void", "vector p1, vector p2, vector p3, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSolidSphere, "Draw a debug overlay solid sphere", "void", "vector origin, float radius, int theta, int phi, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawCapsule, "Draw a debug overlay capsule", "void", "vector start, vector end, float radius, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSolidBox, "Draw a debug overlay solid box", "void", "vector origin, vector mins, vector maxs, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSweptBox, "Draw a debug overlay swept box", "void", "vector start, vector end, vector mins, vector maxs, vector angles, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawTriangle, "Draw a debug overlay triangle", "void", "vector p1, vector p2, vector p3, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawSolidSphere, "Draw a debug overlay solid sphere", "void", "vector origin, float radius, int theta, int phi, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, DebugDrawCapsule, "Draw a debug overlay capsule", "void", "vector start, vector end, float radius, vector color, float alpha, bool drawThroughWorld, float duration", false);
+
+    DEFINE_CLIENT_SCRIPTFUNC_NAMED(s, GetServerID, "Gets the ID of the most recent server", "string", "", false);
 }
 
 //---------------------------------------------------------------------------------
@@ -637,36 +667,44 @@ void Script_RegisterCoreClientFunctions(CSquirrelVM* s)
 void Script_RegisterUIFunctions(CSquirrelVM* s)
 {
     Script_RegisterCommonAbstractions(s);
-    Script_RegisterCoreClientFunctions(s);
 
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, RequestServerList, "Requests the latest public server list, calls UICodeCallback_OnServerListRequestCompleted on completion", "void", "");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCount, "Gets the number of public servers", "int", "");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, RequestServerList, "Requests the latest public server list, calls UICodeCallback_OnServerListRequestCompleted on completion", "void", "", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCount, "Gets the number of public servers", "int", "", false);
 
     // Functions for retrieving server browser data
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetHiddenServerName, "Gets hidden server name by token", "string", "string token");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerName, "Gets the name of the server at the specified index of the server list", "string", "int index");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerDescription, "Gets the description of the server at the specified index of the server list", "string", "int index");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetHiddenServerName, "Gets hidden server name by token", "string", "string token", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerName, "Gets the name of the server at the specified index of the server list", "string", "int index", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerDescription, "Gets the description of the server at the specified index of the server list", "string", "int index", false);
 
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMap, "Gets the map of the server at the specified index of the server list", "string", "int index");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerPlaylist, "Gets the playlist of the server at the specified index of the server list", "string", "int index");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCurrentPlayers, "Gets the current player count of the server at the specified index of the server list", "int", "int index");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMap, "Gets the map of the server at the specified index of the server list", "string", "int index", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerPlaylist, "Gets the playlist of the server at the specified index of the server list", "string", "int index", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerCurrentPlayers, "Gets the current player count of the server at the specified index of the server list", "int", "int index", false);
 
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMaxPlayers, "Gets the max player count of the server at the specified index of the server list", "int", "int index");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerMaxPlayers, "Gets the max player count of the server at the specified index of the server list", "int", "int index", false);
+
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetServerID, "Gets the ID of the most recent server", "string", "", false);
 
     // Misc main menu functions
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, RequestEULAContents, "Requests the latest online EULA contents, calls UICodeCallback_OnEULARequestCompleted on completion", "void", "");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetPromoData, "Gets promo data for specified slot type", "string", "int slotType");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, RequestEULAContents, "Requests the latest online EULA contents, calls UICodeCallback_OnEULARequestCompleted on completion", "void", "", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, GetPromoData, "Gets promo data for specified slot type", "string", "int slotType", false);
 
     // Functions for connecting to servers
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToServer, "Joins server by ip address and encryption key", "void", "string address, string key");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToListedServer, "Joins listed server by index", "void", "int index");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToHiddenServer, "Joins hidden server by token", "void", "string token");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToServer, "Joins server by ip address and encryption key", "void", "string address, string key", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToListedServer, "Joins listed server by index", "void", "int index", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, ConnectToHiddenServer, "Joins hidden server by token", "void", "string token", false);
+
+    // NOTE: plugin functions must always come after SDK functions!
+    for (auto& callback : !PluginSystem()->GetRegisterUIScriptFuncsCallbacks())
+    {
+        // Register script functions inside plugins.
+        callback.Function()(s);
+    }
 }
 
 void Script_RegisterUIServerFunctions(CSquirrelVM* s)
 {
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, CreateServer, "Starts server with the specified settings", "void", "string name, string description, string levelName, string playlistName, int visibilityMode");
-    DEFINE_UI_SCRIPTFUNC_NAMED(s, DestroyServer, "Shuts the local server down", "void", "");
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, CreateServer, "Starts server with the specified settings", "void", "string name, string description, string levelName, string playlistName, int visibilityMode", false);
+    DEFINE_UI_SCRIPTFUNC_NAMED(s, DestroyServer, "Shuts the local server down", "void", "", false);
 }
 
 //---------------------------------------------------------------------------------
@@ -675,15 +713,8 @@ void Script_RegisterUIServerFunctions(CSquirrelVM* s)
 static ConVar settings_reflex("settings_reflex", "1", FCVAR_RELEASE, "Selected NVIDIA Reflex mode.", "0 = Off. 1 = On. 2 = On + Boost.");
 static ConVar settings_antilag("settings_antilag", "1", FCVAR_RELEASE, "Selected AMD Anti-Lag mode.", "0 = Off. 1 = On.");
 
-static ConVar serverbrowser_hideEmptyServers("serverbrowser_hideEmptyServers", "0", FCVAR_RELEASE, "Hide empty servers in the server browser.");
-static ConVar serverbrowser_mapFilter("serverbrowser_mapFilter", "0", FCVAR_RELEASE, "Filter servers by map in the server browser.");
-static ConVar serverbrowser_gamemodeFilter("serverbrowser_gamemodeFilter", "0", FCVAR_RELEASE, "Filter servers by gamemode in the server browser.");
-
 // NOTE: if we want to make a certain promo only show once, add the playerprofile flag to the cvar below. Current behavior = always show after game restart.
 static ConVar promo_version_accepted("promo_version_accepted", "0", FCVAR_RELEASE, "The accepted promo version.");
-
-static ConVar player_setting_damage_closes_deathbox_menu("player_setting_damage_closes_deathbox_menu", "1", FCVAR_ARCHIVE | FCVAR_RELEASE, "Controls whether death box automatically closes when taking damage (used for menus).");
-static ConVar show_motd_on_server_first_join("show_motd_on_server_first_join", "0", FCVAR_ARCHIVE | FCVAR_RELEASE, "Controls whether or not the server message of the day shows on first join for that server.");
 
 //---------------------------------------------------------------------------------
 // Purpose: script code class function registration

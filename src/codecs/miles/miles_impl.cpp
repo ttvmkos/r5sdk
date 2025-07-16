@@ -1,3 +1,8 @@
+//===============================================================================//
+//
+// Purpose: Client Sound Miles implementation
+//
+//===============================================================================//
 #include "core/stdafx.h"
 #include "tier0/fasttimer.h"
 #include "tier0/commandline.h"
@@ -6,63 +11,216 @@
 #include "rtech/async/asyncio.h"
 #include "rtech/pak/pakstate.h"
 #include "filesystem/filesystem.h"
+#include "pluginsystem/modsystem.h"
 #include "ebisusdk/EbisuSDK.h"
 #include "miles_impl.h"
 #include "miles/src/sdk/shared/rrthreads2.h"
 
+//-----------------------------------------------------------------------------
+// Console variables
+//-----------------------------------------------------------------------------
 static ConVar miles_debug("miles_debug", "0", FCVAR_DEVELOPMENTONLY, "Enables debug prints for the Miles Sound System", "1 = print; 0 (zero) = no print");
 static ConVar miles_warnings("miles_warnings", "0", FCVAR_RELEASE, "Enables warning prints for the Miles Sound System", "1 = print; 0 (zero) = no print");
-
-//-----------------------------------------------------------------------------
-// Purpose: logs debug output emitted from the Miles Sound System
-// Input  : nLogLevel - 
-//          pszMessage - 
-//-----------------------------------------------------------------------------
-void AIL_LogFunc(int64_t nLogLevel, const char* pszMessage)
-{
-	Msg(eDLL_T::AUDIO, "%s\n", pszMessage);
-	v_AIL_LogFunc(nLogLevel, pszMessage);
-}
 
 //-----------------------------------------------------------------------------
 // Purpose: initializes the miles sound system
 // Output : true on success, false otherwise
 //-----------------------------------------------------------------------------
-bool Miles_Initialize()
+static bool CSOM_Initialize()
 {
 	const char* pszLanguage = HEbisuSDK_GetLanguage();
-	const bool isDefaultLanguage = _stricmp(pszLanguage, MILES_DEFAULT_LANGUAGE) == 0;
+	const bool isDefaultLanguage = V_stricmp(pszLanguage, MILES_DEFAULT_LANGUAGE) == 0;
 
 	if (!isDefaultLanguage)
 	{
+		if ((V_stricmp(pszLanguage, "schinese") == 0) || (V_stricmp(pszLanguage, "tchinese") == 0))
+			pszLanguage = "mandarin"; // schinese and tchinese use the mandarin bank.
+
 		const bool useShipSound = !CommandLine()->FindParm("-devsound") || CommandLine()->FindParm("-shipsound");
-		char baseStreamFilePath[MAX_PATH];
+		char baseStreamFilePath[MAX_OSPATH];
 
-		V_snprintf(baseStreamFilePath, sizeof(baseStreamFilePath), "%s/general_%s.mstr", useShipSound ? "audio/ship" : "audio/dev", pszLanguage);
+		V_snprintf(baseStreamFilePath, sizeof(baseStreamFilePath), "%s\\general_%s.mstr", useShipSound ? "audio\\ship" : "audio\\dev", pszLanguage);
+		bool found = FileExists(baseStreamFilePath);
 
-		// if the requested language for miles does not have a MSTR file present, throw a non-fatal error and force MILES_DEFAULT_LANGUAGE as a fallback
-		// if we are loading MILES_DEFAULT_LANGUAGE and the file is still not found, we can let it hit the regular engine error, since that is not recoverable
-		if (!FileSystem()->FileExists(baseStreamFilePath))
+		if (!found && ModSystem()->IsEnabled())
 		{
-			Error(eDLL_T::AUDIO, NO_ERROR, "%s: attempted to load language '%s' but the required streaming source file (%s) was not found. falling back to '%s'...\n",
+			ModSystem()->LockModList();
+
+			// Check for it in our mods.
+			FOR_EACH_VEC(ModSystem()->GetModList(), i)
+			{
+				const CModSystem::ModInstance_t* const mod = ModSystem()->GetModList()[i];
+
+				if (!mod->IsEnabled())
+					continue;
+
+				const CUtlString modLookupPath = mod->GetBasePath() + baseStreamFilePath;
+				const char* const pModLookupPath = modLookupPath.String();
+
+				found = FileExists(pModLookupPath);
+
+				if (found)
+					break;
+			}
+
+			ModSystem()->UnlockModList();
+		}
+
+		if (!found)
+		{
+			// if the requested language for miles does not have a MSTR file present,
+			// throw a non-fatal error and force MILES_DEFAULT_LANGUAGE as a fallback if
+			// we are loading MILES_DEFAULT_LANGUAGE and the file is still not found, we
+			// can let it hit the regular engine error, since that is not recoverable.
+			Error(eDLL_T::AUDIO, NO_ERROR, "%s: attempted to load language '%s' but the required streaming source file (%s) was not found, falling back to '%s'...\n",
 				__FUNCTION__, pszLanguage, baseStreamFilePath, MILES_DEFAULT_LANGUAGE);
 
 			pszLanguage = MILES_DEFAULT_LANGUAGE;
-			miles_language->SetValue(pszLanguage);
 		}
+
+		miles_language->SetValue(pszLanguage);
 	}
 
 	Msg(eDLL_T::AUDIO, "%s: initializing MSS with language: '%s'\n", __FUNCTION__, pszLanguage);
 	CFastTimer initTimer;
 
 	initTimer.Start();
-	const bool bResult = v_Miles_Initialize();
+	const bool bResult = v_CSOM_Initialize();
 	initTimer.End();
 
-	Msg(eDLL_T::AUDIO, "%s: %s ('%f' seconds)\n", __FUNCTION__, bResult ? "success" : "failure", initTimer.GetDuration().GetSeconds());
+	Msg(eDLL_T::AUDIO, "%s: %s (%f seconds)\n", __FUNCTION__, bResult ? "success" : "failure", initTimer.GetDuration().GetSeconds());
 	return bResult;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: appends banks from list to be loaded
+//-----------------------------------------------------------------------------
+static void CSOM_AppendBanksFromList(CSOM_BankList_s* const bankList, const char* const filePath, const bool mandatory)
+{
+	const int errorCode = mandatory ? EXIT_FAILURE : 0;
+	RSON::Node_t* root = nullptr;
+
+#define ERROR_AND_RETURN(fmt, ...) \
+		do {\
+			Error(eDLL_T::AUDIO, errorCode, "Error loading Miles Bank list from '%s': "##fmt, filePath, ##__VA_ARGS__); \
+			if (root) {\
+				RSON_Free(root, AlignedMemAlloc()); \
+				AlignedMemAlloc()->Free(root); \
+			}\
+			return; \
+		} while(0)\
+
+	if (bankList->bankCount == CSOM_MAX_LOADED_BANKS)
+	{
+		ERROR_AND_RETURN("Out of room -- already reached code limit of %d.\n", CSOM_MAX_LOADED_BANKS);
+		return;
+	}
+
+	CUtlBuffer buf;
+
+	if (!FileSystem()->ReadFile(filePath, nullptr, buf))
+	{
+		if (mandatory) // Only exit if the main file doesn't exist.
+			ERROR_AND_RETURN("Could not load file.\n");
+
+		return;
+	}
+
+	const RSON::eFieldType rootType = (RSON::eFieldType)(RSON::eFieldType::RSON_ARRAY | RSON::eFieldType::RSON_VALUE);
+	root = RSON::LoadFromBuffer(filePath, (char*)buf.Base(), rootType);
+
+	const RSON::eFieldType expectType = (RSON::eFieldType)(RSON::eFieldType::RSON_ARRAY | RSON::eFieldType::RSON_OBJECT);
+
+	if (!root || root->type != expectType)
+		ERROR_AND_RETURN("Data should be an array of objects.\n");
+
+	const int numSlotsLeft = (CSOM_MAX_LOADED_BANKS - bankList->bankCount);
+
+	if (root->valueCount > numSlotsLeft)
+		ERROR_AND_RETURN("Too many banks -- code limit is %d.\n", CSOM_MAX_LOADED_BANKS);
+
+	bool nameSetForBank = false;
+
+	for (int i = 0; i < root->valueCount; i++)
+	{
+		const RSON::Field_t* const key = root->GetArrayValue(i)->GetSubKey();
+
+		if (!key)
+			continue;
+
+		if (V_strcmp(key->name, "name") != 0)
+			ERROR_AND_RETURN("Only valid key is 'name', not '%s'.\n", key->name);
+
+		if (nameSetForBank)
+			ERROR_AND_RETURN("Each bank must have exactly one name.\n");
+
+		nameSetForBank = true;
+
+		if (key->node.type != RSON::eFieldType::RSON_STRING)
+			ERROR_AND_RETURN("'name' must be a single string.\n");
+
+		const char* const bankToAdd = key->GetString();
+
+		// Make sure this bank wasn't already added.
+		for (int j = 0; j < bankList->bankCount; j++)
+		{
+			if (V_stricmp(bankList->banks[j], bankToAdd) == 0)
+				ERROR_AND_RETURN("Each bank must be unique; '%s' was already listed.\n", bankToAdd);
+		}
+
+		V_strncpy(bankList->banks[bankList->bankCount++], bankToAdd, CSOM_MAX_FILE_NAME);
+	}
+
+	RSON_Free(root, AlignedMemAlloc());
+	AlignedMemAlloc()->Free(root);
+
+#undef ERROR_AND_RETURN
+}
+
+#define CSOM_BANK_LIST_FILE "scripts/audio/banks.rson"
+
+//-----------------------------------------------------------------------------
+// Purpose: initializes the bank list object dictating which banks to load
+//-----------------------------------------------------------------------------
+static void CSOM_InitializeBankList(CSOM_BankList_s* const bankList)
+{
+	bankList->bankCount = 0;
+	CSOM_AppendBanksFromList(bankList, CSOM_BANK_LIST_FILE, true);
+
+	if (ModSystem()->IsEnabled())
+	{
+		ModSystem()->LockModList();
+
+		// Add banks from our mods.
+		FOR_EACH_VEC(ModSystem()->GetModList(), i)
+		{
+			const CModSystem::ModInstance_t* const mod = ModSystem()->GetModList()[i];
+
+			if (!mod->IsEnabled())
+				continue;
+
+			const CUtlString lookupPath = mod->GetBasePath() + CSOM_BANK_LIST_FILE;
+			CSOM_AppendBanksFromList(bankList, lookupPath.String(), false);
+		}
+
+		ModSystem()->UnlockModList();
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: logs debug output emitted from the Miles Sound System
+// Input  : nLogLevel - 
+//          pszMessage - 
+//-----------------------------------------------------------------------------
+static void CSOM_LogFunc(int64_t nLogLevel, const char* pszMessage)
+{
+	Msg(eDLL_T::AUDIO, "%s\n", pszMessage);
+	v_CSOM_LogFunc(nLogLevel, pszMessage);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: runs the event queue
+//-----------------------------------------------------------------------------
 void MilesQueueEventRun(Miles::Queue* queue, const char* eventName)
 {
 	if(miles_debug.GetBool())
@@ -71,6 +229,9 @@ void MilesQueueEventRun(Miles::Queue* queue, const char* eventName)
 	v_MilesQueueEventRun(queue, eventName);
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: patches miles banks
+//-----------------------------------------------------------------------------
 void MilesBankPatch(Miles::Bank* bank, char* streamPatch, char* localizedStreamPatch)
 {
 	if (miles_debug.GetBool())
@@ -97,7 +258,10 @@ void MilesBankPatch(Miles::Bank* bank, char* streamPatch, char* localizedStreamP
 	v_MilesBankPatch(bank, streamPatch, localizedStreamPatch);
 }
 
-void CSOM_AddEventToQueue(const char* eventName)
+//-----------------------------------------------------------------------------
+// Purpose: adds an audio event to the queue
+//-----------------------------------------------------------------------------
+static void CSOM_AddEventToQueue(const char* eventName)
 {
 	if (miles_debug.GetBool())
 		Msg(eDLL_T::AUDIO, "%s: queuing audio event '%s'\n", __FUNCTION__, eventName);
@@ -424,12 +588,27 @@ static s32 CSOM_MilesAsync_FileCancel(MilesAsyncRead* const request)
 ///////////////////////////////////////////////////////////////////////////////
 void MilesCore::Detour(const bool bAttach) const
 {
-	DetourSetup(&v_AIL_LogFunc, &AIL_LogFunc, bAttach);
-	DetourSetup(&v_Miles_Initialize, &Miles_Initialize, bAttach);
 	DetourSetup(&v_MilesQueueEventRun, &MilesQueueEventRun, bAttach);
 	//DetourSetup(&v_MilesBankPatch, &MilesBankPatch, bAttach);
+	DetourSetup(&v_CSOM_Initialize, &CSOM_Initialize, bAttach);
+	DetourSetup(&v_CSOM_InitializeBankList, &CSOM_InitializeBankList, bAttach);
+	DetourSetup(&v_CSOM_LogFunc, &CSOM_LogFunc, bAttach);
 	DetourSetup(&v_CSOM_MilesAsync_FileRead, &CSOM_MilesAsync_FileRead, bAttach);
 	DetourSetup(&v_CSOM_MilesAsync_FileStatus, &CSOM_MilesAsync_FileStatus, bAttach);
 	DetourSetup(&v_CSOM_MilesAsync_FileCancel, &CSOM_MilesAsync_FileCancel, bAttach);
 	DetourSetup(&v_CSOM_AddEventToQueue, &CSOM_AddEventToQueue, bAttach);
+
+	if (bAttach)
+	{
+		CMemory mem(v_CSOM_RunFrame);
+
+		// Between Miles version 10.0.48 and 10.0.50, they swapped locations of
+		// 2 members in a struct returned by MilesEventInfoQueueEnum on type 4.
+		// This change breaks closed captions (sub-titles). The fix is to apply
+		// the swap in the assembly code as well so the engine retrieves the
+		// values correctly from the new locations again. The structure layout
+		// on all other enums are still identical and do not need to be fixes.
+		mem.Offset(0x762).Patch({ 0x4 });
+		mem.Offset(0x78B).Patch({ 0xC });
+	}
 }

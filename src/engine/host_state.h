@@ -15,6 +15,9 @@ enum class HostStates_t : int
 	HS_RESTART         = 0x7,
 };
 
+extern bool HostState_IsTransitioningToLoad();
+extern const char* Host_GetSessionID();
+
 class CHostState
 {
 public:
@@ -33,6 +36,10 @@ public:
 	void State_ChangeLevelMP(void);
 
 	void ResetLevelName(void);
+
+	inline bool IsActiveGame() const { return m_bActiveGame; }
+	inline bool IsRunning() const { return m_iCurrentState == HostStates_t::HS_RUN; }
+	inline bool IsChangingLevel() const { return (m_iCurrentState == HostStates_t::HS_CHANGE_LEVEL_SP || m_iCurrentState == HostStates_t::HS_CHANGE_LEVEL_MP); }
 
 public:
 	HostStates_t m_iCurrentState;                    //0x0000

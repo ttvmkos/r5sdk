@@ -102,11 +102,12 @@ struct ScriptFunctionBinding_t
 	void Init(
 		const SQChar* scriptName, const SQChar* nativeName,
 		const SQChar* helpString, const SQChar* returnType,
-		const SQChar* parameters, const ScriptFunctionBindingStorageType_t function)
+		const SQChar* parameters, const bool isVariadic,
+		const ScriptFunctionBindingStorageType_t function)
 	{
 		m_Descriptor.Init(scriptName, nativeName, helpString, returnType, parameters);
 		m_bCheckParams = false;
-		m_bHasVariadicArgs = false;
+		m_bHasVariadicArgs = isVariadic;
 
 		m_nDevLevel = 0;
 		m_pszCodeHook = nullptr;
@@ -258,10 +259,11 @@ struct ScriptClassDescriptor_t
 {
 	void AddFunction(const SQChar* scriptName, const SQChar* nativeName,
 		const SQChar* helpString, const SQChar* returnType,
-		const SQChar* parameters, const ScriptFunctionBindingStorageType_t function)
+		const SQChar* parameters, const bool isVariadic,
+		const ScriptFunctionBindingStorageType_t function)
 	{
 		ScriptFunctionBinding_t* const binding = m_StrTypedFunctions.AddToTailGetPtr();
-		binding->Init(scriptName, nativeName, helpString, returnType, parameters, function);
+		binding->Init(scriptName, nativeName, helpString, returnType, parameters, isVariadic, function);
 	}
 
 	const char* m_ScriptName;
@@ -281,5 +283,44 @@ struct ScriptClassDescriptor_t
 };
 
 static_assert(sizeof(ScriptClassDescriptor_t) == 0x60);
+
+class CSquirrelVM;
+
+class ISquirrelVMBridge
+{
+public:
+	virtual SQRESULT RegisterFunction(CSquirrelVM* const s, ScriptFunctionBinding_t* const binding, const bool useTypeCompiler) = 0;
+	virtual SQRESULT RegisterConstant(CSquirrelVM* const s, const SQChar* const name, const SQInteger value) = 0;
+
+	virtual ScriptStatus_t ExecuteFunction(CSquirrelVM* const s, HSCRIPT hFunction, const ScriptVariant_t* const pArgs, unsigned int nArgs, ScriptVariant_t* const pReturn, HSCRIPT hScope) = 0;
+	virtual bool ExecuteCodeCallback(CSquirrelVM* const s, const SQChar* const name) = 0;
+
+	virtual bool Run(CSquirrelVM* const s, const SQChar* const script) = 0;
+
+	// Stack getters.
+	virtual SQRESULT StackGetBool(HSQUIRRELVM v, const SQInteger idx, SQBool* const b) = 0;
+	virtual SQRESULT StackGetInteger(HSQUIRRELVM v, const SQInteger idx, SQInteger* const i) = 0;
+	virtual SQRESULT StackGetFloat(HSQUIRRELVM v, const SQInteger idx, SQFloat* const f) = 0;
+	virtual SQRESULT StackGetVector(HSQUIRRELVM v, const SQInteger idx, const SQVector3D** const w) = 0;
+	virtual SQRESULT StackGetThread(HSQUIRRELVM v, const SQInteger idx, HSQUIRRELVM* const thread) = 0;
+	virtual SQRESULT StackGetString(HSQUIRRELVM v, const SQInteger idx, const SQChar** const c) = 0;
+	virtual SQRESULT StackGetObject(HSQUIRRELVM v, const SQInteger idx, HSQOBJECT* const po) = 0;
+
+	// Stack setters.
+	virtual void StackPushBool(HSQUIRRELVM v, const SQBool b) = 0;
+	virtual void StackPushInteger(HSQUIRRELVM v, const SQInteger i) = 0;
+	virtual void StackPushFloat(HSQUIRRELVM v, const SQFloat f) = 0;
+	virtual void StackPushVector(HSQUIRRELVM v, const SQVector3D* const w) = 0;
+	virtual void StackPushString(HSQUIRRELVM v, const SQChar* const string, const SQInteger len) = 0;
+	virtual void StackPushObject(HSQUIRRELVM v, HSQOBJECT obj) = 0;
+	virtual void StackPushNull(HSQUIRRELVM v) = 0;
+
+	// Stack operations.
+	virtual SQInteger StackGetTop(HSQUIRRELVM v) = 0;
+	virtual void StackSetTop(HSQUIRRELVM v, const SQInteger newtop) = 0;
+
+	virtual void RaiseError(HSQUIRRELVM v, const SQChar* const pszFormat, ...) = 0;
+	virtual bool ThrowError(CSquirrelVM* const s, HSQUIRRELVM v) = 0;
+};
 
 #endif // IVSCRIPT_H

@@ -1,6 +1,7 @@
 #pragma once
+#include "engine/cdll_int.h"
 
-class CEngineClient
+class CEngineClient : public IVEngineClient
 {
 public:
 	void SetRestrictServerCommands(bool bRestrict);
@@ -36,7 +37,7 @@ class HVEngineClient : public IDetour
 	virtual void GetCon(void) const 
 	{
 		g_pEngineClientVFTable = g_GameDll.GetVirtualMethodTable(".?AVCEngineClient@@");
-		g_pEngineClient = g_pEngineClientVFTable.RCast<CEngineClient*>();
+		g_pEngineClient = (CEngineClient*)&g_pEngineClientVFTable; // CEngineClient is iface only (doesn't have members).
 	}
 	virtual void Detour(const bool bAttach) const;
 };

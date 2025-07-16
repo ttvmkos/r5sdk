@@ -54,6 +54,7 @@ ConVar* mp_gamemode                        = nullptr;
 ConVar* r_visualizetraces                  = nullptr;
 ConVar* r_visualizetraces_duration         = nullptr;
 ConVar* r_drawvgui                         = nullptr;
+ConVar* r_drawalphasort                    = nullptr;
 #endif // !DEDICATED
 
 ConVar* stream_overlay                     = nullptr;
@@ -120,8 +121,13 @@ ConVar* cl_updaterate_mp                   = nullptr;
 
 ConVar* cl_threaded_bone_setup             = nullptr;
 
+ConVar* pvs_start_early                    = nullptr;
+ConVar* pvs_frustumCullOnly                = nullptr;
+
 ConVar* origin_disconnectWhenOffline       = nullptr;
 ConVar* discord_updatePresence = nullptr;
+
+ConVar* match_playlist                     = nullptr;
 
 ConVar* gamepad_custom_enabled             = nullptr;
 ConVar* gamepad_custom_assist_on           = nullptr;
@@ -182,6 +188,8 @@ void ConVar_InitShipped(void)
 	name_cvar                        = g_pCVar->FindVar("name");
 	cl_updaterate_mp                 = g_pCVar->FindVar("cl_updaterate_mp");
 	cl_threaded_bone_setup           = g_pCVar->FindVar("cl_threaded_bone_setup");
+	pvs_start_early                  = g_pCVar->FindVar("pvs_start_early");
+	pvs_frustumCullOnly              = g_pCVar->FindVar("pvs_frustumCullOnly");
 #endif // !DEDICATED
 	single_frame_shutdown_for_reload = g_pCVar->FindVar("single_frame_shutdown_for_reload");
 	enable_debug_overlays            = g_pCVar->FindVar("enable_debug_overlays");
@@ -195,6 +203,7 @@ void ConVar_InitShipped(void)
 	r_visualizetraces                = g_pCVar->FindVar("r_visualizetraces");
 	r_visualizetraces_duration       = g_pCVar->FindVar("r_visualizetraces_duration");
 	r_drawvgui                       = g_pCVar->FindVar("r_drawvgui");
+	r_drawalphasort                  = g_pCVar->FindVar("r_drawalphasort");
 #endif // !DEDICATED
 	staticProp_no_fade_scalar        = g_pCVar->FindVar("staticProp_no_fade_scalar");
 	staticProp_gather_size_weight    = g_pCVar->FindVar("staticProp_gather_size_weight");
@@ -210,6 +219,7 @@ void ConVar_InitShipped(void)
 #ifndef DEDICATED
 	origin_disconnectWhenOffline     = g_pCVar->FindVar("origin_disconnectWhenOffline");
 	discord_updatePresence           = g_pCVar->FindVar("discord_updatePresence");
+	match_playlist                   = g_pCVar->FindVar("match_playlist");
 
 	gamepad_custom_enabled           = g_pCVar->FindVar("gamepad_custom_enabled");
 	gamepad_custom_assist_on         = g_pCVar->FindVar("gamepad_custom_assist_on");
@@ -282,9 +292,22 @@ void ConVar_InitShipped(void)
 	// and code doesn't check for it either.
 	script_server_fps->SetMin(0.0001f);
 
+	// This is debugging code and enabled by default.disabled here to
+	// save on bandwidth.
 	bhit_enable->SetValue(0);
 #endif // !CLIENT_DLL
 #ifndef DEDICATED
+	// This was originally 1, which enables frustum culling only (on
+	// by script). This creates a MAJOR performance impact however..
+	// setting this to 0 significantly reduces CPU and GPU load.
+	// This also fixes a long-time issue where large amounts of
+	// props of the map disappear at very specific locations and
+	// angles. After this was found, I did some additional research
+	// after newer versions of the game and it was determined that
+	// this was forced to 0 on newer versions of the game as well.
+	// Now forced to 0 here to make full use of the PVS system.
+	pvs_frustumCullOnly->SetValue(0);
+
 	cl_updaterate_mp->RemoveFlags(FCVAR_DEVELOPMENTONLY);
 
 	cl_threaded_bone_setup->RemoveFlags(FCVAR_DEVELOPMENTONLY);
@@ -407,6 +430,11 @@ void ConCommand_InitShipped(void)
 	ConCommand* convar_list = g_pCVar->FindCommand("convar_list");
 	ConCommand* convar_differences = g_pCVar->FindCommand("convar_differences");
 	ConCommand* convar_findByFlags = g_pCVar->FindCommand("convar_findByFlags");
+
+#ifdef DEDICATED
+	ConCommand* weapon_reparse = g_pCVar->FindCommand("weapon_reparse");
+#endif // DEDICATED
+
 #ifndef DEDICATED
 	//-------------------------------------------------------------------------
 	// MATERIAL SYSTEM
@@ -429,6 +457,16 @@ void ConCommand_InitShipped(void)
 	map->m_fnCompletionCallback = Host_Map_f_CompletionFunc;
 	map_background->m_fnCompletionCallback = Host_Background_f_CompletionFunc;
 	ss_map->m_fnCompletionCallback = Host_SSMap_f_CompletionFunc;
+
+#ifdef DEDICATED
+	// This must be flagged FCVAR_GAMEDLL for dedi builds, because when this
+	// commend gets executed on the client, the server will be requested to
+	// reparse their weapon scripts as well through ServerCmd() which only
+	// works if this is a gamedll command. NOTE that this command has the
+	// cheats flags so adding this flag will not cause problems.
+	weapon_reparse->RemoveFlags(FCVAR_CLIENTDLL);
+	weapon_reparse->AddFlags(FCVAR_GAMEDLL);
+#endif // DEDICATED
 
 #ifndef DEDICATED
 	mat_crosshair->m_fnCommandCallback = Mat_CrossHair_f;

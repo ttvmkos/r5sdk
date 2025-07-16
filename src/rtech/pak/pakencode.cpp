@@ -73,7 +73,7 @@ bool Pak_BufferToBufferEncode(const uint8_t* const inBuf, const uint64_t inLen,
 //-----------------------------------------------------------------------------
 bool Pak_EncodePakFile(const char* const inPakFile, const char* const outPakFile, const int level)
 {
-	if (!Pak_CreateBasePath())
+	if (!Pak_CreateWritePath())
 	{
 		Error(eDLL_T::RTECH, NO_ERROR, "%s: failed to create output path for pak file '%s'!\n",
 			__FUNCTION__, outPakFile);
@@ -138,7 +138,7 @@ bool Pak_EncodePakFile(const char* const inPakFile, const char* const outPakFile
 
 	if (inHeader->compressedSize != fileSize)
 	{
-		Error(eDLL_T::RTECH, NO_ERROR, "%s: pak '%s' appears truncated or corrupt; compressed size: '%zu' expected: '%zu'!\n",
+		Error(eDLL_T::RTECH, NO_ERROR, "%s: pak '%s' appears truncated or corrupt; compressed size: %zu, expected: %zu!\n",
 			__FUNCTION__, inPakFile, fileSize, inHeader->compressedSize);
 
 		return false;

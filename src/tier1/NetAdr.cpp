@@ -23,34 +23,26 @@ void CNetAdr::Clear(void)
 //////////////////////////////////////////////////////////////////////
 bool CNetAdr::CompareAdr(const CNetAdr& other) const
 {
-	if (type != other.type)
-	{
-		return false;
-	}
-	if (type == netadrtype_t::NA_LOOPBACK)
+	if (other.type == netadrtype_t::NA_LOOPBACK)
 	{
 		return true;
 	}
-	if (type == netadrtype_t::NA_IP)
-	{
-		return (CompareIPv6(adr, other.adr) == 0);
-	}
 
-	return false;
+	return IN6_ADDR_EQUAL(&adr, &other.adr);
 }
 
 //////////////////////////////////////////////////////////////////////
 // Convert address to string.
 //////////////////////////////////////////////////////////////////////
-const char* CNetAdr::ToString(bool bOnlyBase) const
+const char* CNetAdr::ToString(const bool bOnlyBase) const
 {
-	// Main thread only due to use of static buffers.
-	//Assert(ThreadInMainThread());
+	// Main or server frame thread only due to use of static buffers.
+	Assert(ThreadInMainOrServerFrameThread());
 
 	// Select a static buffer.
 	static char s[4][128];
 	static int slot = 0;
-	int useSlot = (slot++) % 4;
+	const int useSlot = (slot++) % 4;
 
 	// Render into it.
 	ToString(s[useSlot], sizeof(s[0]), bOnlyBase);
@@ -62,38 +54,38 @@ const char* CNetAdr::ToString(bool bOnlyBase) const
 //////////////////////////////////////////////////////////////////////
 // Convert address to string.
 //////////////////////////////////////////////////////////////////////
-void CNetAdr::ToString(char* pchBuffer, size_t unBufferSize, bool bOnlyBase) const
+size_t CNetAdr::ToString(char* const pchBuffer, const size_t unBufferSize, const bool bOnlyBase) const
 {
 	if (type == netadrtype_t::NA_NULL)
 	{
-		strncpy(pchBuffer, "null", unBufferSize);
+		V_strncpy(pchBuffer, "null", unBufferSize); pchBuffer[unBufferSize - 1] = '\0';
+		return Min(sizeof("null")-1, unBufferSize);
 	}
 	else if (type == netadrtype_t::NA_LOOPBACK)
 	{
-		strncpy(pchBuffer, "loopback", unBufferSize);
+		V_strncpy(pchBuffer, "loopback", unBufferSize); pchBuffer[unBufferSize - 1] = '\0';
+		return Min(sizeof("loopback")-1, unBufferSize);
 	}
 	else if (type == netadrtype_t::NA_IP)
 	{
-		char pStringBuf[128];
-		inet_ntop(AF_INET6, &adr, pStringBuf, INET6_ADDRSTRLEN);
+		char stringBuf[128];
+		inet_ntop(AF_INET6, &adr, stringBuf, INET6_ADDRSTRLEN);
 
-		if (bOnlyBase)
-		{
-			snprintf(pchBuffer, unBufferSize, "%s", pStringBuf);
-		}
-		else
-		{
-			snprintf(pchBuffer, unBufferSize, "[%s]:%i", pStringBuf, (int)ntohs(port));
-		}
+		const int ret = bOnlyBase
+			? V_snprintf(pchBuffer, unBufferSize, "%s", stringBuf)
+			: V_snprintf(pchBuffer, unBufferSize, "[%s]:%i", stringBuf, (int)ntohs(port));
+
+		return ret < 0 ? 0 : Min(static_cast<size_t>(ret), unBufferSize);
 	}
 	else
 	{
-		memmove(pchBuffer, "unknown", unBufferSize);
+		V_strncpy(pchBuffer, "unknown", unBufferSize); pchBuffer[unBufferSize - 1] = '\0';
+		return Min(sizeof("unknown")-1, unBufferSize);
 	}
 }
 
 //////////////////////////////////////////////////////////////////////
-// 
+// Converts address to address info.
 //////////////////////////////////////////////////////////////////////
 void CNetAdr::ToAdrinfo(addrinfo* pHint) const
 {
@@ -104,7 +96,7 @@ void CNetAdr::ToAdrinfo(addrinfo* pHint) const
 	hint.ai_protocol = IPPROTO_TCP;
 
 	char szBuffer[33];
-	int results = getaddrinfo(ToString(true), _itoa(GetPort(), szBuffer, 10), &hint, &pHint);
+	const int results = getaddrinfo(ToString(true), _itoa(GetPort(), szBuffer, 10), &hint, &pHint);
 
 	if (results != 0)
 	{
@@ -114,46 +106,114 @@ void CNetAdr::ToAdrinfo(addrinfo* pHint) const
 }
 
 //////////////////////////////////////////////////////////////////////
-// 
+// Converts address to socket address.
 //////////////////////////////////////////////////////////////////////
-void CNetAdr::ToSockadr(struct sockaddr_storage* pSadr) const
+void CNetAdr::ToSockadr(struct sockaddr_storage* const pSadr) const
 {
-	memset(pSadr, NULL, sizeof(struct sockaddr));
+	reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_family = AF_INET6;
+	reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_port = port;
 
 	if (GetType() == netadrtype_t::NA_IP)
 	{
-		reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_family = AF_INET6;
-		reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_port = port;
-		inet_pton(AF_INET6, ToString(true), &reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_addr);
+		reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_addr = adr;
 	}
 	else if (GetType() == netadrtype_t::NA_LOOPBACK)
 	{
-		reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_family = AF_INET6;
-		reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_port = port;
 		reinterpret_cast<sockaddr_in6*>(pSadr)->sin6_addr = in6addr_loopback;
 	}
 }
 
 //////////////////////////////////////////////////////////////////////
-// 
+// Sets address from socket address.
 //////////////////////////////////////////////////////////////////////
-bool CNetAdr::SetFromSockadr(struct sockaddr_storage* s)
+bool CNetAdr::SetFromSockadr(struct sockaddr_storage* const s)
 {
-	char szAdrv6[INET6_ADDRSTRLEN]{};
+	char szAdrv6[INET6_ADDRSTRLEN];
 	sockaddr_in6* pAdrv6 = reinterpret_cast<sockaddr_in6*>(s);
 
-	inet_ntop(pAdrv6->sin6_family, &pAdrv6->sin6_addr, szAdrv6, sizeof(sockaddr_in6)); // TODO: Error check?
+	if (inet_ntop(pAdrv6->sin6_family, &pAdrv6->sin6_addr, szAdrv6, sizeof(szAdrv6)) &&
+		SetFromString(szAdrv6))
+	{
+		SetPort(pAdrv6->sin6_port);
+		return true;
+	}
 
-	SetFromString(szAdrv6);
-	SetPort(pAdrv6->sin6_port);
-
-	return true;
+	return false;
 }
 
 //////////////////////////////////////////////////////////////////////
-// 
+// Checks whether the provided string contains IPv4 characters.
 //////////////////////////////////////////////////////////////////////
-bool CNetAdr::SetFromString(const char* pch, bool bUseDNS)
+static bool ContainsIPv4Chars(const char* const pszAddress)
+{
+	const char* it = pszAddress;
+	char curr = *pszAddress;
+	char last;
+
+	const i64 lut = 0x7E0000007E07FFll;
+	do
+	{
+		if (((curr - '0') > '6') || !_bittest64(&lut, (curr - '0')))
+		{
+			last = curr;
+
+			if (curr != '.')
+				break;
+		}
+
+		last = *++it;
+		curr = last;
+	} while (last);
+
+	return last != 0;
+}
+
+//////////////////////////////////////////////////////////////////////
+// Checks whether the provided string contains IPv6 characters.
+//////////////////////////////////////////////////////////////////////
+static bool ContainsIPv6Chars(const char* const pszAddress)
+{
+	const char* it = pszAddress;
+	char curr = *pszAddress;
+	char last;
+
+	do
+	{
+		if ((curr - '0') > '\t')
+		{
+			last = curr;
+
+			if (curr != '.')
+				break;
+		}
+
+		last = *++it;
+		curr = last;
+	} while (last);
+
+	return last != 0;
+}
+
+//////////////////////////////////////////////////////////////////////
+// Returns whether the provided string should be formatted as IPv4.
+//////////////////////////////////////////////////////////////////////
+static bool ShouldFormatAsIPv4(const char* const pszAddress)
+{
+	if (!strchr(pszAddress, ':'))
+	{
+		if (!*pszAddress)
+			return true;
+
+		return ContainsIPv6Chars(pszAddress);
+	}
+
+	return ContainsIPv4Chars(pszAddress) && !ContainsIPv6Chars(pszAddress);
+}
+
+//////////////////////////////////////////////////////////////////////
+// Sets address from string.
+//////////////////////////////////////////////////////////////////////
+bool CNetAdr::SetFromString(const char* const pch, const bool bUseDNS)
 {
 	Clear();
 	if (!pch)
@@ -165,7 +225,7 @@ bool CNetAdr::SetFromString(const char* pch, bool bUseDNS)
 	SetType(netadrtype_t::NA_IP);
 
 	char szAddress[128];
-	strncpy(szAddress, pch, sizeof(szAddress));
+	V_strncpy(szAddress, pch, sizeof(szAddress));
 
 	char* pszAddress = szAddress;
 	szAddress[sizeof(szAddress) - 1] = '\0';
@@ -175,13 +235,14 @@ bool CNetAdr::SetFromString(const char* pch, bool bUseDNS)
 		pszAddress = &szAddress[1];
 	}
 
-	char* bracketEnd = strchr(szAddress, ']');
+	char* const bracketEnd = strchr(szAddress, ']');
+
 	if (bracketEnd) // Get and remove the last bracket.
 	{
 		*bracketEnd = '\0';
 
-		char* portStart = &bracketEnd[1];
-		char* pchColon = strrchr(portStart, ':');
+		char* const portStart = &bracketEnd[1];
+		char* const pchColon = strrchr(portStart, ':');
 
 		if (pchColon && strchr(portStart, ':') == pchColon)
 		{
@@ -190,7 +251,7 @@ bool CNetAdr::SetFromString(const char* pch, bool bUseDNS)
 		}
 	}
 
-	if (!strchr(pszAddress, ':'))
+	if (ShouldFormatAsIPv4(pszAddress))
 	{
 		char szNewAddressV4[128];
 		V_snprintf(szNewAddressV4, sizeof(szNewAddressV4), "::FFFF:%s", pszAddress);
@@ -210,24 +271,25 @@ bool CNetAdr::SetFromString(const char* pch, bool bUseDNS)
 
 	if (bUseDNS) // Perform DNS lookup instead.
 	{
-		ADDRINFOA pHints{};
-		PADDRINFOA ppResult = nullptr;
+		ADDRINFOA hints;
 
-		pHints.ai_family = AF_INET6;
-		pHints.ai_flags = AI_ALL | AI_V4MAPPED;
-		pHints.ai_socktype = NULL;
-		pHints.ai_addrlen = NULL;
-		pHints.ai_canonname = nullptr;
-		pHints.ai_addr = nullptr;
-		pHints.ai_next = nullptr;
+		hints.ai_family = AF_INET6;
+		hints.ai_flags = AI_ALL | AI_V4MAPPED;
+		hints.ai_socktype = NULL;
+		hints.ai_addrlen = NULL;
+		hints.ai_canonname = nullptr;
+		hints.ai_addr = nullptr;
+		hints.ai_next = nullptr;
 
-		if (getaddrinfo(pszAddress, nullptr, &pHints, &ppResult))
+		PADDRINFOA ppResult;
+
+		if (getaddrinfo(pszAddress, nullptr, &hints, &ppResult))
 		{
 			freeaddrinfo(ppResult);
 			return false;
 		}
 
-		SetIP(reinterpret_cast<IN6_ADDR*>(&ppResult->ai_addr->sa_data[6]));
+		SetIP(reinterpret_cast<in6_addr*>(&ppResult->ai_addr->sa_data[6]));
 		freeaddrinfo(ppResult);
 
 		return true;

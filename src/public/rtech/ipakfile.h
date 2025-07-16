@@ -21,7 +21,8 @@
 
 // compression flags, code uses this to select which decoder to use.
 #define PAK_HEADER_FLAGS_RTECH_ENCODED (1<<8)
-#define PAK_HEADER_FLAGS_ZSTD_ENCODED (1<<9)
+#define PAK_HEADER_FLAGS_OODLE_ENCODED (1<<9)
+#define PAK_HEADER_FLAGS_ZSTD_ENCODED (1<<15)
 
 // max amount of types at runtime in which assets will be tracked
 #define PAK_MAX_TRACKED_TYPES 64
@@ -45,6 +46,13 @@
 // pak uses more than one set, this number would be used per set
 #define PAK_MAX_STREAMING_FILE_HANDLES_PER_SET 4
 
+// max amount to read per async fs read request
+#define PAK_READ_DATA_CHUNK_SIZE (1ull << 19)
+
+// max amount of data chunks per pak stream instance
+#define PAK_MAX_DATA_CHUNKS_PER_STREAM 32
+#define PAK_MAX_DATA_CHUNKS_PER_STREAM_MASK (PAK_MAX_DATA_CHUNKS_PER_STREAM-1)
+
 // max amount of paks that could be loaded at runtime
 #define PAK_MAX_LOADED_PAKS 512
 #define PAK_MAX_LOADED_PAKS_MASK (PAK_MAX_LOADED_PAKS-1)
@@ -66,20 +74,13 @@
 #define PAK_DECODE_IN_RING_BUFFER_SMALL_MASK (PAK_DECODE_IN_RING_BUFFER_SMALL_SIZE-1)
 
 // the input stream ring buffer size for pak decoder before wrapping around
-#define PAK_DECODE_IN_RING_BUFFER_SIZE 0x1000000
+#define PAK_DECODE_IN_RING_BUFFER_SIZE (PAK_READ_DATA_CHUNK_SIZE * PAK_MAX_DATA_CHUNKS_PER_STREAM)
 #define PAK_DECODE_IN_RING_BUFFER_MASK (PAK_DECODE_IN_RING_BUFFER_SIZE-1)
 
 // the output stream ring buffer size in which input buffer gets decoded to, we
 // can only decode up to this many bytes before we have to wrap around
 #define PAK_DECODE_OUT_RING_BUFFER_SIZE 0x400000
 #define PAK_DECODE_OUT_RING_BUFFER_MASK (PAK_DECODE_OUT_RING_BUFFER_SIZE-1)
-
-// max amount to read per async fs read request
-#define PAK_READ_DATA_CHUNK_SIZE (1ull << 19)
-
-// max amount of data chunks per pak stream instance
-#define PAK_MAX_DATA_CHUNKS_PER_STREAM 32
-#define PAK_MAX_DATA_CHUNKS_PER_STREAM_MASK (PAK_MAX_DATA_CHUNKS_PER_STREAM-1)
 
 // base pak directory containing paks sorted in platform specific subdirectories
 #define PAK_BASE_PATH "paks\\"
@@ -335,8 +336,8 @@ struct PakGlobalState_s
 	// assets that are tracked across all asset types
 	PakAssetTracker_s trackedAssets[PAK_MAX_TRACKED_ASSETS];
 
-	RHashMap trackedAssetMap; // links to 'trackedAssets'
-	RHashMap loadedPakMap;    // links to 'loadedPaks'
+	RFixedArray trackedAssetMap; // links to 'trackedAssets'
+	RFixedArray loadedPakMap;    // links to 'loadedPaks'
 
 	// all currently loaded pak handles
 	PakLoadedInfo_s loadedPaks[PAK_MAX_LOADED_PAKS];
@@ -352,8 +353,8 @@ struct PakGlobalState_s
 	b64 emulateStreamingInstallInit;
 	b64 emulateStreamingInstall;
 
-	// mounted # optional streamable assets (globally across all paks)
-	int64_t numOptStreamableAssets;
+	// mounted # non-fully installed assets (globally across all paks)
+	int64_t numAssetsWithDiscardedStreamableAssets;
 	b64 hasPendingUnloadJobs;
 
 	// paks that contain tracked assets
@@ -547,11 +548,7 @@ struct PakDecoder_s
 	// this field was unused, it now contains the decoder mode
 	PakDecodeMode_e decodeMode;
 
-	// NOTE: unless you are in the RTech decoder, use the getter if you need to
-	// get the current pos!!!
 	uint64_t inBufBytePos;
-	// NOTE: unless you are in the RTech decoder, use the getter if you need to
-	// get the current pos!!!
 	uint64_t outBufBytePos;
 
 	size_t bufferSizeNeeded;
@@ -561,7 +558,23 @@ struct PakDecoder_s
 	uint32_t currentBit;
 
 	uint32_t dword6C;
-	uint64_t qword70;
+
+	union
+	{
+		uint64_t qword70;
+
+		// set when all chunks have been streamed in. for ZStd compressed
+		// paks, we might end up with less data than requested in which
+		// case we must just process what we got currently. ZStd has a
+		// different stream size requirement than the RTech decoder; it
+		// has a fixed 'recommended' to-stream input size (using the API
+		// `ZSTD_DStreamInSize`. in the RTech decoder, the recommended
+		// to-stream input for the next decode round appears baked into
+		// the frame header of the encoded block data in the RPak files.
+		// So for ZStd, we need to handle corner-case desyncs to avoid a
+		// dead-lock in the runtime.
+		bool allChunksStreamed;
+	};
 
 	union
 	{

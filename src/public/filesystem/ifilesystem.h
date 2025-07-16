@@ -23,6 +23,7 @@ typedef void* FileFindHandle_t;
 //---------------------------------------------------------------------------------
 class KeyValues;
 class CUtlBuffer;
+class CPackedStore;
 
 //-----------------------------------------------------------------------------
 // Structures used by the interface
@@ -178,6 +179,10 @@ enum
 {
 	FILESYSTEM_INVALID_FIND_HANDLE = -1
 };
+
+// This is the minimal interface that can be implemented to provide access to
+// a named set of files.
+#define BASEFILESYSTEM_INTERFACE_VERSION		"VBaseFileSystem012"
 
 //-----------------------------------------------------------------------------
 // 
@@ -411,7 +416,8 @@ public:
 	// Optimal IO operations
 	//--------------------------------------------------------
 	virtual bool GetOptimalIOConstraints(FileHandle_t hFile, uint64_t* pOffsetAlign, uint64_t* pSizeAlign, uint64_t* pBufferAlign) = 0;
-	virtual void* AllocOptimalReadBuffer(ptrdiff_t nOffset = 0/*!!! UNUSED !!!*/, ssize_t nSize = 0) = 0;
+	inline uint64_t GetOptimalReadSize(FileHandle_t hFile, const uint64_t logicalSize);
+	virtual void* AllocOptimalReadBuffer(FileHandle_t hFile, uint64_t nSize, uint64_t nOffset) = 0;
 	virtual void FreeOptimalReadBuffer(void*) = 0;
 
 
@@ -432,7 +438,7 @@ public:
 	virtual void SetVPKCacheModeServer() = 0; // g_nVPKCacheMode = 2;
 	virtual bool IsVPKCacheEnabled() = 0;     // g_nVPKCacheMode != 0;
 
-	virtual __int64 __fastcall PrecacheTaskItem(__int64 a1) = 0;
+	virtual __int64 __fastcall PrecacheTaskItem(void* a1) = 0;
 
 	virtual void ResetItemCacheSize(int edx) = 0;
 	virtual void __fastcall sub_140380100(__int64 a1) = 0;
@@ -445,7 +451,7 @@ public:
 	virtual const char** __fastcall sub_140383760(unsigned int a1) = 0;
 	virtual __int64 __fastcall sub_140383A20(const char* a1) = 0;
 
-	virtual VPKData_t* MountVPKFile(const char* pVpkPath) = 0;
+	virtual CPackedStore* MountVPKFile(const char* pVpkPath) = 0;
 	virtual const char* UnmountVPKFile(const char* pBasename) = 0;
 
 	virtual void __fastcall sub_140383370() = 0;
@@ -466,5 +472,15 @@ public:
 	virtual __int64 __fastcall sub_14038CC90(int a1, unsigned int a2, __int64 a3, __int64 a4) = 0;
 	virtual __int64 __fastcall UserMathErrorFunction() = 0;
 };
+
+uint64_t IFileSystem::GetOptimalReadSize(FileHandle_t hFile, const uint64_t logicalSize)
+{
+	uint64_t align;
+
+	if (GetOptimalIOConstraints(hFile, &align, NULL, NULL))
+		return AlignValue(logicalSize, align);
+
+	return logicalSize;
+}
 
 #endif // IFILESYSTEM_H

@@ -18,8 +18,12 @@
 #include "engine/server/server.h"
 #include "engine/host_state.h"
 #include "engine/debugoverlay.h"
+#include "pluginsystem/pluginsystem.h"
 #include "vscript/vscript.h"
 #include "vscript/languages/squirrel_re/include/sqvm.h"
+
+#include "game/shared/vscript_gamedll_defs.h"
+
 #include "game/shared/vscript_shared.h"
 #include "game/shared/vscript_debug_overlay_shared.h"
 
@@ -301,9 +305,9 @@ static SQRESULT ServerScript_GetNumFakeClients(HSQUIRRELVM v)
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: gets the current server id
+// Purpose: gets our current session id
 //-----------------------------------------------------------------------------
-static SQRESULT ServerScript_GetServerID(HSQUIRRELVM v)
+static SQRESULT ServerScript_GetSessionID(HSQUIRRELVM v)
 {
     sq_pushstring(v, g_LogSessionUUID.c_str(), (SQInteger)g_LogSessionUUID.length());
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -1526,6 +1530,13 @@ void Script_RegisterServerFunctions(CSquirrelVM* s)
     Script_RegisterAdminServerFunctions(s);
 
     Script_RegisterLiveAPIFunctions(s);
+
+    // NOTE: plugin functions must always come after SDK functions!
+    for (auto& callback : !PluginSystem()->GetRegisterServerScriptFuncsCallbacks())
+    {
+        // Register script functions inside plugins.
+        callback.Function()(s);
+    }
 }
 
 void Script_RegisterServerEnums(CSquirrelVM* const s)
@@ -1539,17 +1550,17 @@ void Script_RegisterServerEnums(CSquirrelVM* const s)
 //---------------------------------------------------------------------------------
 void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
 {
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSolidBox, "Draw a debug overlay solid box", "void", "vector origin, vector mins, vector maxs, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSweptBox, "Draw a debug overlay swept box", "void", "vector start, vector end, vector mins, vector maxs, vector angles, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawTriangle, "Draw a debug overlay triangle", "void", "vector p1, vector p2, vector p3, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSolidSphere, "Draw a debug overlay solid sphere", "void", "vector origin, float radius, int theta, int phi, vector color, float alpha, bool drawThroughWorld, float duration");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawCapsule, "Draw a debug overlay capsule", "void", "vector start, vector end, float radius, vector color, float alpha, bool drawThroughWorld, float duration");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSolidBox, "Draw a debug overlay solid box", "void", "vector origin, vector mins, vector maxs, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSweptBox, "Draw a debug overlay swept box", "void", "vector start, vector end, vector mins, vector maxs, vector angles, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawTriangle, "Draw a debug overlay triangle", "void", "vector p1, vector p2, vector p3, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawSolidSphere, "Draw a debug overlay solid sphere", "void", "vector origin, float radius, int theta, int phi, vector color, float alpha, bool drawThroughWorld, float duration", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, DebugDrawCapsule, "Draw a debug overlay capsule", "void", "vector start, vector end, float radius, vector color, float alpha, bool drawThroughWorld, float duration", false);
 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SetAutoReloadState, "Set whether we can auto-reload the server", "void", "bool canAutoReload");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetServerID, "Gets the current server ID", "string", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SetAutoReloadState, "Set whether we can auto-reload the server", "void", "bool canAutoReload", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetSessionID, "Gets our current session ID", "string", "", false);
 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, NavMesh_GetNearestPos, "Finds the nearest position to the provided point on the hull's NavMesh using the hull's bounds as extents", "vector ornull", "vector searchPoint, int hullType");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, NavMesh_GetNearestPosInBounds, "Finds the nearest position to the provided point on the hull's NavMesh using provided bounds as extents", "vector ornull", "vector searchPoint, vector halfExtents, int hullType");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, NavMesh_GetNearestPos, "Finds the nearest position to the provided point on the hull's NavMesh using the hull's bounds as extents", "vector ornull", "vector searchPoint, int hullType", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, NavMesh_GetNearestPosInBounds, "Finds the nearest position to the provided point on the hull's NavMesh using provided bounds as extents", "vector ornull", "vector searchPoint, vector halfExtents, int hullType", false);
 
     //for stat settings (api keys, discord webhooks, server identifiers, preferences))
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerGetSetting__internal, "Fetches value by key", "string", "string");
@@ -1585,6 +1596,7 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCreateServerBot__internal, "Creates a bot to send messages", "array< int >", "string");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerServerMsg__internal, "Says message from specified senderId", "void", "string,int");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SaveRecordedAnimation, "Saves an anim_recording asset to be used by bakery. (dev only)", "void", "var recordedAnim, string fileName");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SaveRecordedAnimation, "Saves an anim_recording asset to be used by bakery. (dev only)", "void", "var recordedAnim, string fileName", false);
 }
 
 //---------------------------------------------------------------------------------
@@ -1593,17 +1605,18 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
 //---------------------------------------------------------------------------------
 void Script_RegisterAdminServerFunctions(CSquirrelVM* s)
 {
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetNumHumanPlayers, "Gets the number of human players on the server", "int", "");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetNumFakeClients, "Gets the number of bot players on the server", "int", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetNumHumanPlayers, "Gets the number of human players on the server", "int", "", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetNumFakeClients, "Gets the number of bot players on the server", "int", "", false);
 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, KickPlayerByName, "Kicks a player from the server by name", "void", "string name, string reason");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, KickPlayerById, "Kicks a player from the server by handle or nucleus id", "void", "string id, string reason");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, KickPlayerByName, "Kicks a player from the server by name", "void", "string name, string reason", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, KickPlayerById, "Kicks a player from the server by handle or nucleus id", "void", "string id, string reason", false);
 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByName, "Bans a player from the server by name", "void", "string name, string reason");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerById, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByName, "Bans a player from the server by name", "void", "string name, string reason", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerById, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason", false);
 
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by ip & nucleus id, returns true for success", "bool", "string, string");
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle", false);
 }
 
 //---------------------------------------------------------------------------------
@@ -1635,6 +1648,7 @@ static void Script_RegisterServerPlayerClassFuncs()
         "Change a variable in the player's class settings",
         "bool",
         "string key, string value",
+        false,
         ServerScript_ScriptSetClassVar);
 }
 //---------------------------------------------------------------------------------

@@ -201,7 +201,7 @@ struct VPKPair_t
 };
 
 //-----------------------------------------------------------------------------
-// VPK utility class.
+// VPK building class.
 //-----------------------------------------------------------------------------
 class CPackedStoreBuilder
 {
@@ -224,4 +224,22 @@ bool PackedStore_GetDirBaseName(const CUtlString& dirFileName, CUtlString& dirBa
 bool PackedStore_GetDirNameParts(const CUtlString& dirFileName, const int nCaptureGroup, CUtlString& dirNameParts);
 ///////////////////////////////////////////////////////////////////////////////
 
+//-----------------------------------------------------------------------------
+// VPK loading class.
+//-----------------------------------------------------------------------------
+class CPackedStore
+{
+public:
+	inline int GetPackFileID() const { return m_PackFileID; }
+	inline uint8_t GetStatus() const { return m_Status; }
+
+private:
+	int m_PackFileID;
+	uint8_t m_Status;
+	char m_pszFileBaseName[MAX_OSPATH];
+	char m_pszFullPathName[MAX_OSPATH];
+	// TODO[ AMOS ]: reverse the rest.
+};
+
+///////////////////////////////////////////////////////////////////////////////
 #endif // PACKEDSTORE_H

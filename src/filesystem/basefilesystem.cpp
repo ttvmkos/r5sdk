@@ -2,11 +2,15 @@
 #include "tier1/cvar.h"
 #include "filesystem/basefilesystem.h"
 #include "filesystem/filesystem.h"
-
+#include "pluginsystem/modsystem.h"
 #include "bspfile.h"
 #include "engine/modelloader.h"
+#include "vpklib/packedstore.h"
 
 static ConVar fs_showWarnings("fs_showWarnings", "0", FCVAR_DEVELOPMENTONLY | FCVAR_ACCESSIBLE_FROM_THREADS, "Logs the FileSystem warnings to the console, filtered by 'fs_warning_level' ( !slower! ).", true, 0.f, true, 2.f, "0 = log to file. 1 = 0 + log to console. 2 = 1 + log to notify");
+
+static ConVar fs_vpk_prioritizeDisk("fs_vpk_prioritizeDisk", "0", FCVAR_DEVELOPMENTONLY | FCVAR_ACCESSIBLE_FROM_THREADS, "Whether to look for our file on the disk before looking for it in the VPK.");
+static ConVar fs_vpk_prioritizeDiskPath("fs_vpk_prioritizeDiskPath", "platform/", FCVAR_DEVELOPMENTONLY | FCVAR_ACCESSIBLE_FROM_THREADS, "Where to look for our file on the disk before looking for it in the VPK.");
 
 //---------------------------------------------------------------------------------
 // Purpose: prints the output of the filesystem based on the warning level
@@ -38,6 +42,9 @@ void CBaseFileSystem::Warning(CBaseFileSystem* pFileSystem, FileWarningLevel_t l
 //---------------------------------------------------------------------------------
 bool CBaseFileSystem::VCheckDisk(const char* pszFilePath)
 {
+	if (!fs_vpk_prioritizeDisk.GetBool())
+		return false;
+
 	// Only load material files from the disk if the mode isn't zero,
 	// use -novpk to load valve materials from the disk.
 	if (FileSystem()->CheckVPKMode(0) && V_strstr(pszFilePath, ".vmt"))
@@ -51,9 +58,14 @@ bool CBaseFileSystem::VCheckDisk(const char* pszFilePath)
 		return false;
 	}
 
-	CUtlString filePath;
-	filePath.Format("platform/%s", pszFilePath);
+	CUtlString filePath = fs_vpk_prioritizeDiskPath.GetString();
+
+	if (filePath[0])
+		filePath.AppendSlash();
+
+	filePath.Append(pszFilePath);
 	filePath.FixSlashes();
+
 	filePath = filePath.Replace("\\*\\", "");
 
 	if (::FileExists(filePath.Get()))
@@ -142,21 +154,50 @@ void CBaseFileSystem::VAddMapPackFile(CBaseFileSystem* pFileSystem, const char* 
 //			*pszVpkPath - 
 // Output : pointer to VPK on success, NULL on failure
 //---------------------------------------------------------------------------------
-VPKData_t* CBaseFileSystem::VMountVPKFile(CBaseFileSystem* pFileSystem, const char* pszVpkPath)
+CPackedStore* CBaseFileSystem::VMountVPKFile(CBaseFileSystem* pFileSystem, const char* pszVpkPath)
 {
 	int nHandle = CBaseFileSystem__GetMountedVPKHandle(pFileSystem, pszVpkPath);
-	VPKData_t* pPakData = CBaseFileSystem__MountVPKFile(pFileSystem, pszVpkPath);
+	CPackedStore* pPakData = CBaseFileSystem__MountVPKFile(pFileSystem, pszVpkPath);
+
+	CUtlString modLookupPath;
+	const char* fileToLoad = pszVpkPath;
+
+	if (!pPakData && ModSystem()->IsEnabled())
+	{
+		ModSystem()->LockModList();
+
+		// Look for the file in our mods and obtain the first one we find.
+		FOR_EACH_VEC(ModSystem()->GetModList(), i)
+		{
+			const CModSystem::ModInstance_t* const mod = ModSystem()->GetModList()[i];
+
+			if (!mod->IsEnabled())
+				continue;
+
+			modLookupPath = mod->GetBasePath() + fileToLoad;
+			const char* const pModLookupPath = modLookupPath.String();
+
+			nHandle = CBaseFileSystem__GetMountedVPKHandle(pFileSystem, pModLookupPath);
+			pPakData = CBaseFileSystem__MountVPKFile(pFileSystem, pModLookupPath);
+
+			if (pPakData)
+			{
+				fileToLoad = pModLookupPath;
+				break;
+			}
+		}
+
+		ModSystem()->UnlockModList();
+	}
 
 	if (pPakData)
 	{
 		if (nHandle < 0) // Only log if VPK hasn't been mounted yet.
-		{
-			::Msg(eDLL_T::FS, "Mounted vpk file: '%s' with handle: '%i'\n", pszVpkPath, pPakData->m_nHandle);
-		}
+			::Msg(eDLL_T::FS, "Mounted vpk file: '%s' with handle: %i\n", fileToLoad, pPakData->GetPackFileID());
 	}
 	else // VPK failed to load or does not exist...
 	{
-		::Warning(eDLL_T::FS, "Unable to mount vpk file: '%s'\n", pszVpkPath);
+		::Error(eDLL_T::FS, 0, "Unable to mount vpk file: '%s'\n", fileToLoad);
 	}
 
 	return pPakData;
@@ -170,15 +211,28 @@ VPKData_t* CBaseFileSystem::VMountVPKFile(CBaseFileSystem* pFileSystem, const ch
 //---------------------------------------------------------------------------------
 const char* CBaseFileSystem::VUnmountVPKFile(CBaseFileSystem* pFileSystem, const char* pszVpkPath)
 {
-	int nHandle = CBaseFileSystem__GetMountedVPKHandle(pFileSystem, pszVpkPath);
-	const char* pRet = CBaseFileSystem__UnmountVPKFile(pFileSystem, pszVpkPath);
+	const char* pRet = strstr(pszVpkPath, ".bsp");
+
+	if (!pRet || pRet == pszVpkPath)
+		return pRet; // Invalid VPK file name.
+
+	// NOTE: for unmounting VPK's, we don't need to resolve the paths for mods
+	// even if the VPK was loaded from a mod directory, because internally the
+	// code compares the name from vpk/ and skips anything before it.
+	const int nHandle = CBaseFileSystem__GetMountedVPKHandle(pFileSystem, pszVpkPath);
 
 	if (nHandle >= 0)
 	{
-		::Msg(eDLL_T::FS, "Unmounted vpk file: '%s' with handle: '%i'\n", pszVpkPath, nHandle);
-	}
+		pRet = CBaseFileSystem__UnmountVPKFile(pFileSystem, pszVpkPath);
+		::Msg(eDLL_T::FS, "Unmounted vpk file: '%s' with handle: %i\n", pszVpkPath, nHandle);
 
-	return pRet;
+		return pRet;
+	}
+	else // VPK failed to unload or does not exist...
+	{
+		::Error(eDLL_T::FS, 0, "Unable to unmount vpk file: '%s'\n", pszVpkPath);
+		return nullptr;
+	}
 }
 
 //---------------------------------------------------------------------------------

@@ -41,9 +41,9 @@ CParticleOverlay::~CParticleOverlay(void)
 //-----------------------------------------------------------------------------
 bool CParticleOverlay::Init(void)
 {
-	SetStyleVar(1200, 524, -1000, 50);
-
+	SetStyleVar();
 	m_initialized = true;
+
 	return true;
 }
 
@@ -123,9 +123,11 @@ bool CParticleOverlay::DrawSurface(void)
 		return false;
 	}
 
-	ImGui::Checkbox("Freeze##ParticleReport", &m_freezeCapture);
+	SetRect(567, 367, 10, 10);
 
-	if (ImGui::BeginChild("##ParticleReport", ImVec2(-1, -1), ImGuiChildFlags_Border, ImGuiWindowFlags_HorizontalScrollbar))
+	ImGui::Checkbox("Freeze##ParticleOverlay_ParticleReport", &m_freezeCapture);
+
+	if (ImGui::BeginChild("##ParticleOverlay_ParticleReport", ImVec2(-1, -1), ImGuiChildFlags_Border, ImGuiWindowFlags_HorizontalScrollbar))
 	{
 		ImGui::TextUnformatted(m_scratchBuffer, &m_scratchBuffer[m_bufferCursor]);
 	}

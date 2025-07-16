@@ -70,6 +70,7 @@ static ConVar host_autoReloadRate("host_autoReloadRate", "0", FCVAR_RELEASE, "Ti
 static ConVar host_autoReloadRespectGameState("host_autoReloadRespectGameState", "0", FCVAR_RELEASE, "Check the game state before proceeding to auto-reload (don't reload in the middle of a match).");
 #endif // !CLIENT_DLL
 
+static ConVar host_sessionId("host_sessionId", "", FCVAR_REPLICATED|FCVAR_DEVELOPMENTONLY, "Host session ID.");
 ConVar hostdesc("hostdesc", "", FCVAR_RELEASE, "Host game server description.");
 
 #ifdef DEDICATED
@@ -161,6 +162,29 @@ void HostState_HandleAutoReload()
 	}
 }
 #endif // !CLIENT_DLL
+
+bool HostState_IsTransitioningToLoad()
+{
+	if (g_pHostState->m_iNextState == HostStates_t::HS_NEW_GAME ||
+		g_pHostState->m_iNextState == HostStates_t::HS_LOAD_GAME ||
+		g_pHostState->m_iNextState == HostStates_t::HS_CHANGE_LEVEL_SP ||
+		g_pHostState->m_iNextState == HostStates_t::HS_CHANGE_LEVEL_MP)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+const char* Host_GetSessionID()
+{
+	return host_sessionId.GetString();
+}
+
+static void Host_UpdateSessionID()
+{
+	host_sessionId.SetValue(g_LogSessionUUID.c_str());
+}
 
 //-----------------------------------------------------------------------------
 // Purpose: state machine's main processing loop
@@ -358,10 +382,17 @@ void CHostState::Setup(void)
 	LiveAPISystem()->Init();
 #endif // !CLIENT_DLL
 
-	if (net_useRandomKey.GetBool())
+	if (CommandLine()->CheckParm("-norandomkey"))
 	{
+		// Change callbacks sets the default.
+		net_useRandomKey.SetValue(0);
+	}
+	else
+	{
+		// Generate a random net key.
 		NET_GenerateKey();
 	}
+
 #if !defined (DEDICATED) && !defined (CLIENT_DLL)
 	// Parallel processing of 'C_BaseAnimating::SetupBones()' is currently
 	// not supported on listen servers running the local client due to an
@@ -370,6 +401,14 @@ void CHostState::Setup(void)
 	if (cl_threaded_bone_setup->GetBool())
 	{
 		cl_threaded_bone_setup->SetValue(false);
+	}
+
+	// Check if 'pvs_start_early' is set to run after threaded bone setup,
+	// because threaded bone setup isn't supported on the listen server.
+	// In this case we need to set to run after view setup (1).
+	if (pvs_start_early->GetInt() == 2)
+	{
+		pvs_start_early->SetValue(1);
 	}
 #endif // !DEDICATED && !CLIENT_DLL
 
@@ -516,8 +555,6 @@ void CHostState::State_NewGame(void)
 {
 	Msg(eDLL_T::ENGINE, "%s: Loading level: '%s'\n", __FUNCTION__, g_pHostState->m_levelName);
 
-	LARGE_INTEGER time{};
-
 #ifndef CLIENT_DLL
 	const bool bSplitScreenConnect = m_bSplitScreenConnect;
 	m_bSplitScreenConnect = false;
@@ -529,6 +566,8 @@ void CHostState::State_NewGame(void)
 #endif // !CLIENT_DLL
 
 #ifndef CLIENT_DLL
+	LARGE_INTEGER time{};
+
 	if (!CModelLoader__Map_IsValid(g_pModelLoader, m_levelName) // Check if map is valid and if we can start a new game.
 		|| !v_Host_NewGame(m_levelName, nullptr, m_bBackgroundLevel, bSplitScreenConnect, time) || !g_pServerGameClients)
 	{
@@ -540,6 +579,7 @@ void CHostState::State_NewGame(void)
 	}
 #endif // !CLIENT_DLL
 
+	Host_UpdateSessionID();
 	SetState(HostStates_t::HS_RUN);
 }
 
@@ -560,8 +600,8 @@ void CHostState::State_ChangeLevelSP(void)
 		Error(eDLL_T::ENGINE, NO_ERROR, "%s: Unable to find level: '%s'\n", __FUNCTION__, m_levelName);
 	}
 
-	// Set current state to run.
-	SetState(HostStates_t::HS_RUN);
+	Host_UpdateSessionID();
+	SetState(HostStates_t::HS_RUN); // Set current state to run.
 }
 
 //-----------------------------------------------------------------------------
@@ -587,8 +627,8 @@ void CHostState::State_ChangeLevelMP(void)
 		Error(eDLL_T::ENGINE, NO_ERROR, "%s: Unable to find level: '%s'\n", __FUNCTION__, m_levelName);
 	}
 
-	// Set current state to run.
-	SetState(HostStates_t::HS_RUN);
+	Host_UpdateSessionID();
+	SetState(HostStates_t::HS_RUN); // Set current state to run.
 }
 
 //-----------------------------------------------------------------------------

@@ -86,7 +86,7 @@ CConsole::~CConsole(void)
 //-----------------------------------------------------------------------------
 bool CConsole::Init(void)
 {
-    SetStyleVar(1200, 524, -1000, 50);
+    SetStyleVar();
     return LoadFlagIcons();
 }
 
@@ -193,6 +193,7 @@ bool CConsole::DrawSurface(void)
         return false;
     }
 
+    SetRect(1200, 524, 50, 50);
     m_mainWindow = ImGui::GetCurrentWindow();
 
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -200,13 +201,13 @@ bool CConsole::DrawSurface(void)
 
     ///////////////////////////////////////////////////////////////////////
     ImGui::Separator();
-    if (ImGui::BeginPopup("Options"))
+    if (ImGui::BeginPopup("Options##Console_DrawSurface"))
     {
         DrawOptionsPanel();
     }
-    if (ImGui::Button("Options"))
+    if (ImGui::Button("Options##Console_DrawSurface"))
     {
-        ImGui::OpenPopup("Options");
+        ImGui::OpenPopup("Options##Console_DrawSurface");
     }
 
     ImGui::SameLine();
@@ -290,7 +291,7 @@ bool CConsole::DrawSurface(void)
         ImGuiInputTextFlags_AutoCaretEnd;
 
     ImGui::PushItemWidth(footerWidthReserve - 80);
-    if (ImGui::InputText("##input", m_inputTextBuf, IM_ARRAYSIZE(m_inputTextBuf), inputTextFieldFlags, &TextEditCallbackStub, reinterpret_cast<void*>(this)))
+    if (ImGui::InputText("##Console_DrawSurface_Input", m_inputTextBuf, IM_ARRAYSIZE(m_inputTextBuf), inputTextFieldFlags, &TextEditCallbackStub, reinterpret_cast<void*>(this)))
     {
         // If we selected something in the suggestions window, create the
         // command from that instead
@@ -322,7 +323,7 @@ bool CConsole::DrawSurface(void)
     DetermineAutoCompleteWindowPosAndWidth();
 
     ImGui::SameLine();
-    if (ImGui::Button("Submit"))
+    if (ImGui::Button("Submit##Console_DrawSurface"))
     {
         HandleCommand();
     }
@@ -336,13 +337,13 @@ bool CConsole::DrawSurface(void)
 //-----------------------------------------------------------------------------
 void CConsole::DrawOptionsPanel(void)
 {
-    ImGui::Checkbox("Auto-scroll", &m_colorTextLogger.m_bAutoScroll);
+    ImGui::Checkbox("Auto-scroll##Console_DrawOptionsPanel", &m_colorTextLogger.m_bAutoScroll);
 
     ImGui::SameLine();
     ImGui::Spacing();
     ImGui::SameLine();
 
-    if (ImGui::SmallButton("Clear Text"))
+    if (ImGui::SmallButton("Clear Text##Console_DrawOptionsPanel"))
     {
         ClearLog();
     }
@@ -352,7 +353,7 @@ void CConsole::DrawOptionsPanel(void)
     ImGui::SameLine();
 
     // Copies all logged text to the clip board
-    if (ImGui::SmallButton("Copy Text"))
+    if (ImGui::SmallButton("Copy Text##Console_DrawOptionsPanel"))
     {
         AUTO_LOCK(m_colorTextLoggerMutex);
         m_colorTextLogger.Copy(true);
@@ -363,7 +364,7 @@ void CConsole::DrawOptionsPanel(void)
 
     int selected = g_ImGuiConfig.m_ConsoleConfig.m_nBind0;
 
-    if (ImGui::Hotkey("##ToggleConsolePrimary", &selected, ImVec2(80, 80)) &&
+    if (ImGui::Hotkey("##Console_DrawOptionsPanel_ToggleConsolePrimary", &selected, ImVec2(80, 80)) &&
         !g_ImGuiConfig.KeyUsed(selected))
     {
         g_ImGuiConfig.m_ConsoleConfig.m_nBind0 = selected;
@@ -373,7 +374,7 @@ void CConsole::DrawOptionsPanel(void)
     ImGui::SameLine();
     selected = g_ImGuiConfig.m_ConsoleConfig.m_nBind1;
 
-    if (ImGui::Hotkey("##ToggleConsoleSecondary", &selected, ImVec2(80, 80)) &&
+    if (ImGui::Hotkey("##Console_DrawOptionsPanel_ToggleConsoleSecondary", &selected, ImVec2(80, 80)) &&
         !g_ImGuiConfig.KeyUsed(selected))
     {
         g_ImGuiConfig.m_ConsoleConfig.m_nBind1 = selected;
@@ -385,7 +386,7 @@ void CConsole::DrawOptionsPanel(void)
 
     selected = g_ImGuiConfig.m_BrowserConfig.m_nBind0;
 
-    if (ImGui::Hotkey("##ToggleBrowserPrimary", &selected, ImVec2(80, 80)) &&
+    if (ImGui::Hotkey("##Console_DrawOptionsPanel_ToggleBrowserPrimary", &selected, ImVec2(80, 80)) &&
         !g_ImGuiConfig.KeyUsed(selected))
     {
         g_ImGuiConfig.m_BrowserConfig.m_nBind0 = selected;
@@ -395,7 +396,7 @@ void CConsole::DrawOptionsPanel(void)
     ImGui::SameLine();
     selected = g_ImGuiConfig.m_BrowserConfig.m_nBind1;
 
-    if (ImGui::Hotkey("##ToggleBrowserSecondary", &selected, ImVec2(80, 80)) &&
+    if (ImGui::Hotkey("##Console_DrawOptionsPanel_ToggleBrowserSecondary", &selected, ImVec2(80, 80)) &&
         !g_ImGuiConfig.KeyUsed(selected))
     {
         g_ImGuiConfig.m_BrowserConfig.m_nBind1 = selected;
@@ -522,7 +523,7 @@ void CConsole::DrawAutoCompletePanel(void)
         ImGuiWindowFlags_AlwaysVerticalScrollbar   |
         ImGuiWindowFlags_AlwaysHorizontalScrollbar;
 
-    ImGui::Begin("##suggest", nullptr, autoCompleteWindowFlags);
+    ImGui::Begin("##Console_DrawAutoCompletePanel_Suggest", nullptr, autoCompleteWindowFlags);
     ImGui::PushAllowKeyboardFocus(false);
 
     ImGuiWindow* const autocompleteWindow = ImGui::GetCurrentWindow();

@@ -83,6 +83,7 @@
 #include "engine/client/cl_main.h"
 #include "engine/client/cl_rcon.h"
 #include "engine/client/cl_splitscreen.h"
+#include "engine/client/community_party.h"
 #endif // !DEDICATED
 #include "engine/client/client.h"
 #ifndef DEDICATED
@@ -126,8 +127,10 @@
 #include "vscript/languages/squirrel_re/include/squirrel.h"
 #include "vscript/languages/squirrel_re/include/sqvm.h"
 #include "vscript/languages/squirrel_re/include/sqstdaux.h"
+#include "vscript/languages/squirrel_re/include/sqstdstring.h"
 #include "vscript/languages/squirrel_re/vsquirrel.h"
 #include "vscript/vscript.h"
+#include "game/shared/r1/weapon_parse.h"
 #include "game/shared/r1/weapon_bolt.h"
 #include "game/shared/util_shared.h"
 #include "game/shared/usercmd.h"
@@ -614,6 +617,7 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 	REGISTER(VClientState);
 	REGISTER(VCL_Main);
 	REGISTER(VSplitScreen);
+	REGISTER(VCommunityParty);
 #endif // !DEDICATED
 
 	// RTech
@@ -689,13 +693,16 @@ void DetourRegister() // Register detour classes to be searched and hooked.
 
 	// Squirrel
 	REGISTER(VSquirrelAPI);
-	REGISTER(VSquirrelAUX);
+	REGISTER(VSquirrelStdAux);
+	REGISTER(VSquirrelStdString);
 	REGISTER(VSquirrelVM);
 
 	// Game/shared
 	REGISTER(VUserCmd);
 	REGISTER(VAnimation);
 	REGISTER(V_UTIL_Shared);
+
+	REGISTER(V_Weapon_Parse);
 
 #ifndef CLIENT_DLL
 

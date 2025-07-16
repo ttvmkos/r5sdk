@@ -163,7 +163,7 @@ void CServerGameDLL::OnReceivedSayTextMessage(CServerGameDLL* thisptr, int sende
 		return;
 	}
 
-	for (auto& cb : !g_PluginSystem.GetChatMessageCallbacks())
+	for (auto& cb : !PluginSystem()->GetChatMessageCallbacks())
 	{
 		if (!cb.Function()(pSenderPlayer, text, sv_forceChatToTeamOnly->GetBool()))
 		{
@@ -289,8 +289,6 @@ void CServerGameClients::_ProcessUserCmds(CServerGameClients* thisp, edict_t edi
 	Assert(numCmds >= 0);
 	Assert((totalCmds - numCmds) >= 0);
 
-	CPlayer* const pPlayer = UTIL_PlayerByIndex(edict);
-
 	// Too many commands?
 	if (totalCmds < 0 || totalCmds >= (MAX_BACKUP_COMMANDS_PROCESS - 1) ||
 		numCmds < 0 || numCmds > totalCmds)
@@ -311,8 +309,16 @@ void CServerGameClients::_ProcessUserCmds(CServerGameClients* thisp, edict_t edi
 		from = to;
 	}
 
-	// Client not fully connected or server has gone inactive or is paused, just ignore
-	if (ignore || !pPlayer)
+	// Server has gone inactive, just ignore.
+	if (ignore)
+	{
+		return;
+	}
+
+	CPlayer* const pPlayer = UTIL_PlayerByIndex(edict);
+
+	// Client not fully connected, just ignore.
+	if (!pPlayer)
 	{
 		return;
 	}
@@ -390,6 +396,8 @@ void VServerGameDLL::Detour(const bool bAttach) const
 	DetourSetup(&v_DispatchFrameServerJob, &DispatchFrameServerJob, bAttach);
 	DetourSetup(&v_ExecuteFrameServerJob, &ExecuteFrameServerJob, bAttach);
 }
+
+CThreadMutex* g_serverFrameMutex;
 
 CServerGameDLL* g_pServerGameDLL = nullptr;
 CServerGameClients* g_pServerGameClients = nullptr;

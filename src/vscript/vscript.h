@@ -6,16 +6,14 @@
 #include "vscript/ivscript.h"
 #include "rtech/rson.h"
 
-#define MOD_SCRIPT_PATH_IDENTIFIER "::MOD::"
-
 //-----------------------------------------------------------------------------
 // Forward declarations
 //-----------------------------------------------------------------------------
 class CSquirrelVM;
 
 inline RSON::Node_t*(*v_Script_LoadScriptList)(const SQChar* rsonfile);
-inline SQBool(*v_Script_LoadScriptFile)(HSQUIRRELVM v, const SQChar* path, const SQChar* name, SQInteger flags);
-inline SQBool(*v_Script_ParseScriptList)(SQCONTEXT ctx, const char* scriptListPath, RSON::Node_t* rson, char** scriptArray, int* pScriptCount, char** precompiledScriptArray, int precompiledScriptCount);
+inline SQBool(*v_Script_LoadScriptFile)(CSquirrelVM* const s, const SQChar* path, const SQChar* name, SQInteger flags);
+inline bool(*v_Script_ParseScriptList)(SQCONTEXT ctx, const char* scriptListPath, RSON::Node_t* rson, char** scriptArray, int* pScriptCount, char** precompiledScriptArray, int precompiledScriptCount);
 inline SQBool(*v_Script_PrecompileServerScripts)(CSquirrelVM* vm /*This parameter is not used internally (the client variant does use it)!*/);
 inline void(*v_Script_SetServerPrecompiler)(SQCONTEXT ctx, RSON::Node_t* rson);
 inline SQBool(*v_Script_PrecompileClientScripts)(CSquirrelVM* vm);
@@ -23,8 +21,8 @@ inline void(*v_Script_SetClientPrecompiler)(SQCONTEXT ctx, RSON::Node_t* rson);
 
 CSquirrelVM* Script_GetScriptHandle(const SQCONTEXT context);
 RSON::Node_t* Script_LoadScriptList(const SQChar* rsonfile);
-SQBool Script_LoadScriptFile(HSQUIRRELVM v, const SQChar* path, const SQChar* name, SQInteger flags);
-SQBool Script_ParseScriptList(SQCONTEXT context, const char* scriptListPath, RSON::Node_t* rson, char** scriptArray, int* pScriptCount, char** precompiledScriptArray, int precompiledScriptCount);
+SQBool Script_LoadScriptFile(CSquirrelVM* const s, const SQChar* path, const SQChar* name, SQInteger flags);
+bool Script_ParseScriptList(SQCONTEXT context, const char* scriptListPath, RSON::Node_t* rson, char** scriptArray, int* pScriptCount, char** precompiledScriptArray, int precompiledScriptCount);
 
 void Script_Execute(const SQChar* code, const SQCONTEXT context);
 ScriptStatus_t Script_ExecuteFunction(CSquirrelVM* s, HSCRIPT hFunction, const ScriptVariant_t* const pArgs, unsigned int nArgs, ScriptVariant_t* const pReturn, HSCRIPT hScope);

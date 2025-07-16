@@ -1884,18 +1884,30 @@ bool KeyValues::LoadFromFile(IBaseFileSystem* filesystem, const char* resourceNa
 	// load file into a null-terminated buffer
 	const ssize_t fileSize = filesystem->Size(f);
 
-	if (!fileSize)
+	if (fileSize <= 0)
+	{
+		filesystem->Close(f);
 		return false;
+	}
 
-	std::unique_ptr<char[]> pBuf(new char[fileSize + 1]);
+	const uint64_t bufSize = ((IFileSystem*)filesystem)->GetOptimalReadSize(f, fileSize+2);
+	char* const pBuf = (char*)((IFileSystem*)filesystem)->AllocOptimalReadBuffer(f, bufSize, 0);
 
-	const ssize_t nRead = filesystem->Read(pBuf.get(), fileSize, f);
+	const ssize_t nRead = ((IFileSystem*)filesystem)->ReadEx(pBuf, bufSize, fileSize, f);
 	filesystem->Close(f);
 
-	// TODO[ AMOS ]: unicode null terminate?
-	pBuf[nRead] = '\0';
+	bool retOK = false;
 
-	return LoadFromBuffer(resourceName, pBuf.get(), filesystem, pathID, pfnEvaluateSymbolProc);
+	if (nRead > 0)
+	{
+		pBuf[fileSize] = '\0'; // null terminate file as EOF
+		pBuf[fileSize+1] = '\0'; // double NULL terminating in case this is an unicode file
+
+		retOK = LoadFromBuffer(resourceName, pBuf, filesystem, pathID, pfnEvaluateSymbolProc);
+	}
+
+	((IFileSystem*)filesystem)->FreeOptimalReadBuffer(pBuf);
+	return retOK;
 }
 
 //-----------------------------------------------------------------------------

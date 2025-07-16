@@ -47,7 +47,7 @@ struct AsyncHandleStatus_s
 };
 static_assert(sizeof(AsyncHandleStatus_s) == 0x40);
 
-extern int FS_OpenAsyncFile(const char* const filePath, const int logChannel, size_t* const fileSizeOut);
+extern int FS_OpenAsyncFile(const char* const filePath, const int logChannel, size_t* const fileSizeOut, char* const openPathOut = nullptr, const size_t openPathSize = 0);
 extern void FS_CloseAsyncFile(const int fileHandle);
 
 inline int(*v_FS_OpenAsyncFile)(const char* const filePath, const int logChannel, size_t* const outFileSize);
@@ -57,9 +57,9 @@ inline int(*v_FS_ReadAsyncFile)(const int fileHandle, __int64 readOffset, unsign
 inline uint8_t(*v_FS_CheckAsyncRequest)(AsyncHandleStatus_s* pakStatus, size_t* bytesProcessed, const char** stateString);
 
 inline AsyncHandleTracker_s* g_pAsyncFileSlots;  // bufSize=1024*sizeof(FileHandleTracker_t).
-inline RHashMap_MT* g_pAsyncFileSlotMgr;         // Manages 'g_pakFileSlots'.
+inline RFixedArrayMT* g_pAsyncFileSlotMgr;         // Manages 'g_pakFileSlots'.
 inline AsyncHandleStatus_s* g_pAsyncStatusSlots; // bufSize=256*sizeof(PakStatus_t).
-inline RHashMap_MT* g_pAsyncStatusSlotMgr;       // Manages 'g_pakStatusSlots'.
+inline RFixedArrayMT* g_pAsyncStatusSlotMgr;       // Manages 'g_pakStatusSlots'.
 
 class V_AsyncIO : public IDetour
 {
@@ -87,13 +87,15 @@ class V_AsyncIO : public IDetour
 	}
 	virtual void GetVar(void) const
 	{
-		const CMemory streamDbBase = Module_FindPattern(g_GameDll, "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 54 41 56 41 57 48 83 EC 40 48 8B E9");
+		const CMemory openAsyncFileBase(v_FS_OpenAsyncFile);
 
-		g_pAsyncFileSlots = streamDbBase.Offset(0x70).FindPatternSelf("4C 8D", CMemory::Direction::DOWN, 512, 1).ResolveRelativeAddress(0x3, 0x7).RCast<AsyncHandleTracker_s*>();
-		g_pAsyncFileSlotMgr = streamDbBase.Offset(0x70).FindPatternSelf("48 8D 0D", CMemory::Direction::DOWN, 512, 2).ResolveRelativeAddress(0x3, 0x7).RCast<RHashMap_MT*>();
+		g_pAsyncFileSlots = openAsyncFileBase.Offset(0x9D).FindPatternSelf("48 8D").ResolveRelativeAddress(0x3, 0x7).RCast<AsyncHandleTracker_s*>();
+		g_pAsyncFileSlotMgr = openAsyncFileBase.Offset(0x62).FindPatternSelf("48 8D").ResolveRelativeAddress(0x3, 0x7).RCast<RFixedArrayMT*>();
 
-		g_pAsyncStatusSlots = Module_FindPattern(g_GameDll, "0F B6 C9 48 8D 05 ?? ?? ?? ??").FindPatternSelf("48 8D 05").ResolveRelativeAddress(0x3, 0x7).RCast<AsyncHandleStatus_s*>();
-		g_pAsyncStatusSlotMgr = streamDbBase.Offset(0x190).FindPatternSelf("48 8D 0D", CMemory::Direction::DOWN, 512, 2).ResolveRelativeAddress(0x3, 0x7).RCast<RHashMap_MT*>();
+		const CMemory readAsyncFileBase(v_FS_ReadAsyncFile);
+
+		g_pAsyncStatusSlots = readAsyncFileBase.Offset(0x61).FindPatternSelf("48 8D").ResolveRelativeAddress(0x3, 0x7).RCast<AsyncHandleStatus_s*>();
+		g_pAsyncStatusSlotMgr = readAsyncFileBase.Offset(0x45).FindPatternSelf("48 8D").ResolveRelativeAddress(0x3, 0x7).RCast<RFixedArrayMT*>();
 	}
 	virtual void GetCon(void) const { }
 	virtual void Detour(const bool bAttach) const;

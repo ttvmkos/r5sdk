@@ -40,6 +40,7 @@ extern ConVar* mp_gamemode;
 extern ConVar* r_visualizetraces;
 extern ConVar* r_visualizetraces_duration;
 extern ConVar* r_drawvgui;
+extern ConVar* r_drawalphasort;
 
 extern ConVar* stream_overlay;
 extern ConVar* stream_overlay_mode;
@@ -105,8 +106,13 @@ extern ConVar* bhit_enable;
 #ifndef DEDICATED
 extern ConVar* cl_threaded_bone_setup;
 
+extern ConVar* pvs_start_early;
+extern ConVar* pvs_frustumCullOnly;
+
 extern ConVar* origin_disconnectWhenOffline;
 extern ConVar* discord_updatePresence;
+
+extern ConVar* match_playlist;
 
 extern ConVar* gamepad_custom_enabled;
 extern ConVar* gamepad_custom_assist_on;

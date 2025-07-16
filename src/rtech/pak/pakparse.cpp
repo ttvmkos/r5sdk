@@ -3,6 +3,8 @@
 // Purpose: pak file loading and unloading
 //
 //=============================================================================//
+#include "tier2/zstdutils.h"
+
 #include "rtech/ipakfile.h"
 #include "rtech/async/asyncio.h"
 
@@ -220,6 +222,10 @@ static void Pak_UnloadAsync(const PakHandle_t handle)
     v_Pak_UnloadAsync(handle);
 }
 
+// paks get decoded one at a time, even for patches. therefore we can just use
+// a single context for all paks and save a bunch of runtime overhead
+static ZSTDDecoder_s s_zstdPakDecoder;
+
 #define CMD_INVALID -1
 
 // only patch cmds 4,5,6 use this array to determine their data size
@@ -233,7 +239,7 @@ static bool Pak_ProcessPakFile(PakFile_s* const pak)
     PakFileStream_s* const fileStream = &pak->fileStream;
     PakMemoryData_s* const memoryData = &pak->memoryData;
 
-    // first request is always just the header?
+    // first request is always just the header.
     size_t readStart = sizeof(PakFileHeader_s);
 
     if (fileStream->numDataChunks > 0)
@@ -306,6 +312,9 @@ static bool Pak_ProcessPakFile(PakFile_s* const pak)
 
             if (pak->isCompressed)
             {
+                if (streamDesc->compressionMode == PakDecodeMode_e::MODE_ZSTD)
+                    pak->pakDecoder.zstreamContext = &s_zstdPakDecoder.dctx;
+
                 const size_t decompressedSize = Pak_InitDecoder(&pak->pakDecoder,
                     fileStream->buffer, pak->decompBuffer,
                     PAK_DECODE_IN_RING_BUFFER_MASK, PAK_DECODE_OUT_RING_BUFFER_MASK,
@@ -328,6 +337,9 @@ static bool Pak_ProcessPakFile(PakFile_s* const pak)
 
             if (currentOutBytePos != pak->pakDecoder.decompSize)
             {
+                if (streamDesc->compressionMode == PakDecodeMode_e::MODE_ZSTD)
+                    pak->pakDecoder.allChunksStreamed = fileStream->numDataChunksProcessed == fileStream->numDataChunks;
+
                 const bool didDecode = Pak_StreamToBufferDecode(&pak->pakDecoder, 
                     fileStream->bytesStreamed, (memoryData->processedPatchedDataSize + PAK_DECODE_OUT_RING_BUFFER_SIZE), streamDesc->compressionMode);
 
@@ -335,7 +347,10 @@ static bool Pak_ProcessPakFile(PakFile_s* const pak)
                 pak->inputBytePos = pak->pakDecoder.inBufBytePos;
 
                 if (didDecode)
+                {
                     DevMsg(eDLL_T::RTECH, "%s: pak '%s' decoded successfully\n", __FUNCTION__, pak->GetName());
+                    pak->pakDecoder.zstreamContext = nullptr;
+                }
             }
         }
         else
@@ -456,7 +471,7 @@ static bool Pak_ProcessPakFile(PakFile_s* const pak)
                         return memoryData->patchSrcSize == 0;
 
                     char pakPatchPath[MAX_PATH] = {};
-                    sprintf(pakPatchPath, "%s%s", Pak_GetBaseLoadPath(), pak->memoryData.fileName);
+                    sprintf(pakPatchPath, "%s%s", Pak_GetReadPath(), pak->memoryData.fileName);
 
                     // get path of next patch rpak to load
                     if (pak->memoryData.patchIndices[pak->patchCount])
@@ -868,12 +883,12 @@ static bool Pak_SetupBuffersAndLoad(const PakHandle_t pakId)
     const char* nameUnqualified = V_UnqualifiedFileName(pakFilePath);
     char relativeFilePath[MAX_OSPATH];
 
-    // Only do this for the base pak file, path formatting is only performed on
-    // the base paks and patch paks derive from it. Patch paks are also only
-    // parsed and loaded from the base pak here.
+    // patches are only supported for paks that reside in the directory returned
+    // by the API 'Pak_GetBaseLoadPath()' relative from the executable. We only
+    // load a single patch master asset and it only tracks core paks.
     if (nameUnqualified == pakFilePath)
     {
-        snprintf(relativeFilePath, sizeof(relativeFilePath), "%s%s", Pak_GetBaseLoadPath(), pakFilePath);
+        snprintf(relativeFilePath, sizeof(relativeFilePath), "%s%s", Pak_GetReadPath(), pakFilePath);
         // if this pak is patched, load the last patch file first before proceeding
         // with any other pak that is getting patched. note that the patch number
         // does not indicate which pak file is the actual last patch file; a patch
@@ -890,8 +905,14 @@ static bool Pak_SetupBuffersAndLoad(const PakHandle_t pakId)
         pakFilePath = relativeFilePath;
     }
 
+    // This stored the actual load path of our pak file; if the pak is being
+    // loaded from a mod path, then that path will be stored here. This is
+    // needed because if a pak file has a module, then we need to load that
+    // from the same path as the pak file.
+    char actualLoadPath[MAX_OSPATH];
     size_t totalPakFileBufSize;
-    const int pakFileHandle = FS_OpenAsyncFile(pakFilePath, loadedInfo->logChannel, &totalPakFileBufSize);
+
+    const int pakFileHandle = FS_OpenAsyncFile(pakFilePath, loadedInfo->logChannel, &totalPakFileBufSize, actualLoadPath, sizeof(actualLoadPath));
 
     if (pakFileHandle == FS_ASYNC_FILE_INVALID)
     {
@@ -902,6 +923,7 @@ static bool Pak_SetupBuffersAndLoad(const PakHandle_t pakId)
     }
 
     loadedInfo->fileHandle = pakFileHandle;
+    pakFilePath = actualLoadPath; // Update it to our actual load path.
 
     // File is truncated or corrupt.
     if (totalPakFileBufSize < sizeof(PakFileHeader_s))
@@ -1001,15 +1023,17 @@ static bool Pak_SetupBuffersAndLoad(const PakHandle_t pakId)
 
     const __int64 v80 = 4 * assetCount;
     const uint64_t v90 = totalPakFileBufSize + 2080;
-    const __int64 v33 = -((int)totalPakFileBufSize + 2080 + 4 * (int)assetCount) & 7;
+    const __int64 v33 = -((__int64)totalPakFileBufSize + 2080 + 4 * (__int64)assetCount) & 7;
     const __int64 v89 = v33;
     const __int64 v34 = 4 * assetCount + totalPakFileBufSize + 2080 + v33 + 8 * memPageCount + 12 * assetCount;
-    const __int64 v35 = (-(4 * (int)assetCount + (int)totalPakFileBufSize + 2080 + (int)v33 + 8 * (int)memPageCount + 12 * (int)assetCount) & 7) + 4088i64;
+    const __int64 v35 = (-(4 * (__int64)assetCount + (__int64)totalPakFileBufSize + 2080 + (__int64)v33 + 8 * (__int64)memPageCount + 12 * (__int64)assetCount) & 7) + 4088i64;
 
     uint64_t ringBufferStreamSize;
     uint64_t ringBufferOutSize;
 
-    if ((pakHdr.flags & (PAK_HEADER_FLAGS_RTECH_ENCODED|PAK_HEADER_FLAGS_ZSTD_ENCODED)) != 0)
+    const bool isCompressed = (pakHdr.flags & (PAK_HEADER_FLAGS_RTECH_ENCODED | PAK_HEADER_FLAGS_ZSTD_ENCODED)) != 0;
+
+    if (isCompressed)
     {
         ringBufferStreamSize = PAK_DECODE_IN_RING_BUFFER_SIZE;
         ringBufferOutSize = PAK_DECODE_OUT_RING_BUFFER_SIZE;
@@ -1023,15 +1047,8 @@ static bool Pak_SetupBuffersAndLoad(const PakHandle_t pakId)
         ringBufferOutSize = PAK_DECODE_IN_RING_BUFFER_SIZE;
     }
 
-    // NOTE: for the ZStd decoder we should avoid setting the ring buffer size
-    // bellow PAK_DECODE_OUT_RING_BUFFER_SIZE as ZStd needs the entire window.
-    // Not adhering to this will result in a buffer overrun when trying to
-    // decode an RPak that has a decompressed size below PAK_DECODE_OUT_RING_BUFFER_SIZE.
-    if ((pakHdr.flags & PAK_HEADER_FLAGS_ZSTD_ENCODED) == 0)
-    {
-        if (ringBufferOutSize > pakHdr.decompressedSize && !patchIndex)
-            ringBufferOutSize = (pakHdr.decompressedSize + PAK_DECODE_IN_RING_BUFFER_SMALL_MASK) & 0xFFFFFFFFFFFFF000ui64;
-    }
+    if (ringBufferOutSize > pakHdr.decompressedSize && !patchIndex)
+        ringBufferOutSize = (pakHdr.decompressedSize + PAK_DECODE_IN_RING_BUFFER_SMALL_MASK) & 0xFFFFFFFFFFFFF000ui64;
 
     PakFile_s* const pak = (PakFile_s*)AlignedMemAlloc()->Alloc(v34 + v35 + ringBufferOutSize + ringBufferStreamSize, 8);
 
@@ -1157,7 +1174,7 @@ static bool Pak_SetupBuffersAndLoad(const PakHandle_t pakId)
 
     pak->headerSize = sizeof(PakFileHeader_s);
 
-    pak->maxCopySize = (pakHdr.flags & PAK_HEADER_FLAGS_RTECH_ENCODED|PAK_HEADER_FLAGS_ZSTD_ENCODED) != 0
+    pak->maxCopySize = isCompressed
         ? PAK_DECODE_OUT_RING_BUFFER_MASK
         : PAK_DECODE_IN_RING_BUFFER_MASK;
 

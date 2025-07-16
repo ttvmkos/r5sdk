@@ -92,6 +92,7 @@
 0x3E9B0B: mov r8, qword ptr ds:[r15+rax*8] // Remove immediate '0x235A7918'.
 0x3E9D5B: mov rcx, qword ptr ds:[r15+rax*8]
 0x3E9DC1: mov rcx, qword ptr ds:[r15+rax*8]
+0x3E9E18: mov r15, qword ptr ds:[0x00000001635A7918] // Swap LEA module base with MOV 's_textureStreamMgr.streamingTextures'.
 0x3E9E30: mov r11, qword ptr ds:[r15+rax*8]
 
 // Dereference old array to get pointer to new array for the call to TextureStreamMgr_FillItems
@@ -140,6 +141,128 @@
 0x6FD0E1: "movaps  xmm0, xmm6" // Move frame time directly into the register that originally contained the clamped frame time.
 0x6FD0EE: "nop (x4)" // Nop 'minss   xmm0, xmm6' (extraneous clamp).
 0x6FD114: "nop (x3)" // Nop 'movaps  xmm6, xmm0' (extraneous move operation).
+
+// If we have a partial install and are still downloading optional streaming files, the game would unload the current level VPK
+// and reload all RPak files once we have fully downloaded all the optional files and disconnected from the server. However, on
+// listen server builds, the unloading of the VPK and RPak's happen too early; it will unload the files while the server is still
+// active. We should check on CHostState::m_bActiveGame and only unload the current level VPK and RPak's if this is false. The
+// RPak reloading logic has been fixed in `Mod_RunPakJobFrame`, however the VPK code is inline and the check has to be embedded
+// in the assembly here.
+0x2969B7: jmp 0x00000001412951A8                      // jump to code cave.
+0x12945A8: cmp byte ptr ds:[0x0000000141736384], 0x0  // Check if g_HostState.m_bActiveGame is false.
+0x12945AF: jne 0x00000001402975C5                     // Jump to `Mod_RunPakJobFrame` call if condition isn't met, this new check skips `Mod_UnloadCurrentLevelVPK` as its still being used.
+// Below the reconstruction of overwritten bytes caused by the long jump to code cave.
+0x12945B5: cmp dword ptr ds:[0x000000014180A128], 0x2 // Checks if client signon is SIGNONSTATE_CONNECTED.
+0x12945BC: jmp 0x00000001402975BE                     // jump back to original code (handles the SIGNONSTATE_CONNECTED check).
+
+// ------------------------------------------------------------------------------------------------
+// This fixes an engine bug causing alphasort (translucent world) textures to not stream when using
+// the GPU driven feedback approach. Since we need to run and apply an update during R_DrawAlphaSort(),
+// we need to create a separate set of DX buffers and handles to allow this to work without interfering
+// with other render passes. For this, the static arrays had to be increased with the following set of
+// patches bellow.
+// The immediate to access 0x1671CAA80 has been increased with 4 bytes to create enough space
+// for 3rd elem in int array at 0x1671CAA78, 0x1671CAA80 is now at 0x1671CAA84.
+// *** sub_1403F4F80 ***
+0x3F45EF: mov eax, dword ptr ds:[r13+r15*4+0x271CAA84]
+0x3F482A: mov dword ptr ds:[r13+r15*4+0x271CAA84], eax
+
+// *** sub_1403F4AA0 ***
+0x3F4091: mov dword ptr ds:[0x00000001671CAA84], 0x3
+0x3F409B: mov dword ptr ds:[0x00000001671CAA88], 0x3
+0x3F40A5: mov dword ptr ds:[0x00000001671CAA8C], 0x3 // NEW: sets the 3rd elem
+// all other instructions from here have been shifted to accomodate the new
+// instruction at 0x3F40A6.
+// ------------------------
+// Since the increase of the i32 arrays above with 1 element each (8 bytes total). We need to
+// shift this bool at 0x1671CAA88 with 8 bytes downwards as its originalspace has now been used.
+// This is the only place this bool is ever accessed from. We have 24 bytes padding before we
+// reach our next static element so enough space.
+0x3F40B7: mov byte ptr ds:[0x00000001671CAA90], 0x1
+
+// *** sub_1403F4A30 ***
+0x3F3E84: mov dword ptr ds:[0x00000001671CAA84], 0x3
+0x3F3E8E: mov dword ptr ds:[0x00000001671CAA88], 0x3
+// Jump to code cave to set the 3rd (new) element, because there was not enough space left in
+// the current function frame.
+0x3F3E98: jmp 0x00000001412951E1
+0x12945E1: mov dword ptr ds:[0x00000001671CAA8C], 0x3
+0x12945EB: jmp 0x00000001403F4A2B // Jump back to top of the function frame
+0x3F3E2B: add rsp, 0x28 // Restored instructions overwritten by long jmp to codecave.
+0x3F3E2F: ret
+
+// Since we increased dword_1671CAA48 and qword_1671CAA10 from 6 elements to 9 elements,
+// we need to setup the last 3 elements here as well, so this immediate has been increased
+// from 2 to 3 to take these into account.
+0x3F3FA5: mov qword ptr ss:[rbp+0x7FF90], 0x3
+
+// 1671CAA10 has been moved to address 1635A7940, because there was not enough room left in our
+// old location to increase it from 6 elements to 9 to account for the alphasort render step.
+// 1635A7940 is inside our old static texture streaming handle array that has been increased in
+// commit ... -- since this large array is no longer used, we can use it for this change.
+0x3F3F9E: lea rbx, ds:[0x00000001635A7940]
+0x3F45D2: mov rdx, qword ptr ds:[r13+rbp*8+0x235A7940]
+0x3F462C: mov rdx, qword ptr ds:[r13+rdi*8+0x235A7940]
+0x3F4729: mov rdx, qword ptr ds:[r13+rdi*8+0x235A7940]
+
+// 1671CAA48 has been moved to address 1635A7988, same reason as above, this array contains
+// handles for the dx buffers.
+0x3F3F97: lea rdi, ds:[0x00000001635A7988]
+0x3F44F8: lea rsi, ds:[r13+0x235A7988]
+// ------------------------------------------------------------------------------------------------
+
+// ------------------------------------------------------------------------------------------------
+// This fixes a regression that was caused after a refactor on HUD data structures; the base sizes
+// are now written in a child structure, however, the function `Hud_SetScale` still accessed the old
+// root structure members. This regression broke the HUD overlays for weapons such as the smart pistol,
+// SRAM rocket launcher titan homing rockets, etc.. as well as the abstracted script function binding.
+// The `Hud_SetScaleX()` and `Hud_SetScaleY()` methods actually do access the correct child data members
+// confirming this function to be broken. The patch is simple; the child data structure is accessed
+// below our incorrect instructions for obtaining the base size, we just move the instruction above the
+// getters for the base size, and use that register instead with the updated offsets to obtain the right values.
+
+// *** Hud_SetScale ***
+0x9841DA: mov rcx, qword ptr ds:[r14+0x28]
+0x9841DE: movd xmm0, dword ptr ds:[rcx+0x144]
+0x9841E6: movd xmm1, dword ptr ds:[rcx+0x148]
+// ------------------------------------------------------------------------------------------------
+
+// ------------------------------------------------------------------------------------------------
+// This fixes a crash if we run out of tracing slots, the array is of a fixed size and can run
+// out of room in which the slot -1 is returned and the structure pointer is set to NULL. However,
+// the structure pointer is still dereferenced leading to the crash. For the patch, the nulling of
+// this register has been removed and the new space is used to transform the short jmp instruction
+// to a long jmp to return gadget (which for all these functions either sets the slot result (-1)
+// to the provided pointer, or into EAX).
+
+// *** sub_1408AD8D0 ***
+0x8ACD28: jmp 0x00000001408ADA0E // long jump to return gadget if slot = -1 (used to be short jmp to rest of code exec).
+
+// *** sub_1405F2320 ***
+0x5F1841: jmp 0x00000001405F252D
+
+// *** sub_1405F2570 ***
+0x5F1A7A: jmp 0x00000001405F2766
+
+// *** sub_140608EE0 ***
+0x608692: jmp 0x0000000140609370
+
+// *** sub_14085D900 ***
+0x85D57E: je 0x000000014085E22C
+
+// *** sub_1408AD720 ***
+0x8ACB78: jmp 0x00000001408AD8AE
+
+// *** sub_140951D30 ***
+0x95118D: jmp 0x0000000140951E8B
+
+// *** sub_140954C60 ***
+0x955206: jmp 0x0000000140955EC9
+0x955309: jmp 0x0000000140955FD3
+
+// *** sub_140A46ED0 ***
+0xA46531: jmp 0x0000000140A4722E
+// ------------------------------------------------------------------------------------------------
 
 /////////////////////////////
 /////////////////////////////

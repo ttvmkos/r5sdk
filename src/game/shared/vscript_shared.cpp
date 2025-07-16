@@ -29,7 +29,10 @@
 #include "engine/client/cl_main.h"
 #include "engine/cmodel_bsp.h"
 #include "vscript/languages/squirrel_re/include/sqvm.h"
+#include "vscript_gamedll_defs.h"
 #include "vscript_shared.h"
+#include "pluginsystem/pluginsystem.h"
+#include "game/shared/pluginsystem/modsystem.h"
 
 //-----------------------------------------------------------------------------
 // Purpose: expose SDK version to the VScript API
@@ -81,12 +84,15 @@ static SQRESULT SharedScript_GetAvailablePlaylists(HSQUIRRELVM v)
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: forces a script error
+//-----------------------------------------------------------------------------
 static SQRESULT SharedScript_ScriptError(HSQUIRRELVM v)
 {
     SQChar* pString = NULL;
-    SQInteger a4 = 0;
+    SQInteger nLen = 0;
 
-    if (SQVM_sprintf(v, 0, 1, &a4, &pString) < 0)
+    if (v_sqstd_format(v, 0, SQTrue, &nLen, &pString) < 0)
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
 
     v_SQVM_ScriptError("%s", pString);
@@ -99,12 +105,21 @@ static SQRESULT SharedScript_ScriptError(HSQUIRRELVM v)
 //---------------------------------------------------------------------------------
 void Script_RegisterCommonAbstractions(CSquirrelVM* s)
 {
-    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, GetSDKVersion, "Gets the SDK version as a string", "string", "");
+    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, GetSDKVersion, "Gets the SDK version as a string", "string", "", false);
 
-    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, GetAvailableMaps, "Gets an array of all available maps", "array< string >", "");
-    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, GetAvailablePlaylists, "Gets an array of all available playlists", "array< string >", "");
+    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, GetAvailableMaps, "Gets an array of all available maps", "array< string >", "", false);
+    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, GetAvailablePlaylists, "Gets an array of all available playlists", "array< string >", "", false);
 
-    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, ScriptError, "Throws a script error", "void", "string format, ...");
+    DEFINE_SHARED_SCRIPTFUNC_NAMED(s, ScriptError, "Throws a script error", "void", "string format, ...", true);
+
+    Script_RegisterModSystemFunctions(s);
+
+    // NOTE: plugin functions must always come after SDK functions!
+    for (auto& callback : !PluginSystem()->GetRegisterSharedScriptFuncsCallbacks())
+    {
+        // Register script functions inside plugins.
+        callback.Function()(s);
+    }
 }
 
 //---------------------------------------------------------------------------------

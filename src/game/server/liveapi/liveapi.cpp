@@ -14,6 +14,7 @@
 #include "engine/sys_utils.h"
 #include "vscript/languages/squirrel_re/include/sqtable.h"
 #include "vscript/languages/squirrel_re/include/sqarray.h"
+#include "game/shared/vscript_gamedll_defs.h"
 #include "game/server/vscript_server.h"
 #include "liveapi.h"
 
@@ -604,8 +605,7 @@ static bool LiveAPI_SetLoadoutConfiguration(HSQUIRRELVM const v, rtech::liveapi:
 		if (sq_isnull(node.key))
 			continue;
 
-		if (!ranOuterLoop)
-			ranOuterLoop = true;
+		ranOuterLoop = true;
 
 		if (!LiveAPI_CheckSwitchType(v, node.key))
 			return false;
@@ -641,8 +641,7 @@ static bool LiveAPI_SetLoadoutConfiguration(HSQUIRRELVM const v, rtech::liveapi:
 			if (sq_isnull(fieldObj))
 				continue;
 
-			if (!ranInnerLoop)
-				ranInnerLoop = true;
+			ranInnerLoop = true;
 
 			LIVEAPI_ENSURE_TYPE(v, fieldObj, OT_TABLE, msg, fieldNum);
 
@@ -2283,11 +2282,11 @@ static SQRESULT ServerScript_LiveAPI_StopLogging(HSQUIRRELVM v)
 
 void Script_RegisterLiveAPIFunctions(CSquirrelVM* const s)
 {
-	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_IsValidToRun, "Whether the LiveAPI system is enabled and able to run", "bool", "");
-	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_LogRaw, "VM bridge to the LiveAPI logger from scripts", "void", "table< int, var > data, int eventType");
+	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_IsValidToRun, "Whether the LiveAPI system is enabled and able to run", "bool", "", false);
+	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_LogRaw, "VM bridge to the LiveAPI logger from scripts", "void", "table< int, var > data, int eventType", false);
 
-	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_StartLogging, "Start the LiveAPI session logger", "void", "");
-	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_StopLogging, "Stop the LiveAPI session logger", "void", "");
+	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_StartLogging, "Start the LiveAPI session logger", "void", "", false);
+	DEFINE_SERVER_SCRIPTFUNC_NAMED(s, LiveAPI_StopLogging, "Stop the LiveAPI session logger", "void", "", false);
 }
 
 void Script_RegisterLiveAPIEnums(CSquirrelVM* const s)

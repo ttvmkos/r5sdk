@@ -11,7 +11,12 @@
 #include "sqstring.h"
 #include "vsquirrel.h"
 
+//---------------------------------------------------------------------------------
+// Console variables
+//---------------------------------------------------------------------------------
 static ConVar script_profile_codecalls("script_profile_codecalls", "0", FCVAR_DEVELOPMENTONLY, "Prints duration of native calls to script functions.", "0 = none, 1 = slow calls, 2 = all ( !slower! )");
+static ConVar script_show_output("script_show_output", "0", FCVAR_RELEASE, "Prints the VM output to the console ( !slower! ).", true, 0.f, true, 2.f, "0 = log to file. 1 = 0 + log to console. 2 = 1 + log to notify");
+static ConVar script_show_warning("script_show_warning", "0", FCVAR_RELEASE, "Prints the VM warning output to the console ( !slower! ).", true, 0.f, true, 2.f, "0 = log to file. 1 = 0 + log to console. 2 = 1 + log to notify");
 
 // Callbacks for registering abstracted script functions.
 void(*ServerScriptRegister_Callback)(CSquirrelVM* const s) = nullptr;
@@ -251,87 +256,109 @@ void CSquirrelVM::SetAsCompiler(RSON::Node_t* rson)
 }
 
 //---------------------------------------------------------------------------------
-// Purpose: Precompiles mod scripts
+// Purpose: prints the output of each VM to the console
+// Input  : *sqvm - 
+//			*fmt - 
+//			... - 
 //---------------------------------------------------------------------------------
-void CSquirrelVM::CompileModScripts()
+SQRESULT Script_PrintFunc(HSQUIRRELVM v, SQChar* fmt, ...)
 {
-	FOR_EACH_VEC(ModSystem()->GetModList(), i)
+	eDLL_T remoteContext;
+	// We use the sqvm pointer as index for SDK usage as the function prototype has to match assembly.
+	// The compiler 'pointer truncation' warning couldn't be avoided, but it's safe to ignore it here.
+#pragma warning(push)
+#pragma warning(disable : 4302 4311)
+	switch (static_cast<SQCONTEXT>(reinterpret_cast<int>(v)))
+#pragma warning(pop)
 	{
-		const CModSystem::ModInstance_t* mod = ModSystem()->GetModList()[i];
+	case SQCONTEXT::SERVER:
+		remoteContext = eDLL_T::SCRIPT_SERVER;
+		break;
+	case SQCONTEXT::CLIENT:
+		remoteContext = eDLL_T::SCRIPT_CLIENT;
+		break;
+	case SQCONTEXT::UI:
+		remoteContext = eDLL_T::SCRIPT_UI;
+		break;
+	case SQCONTEXT::NONE:
+		remoteContext = eDLL_T::NONE;
+		break;
+	default:
 
-		if (!mod->IsEnabled())
-			continue;
-
-		if (!mod->m_bHasScriptCompileList)
-			continue;
-
-		// allocs parsed rson buffer
-		RSON::Node_t* rson = mod->LoadScriptCompileList();
-
-		if (!rson)
-			Error(GetNativeContext(), NO_ERROR, 
-				"%s: Failed to load RSON file '%s'\n", 
-				__FUNCTION__, mod->GetScriptCompileListPath().Get());
-
-		const char* scriptPathArray[MAX_PRECOMPILED_SCRIPTS];
-		int scriptCount = 0;
-
-		SetAsCompiler(rson);
-
-		if (Script_ParseScriptList(
-			GetContext(),
-			mod->GetScriptCompileListPath().Get(),
-			rson,
-			(char**)scriptPathArray, &scriptCount,
-			nullptr, 0))
+		SQCONTEXT scriptContext = v->GetContext();
+		switch (scriptContext)
 		{
-			std::vector<char*> newScriptPaths;
-			for (int j = 0; j < scriptCount; ++j)
-			{
-				// add "::MOD::" to the start of the script path so it can be
-				// identified from Script_LoadScript later, this is so we can
-				// avoid script naming conflicts by removing the engine's
-				// forced directory of "scripts/vscripts/" and adding the mod
-				// path to the start
-				CUtlString scriptPath;
-				scriptPath.Format("%s%s%s%s",
-					MOD_SCRIPT_PATH_IDENTIFIER, mod->GetBasePath().Get(),
-					GAME_SCRIPT_PATH, scriptPathArray[j]);
-
-				char* pszScriptPath = _strdup(scriptPath.Get());
-
-				// normalise slash direction
-				V_FixSlashes(pszScriptPath);
-
-				newScriptPaths.emplace_back(pszScriptPath);
-				scriptPathArray[j] = pszScriptPath;
-			}
-
-			switch (GetContext())
-			{
-			case SQCONTEXT::SERVER:
-			{
-				CSquirrelVM__PrecompileServerScripts(this, GetContext(), (char**)scriptPathArray, scriptCount);
-				break;
-			}
-			case SQCONTEXT::CLIENT:
-			case SQCONTEXT::UI:
-			{
-				CSquirrelVM__PrecompileClientScripts(this, GetContext(), (char**)scriptPathArray, scriptCount);
-				break;
-			}
-			}
-
-			// clean up our allocated script paths
-			for (char* path : newScriptPaths)
-			{
-				free(path);
-			}
+		case SQCONTEXT::SERVER:
+			remoteContext = eDLL_T::SCRIPT_SERVER;
+			break;
+		case SQCONTEXT::CLIENT:
+			remoteContext = eDLL_T::SCRIPT_CLIENT;
+			break;
+		case SQCONTEXT::UI:
+			remoteContext = eDLL_T::SCRIPT_UI;
+			break;
+		default:
+			remoteContext = eDLL_T::NONE;
+			break;
 		}
-
-		RSON_Free(rson, AlignedMemAlloc());
-		AlignedMemAlloc()->Free(rson);
+		break;
 	}
+
+	// Determine whether this is an info or warning log.
+	const bool bLogLevelOverride = (g_bSQAuxError || (g_bSQAuxBadLogic && v == g_pErrorVM));
+	LogLevel_t level = LogLevel_t(script_show_output.GetInt());
+	LogType_t type = bLogLevelOverride ? LogType_t::SQ_WARNING : LogType_t::SQ_INFO;
+
+	// Always log script related problems to the console.
+	if (type == LogType_t::SQ_WARNING &&
+		level == LogLevel_t::LEVEL_DISK_ONLY)
+	{
+		level = LogLevel_t::LEVEL_CONSOLE;
+	}
+
+	va_list args;
+	va_start(args, fmt);
+	CoreMsgV(type, level, remoteContext, "squirrel_re", fmt, args);
+	va_end(args);
+
+	return SQ_OK;
+}
+
+//---------------------------------------------------------------------------------
+// Purpose: prints the warnings of each VM to the console
+// Input  : *v -
+//          nformatstringidx -  
+//---------------------------------------------------------------------------------
+SQBool Script_WarningFunc(HSQUIRRELVM v, SQInteger nformatstringidx)
+{
+	SQInteger strLen = 0;
+	SQChar* str = nullptr;
+
+	const SQRESULT result = v_sqstd_format(v, nformatstringidx, SQTrue, &strLen, &str);
+
+	const SQCONTEXT scriptContext = v->GetContext();
+	eDLL_T remoteContext;
+
+	switch (scriptContext)
+	{
+	case SQCONTEXT::SERVER:
+		remoteContext = eDLL_T::SCRIPT_SERVER;
+		break;
+	case SQCONTEXT::CLIENT:
+		remoteContext = eDLL_T::SCRIPT_CLIENT;
+		break;
+	case SQCONTEXT::UI:
+		remoteContext = eDLL_T::SCRIPT_UI;
+		break;
+	default:
+		remoteContext = eDLL_T::NONE;
+		break;
+	}
+
+	CoreMsg(LogType_t::SQ_WARNING, static_cast<LogLevel_t>(script_show_warning.GetInt()),
+		remoteContext, NO_ERROR, "squirrel_re(warning)", "%s", str);
+
+	return SQ_SUCCEEDED(result);
 }
 
 //---------------------------------------------------------------------------------
@@ -340,4 +367,7 @@ void VSquirrel::Detour(const bool bAttach) const
 	DetourSetup(&CSquirrelVM__Init, &CSquirrelVM::Init, bAttach);
 	DetourSetup(&CSquirrelVM__DestroySignalEntryListHead, &CSquirrelVM::DestroySignalEntryListHead, bAttach);
 	DetourSetup(&CSquirrelVM__ExecuteFunction, &Script_ExecuteFunction, bAttach);
+
+	DetourSetup(&v_Script_PrintFunc, &Script_PrintFunc, bAttach);
+	DetourSetup(&v_Script_WarningFunc, &Script_WarningFunc, bAttach);
 }

@@ -598,6 +598,12 @@ void CSurface::LoadSettings()
 	this->m_ConsoleToggle->SetChecked(sv->GetBool("enableConsole"));
 	this->m_ColorConsoleToggle->SetChecked(sv->GetBool("colorConsole"));
 
+	// Main.
+	this->m_ModeCombo->SetSelectedIndex(sv->GetInt("hostMode", 0));
+	this->m_HostNameTextBox->SetText(sv->GetString("hostName"));
+	this->m_VisibilityCombo->SetSelectedIndex(sv->GetInt("hostVisibility", 0));
+	this->m_LaunchArgsTextBox->SetText(sv->GetString("commandLine"));
+
 	// Engine.
 	this->m_ReservedCoresTextBox->SetText(sv->GetString("reservedCoreCount", "-1"));
 	this->m_WorkerThreadsTextBox->SetText(sv->GetString("workerThreadCount", "-1"));
@@ -653,11 +659,17 @@ void CSurface::SaveSettings()
 	kv.AddSubKey(sv);
 
 	// Game.
-	sv->SetString("playlistsFile", this->m_PlaylistFileTextBox->Text().ToCString());
 	sv->SetBool("enableCheats", this->m_CheatsToggle->Checked());
 	sv->SetBool("enableDeveloper", this->m_DeveloperToggle->Checked());
 	sv->SetBool("enableConsole", this->m_ConsoleToggle->Checked());
 	sv->SetBool("colorConsole", this->m_ColorConsoleToggle->Checked());
+	sv->SetString("playlistsFile", this->m_PlaylistFileTextBox->Text().ToCString());
+
+	// Main.
+	sv->SetInt("hostMode", this->m_ModeCombo->SelectedIndex());
+	sv->SetString("hostName", this->m_HostNameTextBox->Text().ToCString());
+	sv->SetInt("hostVisibility", this->m_VisibilityCombo->SelectedIndex());
+	sv->SetString("commandLine", this->m_LaunchArgsTextBox->Text().ToCString());
 
 	// Engine.
 	sv->SetString("reservedCoreCount", this->m_ReservedCoresTextBox->Text().ToCString());
@@ -925,36 +937,36 @@ void CSurface::GetVirtualItem(const std::unique_ptr<Forms::RetrieveVirtualItemEv
 	pEventArgs->Style.BackColor = pSender->BackColor();
 	pSurface->m_ConsoleListView->SetVirtualListSize(static_cast<int32_t>(pSurface->m_LogList.size()));
 
-	static const Drawing::Color cColor[] =
+	static const int levelIdxRemap[] = {
+		0, // Info
+		3, // Unused
+		1, // Warn
+		2, // Error
+		3, // Unused
+		3, // Unused
+	};
+
+	static const Drawing::Color colorMap[] =
 	{
 		Drawing::Color(92, 236, 89),   // Info
-
-		Drawing::Color(255, 255, 255),   // Unused
-
 		Drawing::Color(236, 203, 0),   // Warn
 		Drawing::Color(236, 28, 0),    // Error
-
-		Drawing::Color(255, 255, 255),   // Unused
-		Drawing::Color(255, 255, 255),   // Unused
+		Drawing::Color(255, 255, 255), // Unused
 	};
-	static const String svLevel[] =
+
+	static const String levelString[] =
 	{
 		"info",
-
-		"other",
-
 		"warning",
 		"error",
-
-		"other",
-		"other",
+		"unused",
 	};
 
 	switch (pEventArgs->SubItemIndex)
 	{
 	case 0:
-		pEventArgs->Style.ForeColor = cColor[(int)pSurface->m_LogList[pEventArgs->ItemIndex].m_nLevel];
-		pEventArgs->Text = svLevel[(int)pSurface->m_LogList[pEventArgs->ItemIndex].m_nLevel];
+		pEventArgs->Style.ForeColor = colorMap[levelIdxRemap[(int)pSurface->m_LogList[pEventArgs->ItemIndex].m_nLevel]];
+		pEventArgs->Text = levelString[levelIdxRemap[(int)pSurface->m_LogList[pEventArgs->ItemIndex].m_nLevel]];
 		break;
 	case 1:
 		pEventArgs->Text = pSurface->m_LogList[pEventArgs->ItemIndex].m_svText;
@@ -1096,7 +1108,7 @@ void CSurface::AppendHostParameters(string& svParameters)
 	if (!String::IsNullOrEmpty(this->m_HostNameTextBox->Text()))
 	{
 		AppendParameterInternal(svParameters, "+hostname", this->m_HostNameTextBox->Text().ToCString());
-		const char* szMode = "0"; // '0' = Offline (default).
+		const char* szMode;
 
 		switch (static_cast<eVisibility>(this->m_VisibilityCombo->SelectedIndex()))
 		{
@@ -1110,6 +1122,9 @@ void CSurface::AppendHostParameters(string& svParameters)
 			szMode = "1";
 			break;
 		}
+		default:
+			szMode = "0"; // '0' = Offline (default).
+			break;
 		}
 
 		AppendParameterInternal(svParameters, "+pylon_host_visibility", szMode);
@@ -1123,7 +1138,10 @@ void CSurface::AppendHostParameters(string& svParameters)
 void CSurface::AppendNetParameters(string& svParameters)
 {
 	AppendParameterInternal(svParameters, "+net_encryptionEnable", this->m_NetEncryptionToggle->Checked() ? "1" : "0");
-	AppendParameterInternal(svParameters, "+net_useRandomKey", this->m_NetRandomKeyToggle->Checked() ? "1" : "0");
+
+	if (!this->m_NetRandomKeyToggle->Checked())
+		AppendParameterInternal(svParameters, "-norandomkey");
+
 	AppendParameterInternal(svParameters, "+net_queued_packet_thread", this->m_QueuedPacketThread->Checked() ? "1" : "0");
 
 	if (this->m_NoTimeOutToggle->Checked())
@@ -1317,7 +1335,7 @@ eLaunchMode CSurface::BuildParameter(string& svParameters)
 uint64_t CSurface::GetProcessorAffinity(string& svParameters)
 {
 	char* pEnd;
-	const uint64_t nProcessorAffinity = strtoull(this->m_ProcessorAffinityTextBox->Text().ToCString(), &pEnd, 16);
+	const uint64_t nProcessorAffinity = strtoull(this->m_ProcessorAffinityTextBox->Text().ToCString(), &pEnd, 0);
 
 	if (nProcessorAffinity)
 	{
