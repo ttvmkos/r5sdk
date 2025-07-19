@@ -243,8 +243,8 @@ SQBool sq_release(HSQUIRRELVM v, SQObject* po);
 
 //void sq_newclosure(HSQUIRRELVM v, SQFUNCTION f, SQUnsignedInteger nupvalues);
 void sq_pushuserpointer(HSQUIRRELVM v, void* p);
-void sq_pushobject(HSQUIRRELVM v, SQObject& obj);
-void sq_push(HSQUIRRELVM v, SQObject& obj);
+//void sq_pushobject(HSQUIRRELVM v, SQObject& obj);
+//void sq_push(HSQUIRRELVM v, SQObject& obj);
 void sq_pushnull(HSQUIRRELVM v);
 SQObjectType sq_gettype(HSQUIRRELVM v, SQInteger idx);
 SQRESULT sq_next(HSQUIRRELVM v, SQInteger idx);

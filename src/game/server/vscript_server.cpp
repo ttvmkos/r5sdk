@@ -527,16 +527,18 @@ static SQRESULT ServerScript_AddBanByID(HSQUIRRELVM v)
         bResult = false;
     }
 
-    if (g_BanSystem.AddEntry(ip, id))
+    netadr_t netAddress;
+    if (netAddress.SetFromString(ip, true))
     {
-        g_BanSystem.SaveList();
-        bResult = true;
+        if (g_BanSystem.AddEntry(&netAddress, id))
+        {
+            g_BanSystem.SaveList();
+            bResult = true;
+        }
     }
-
 
     sq_pushbool(v, bResult);
     return SQ_OK;
-
 }
 
 std::atomic<int64_t> g_MatchID{ 0 };
@@ -1563,39 +1565,40 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, NavMesh_GetNearestPosInBounds, "Finds the nearest position to the provided point on the hull's NavMesh using provided bounds as extents", "vector ornull", "vector searchPoint, vector halfExtents, int hullType", false);
 
     //for stat settings (api keys, discord webhooks, server identifiers, preferences))
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerGetSetting__internal, "Fetches value by key", "string", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerReloadConfig__internal, "Reloads R5R.DEV config file", "void", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerGetSetting__internal, "Fetches value by key", "string", "string", false );
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerReloadConfig__internal, "Reloads R5R.DEV config file", "void", "", false);
 
     //for tracker 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, InitializeTrackerLogThread__internal, "Initializes internal logevent thread", "void", "bool");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerLogEvent__internal, "Logs event with GameEvent,Encryption", "void", "string, bool");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerMatchID__internal, "Gets the match ID", "string", "");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerStopLogging__internal, "Stops the logging thread, writes remaining queued messages", "void", "bool");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerIsLogging__internal, "Checks if the log thread is running, atomic", "bool", "");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerGetLogState__internal, "Checks various states, returns true false", "bool", "int");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCleanupLogs__internal, "Deletes oldest logs in platform/eventlogs when directory exceeds 20mb", "void", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, InitializeTrackerLogThread__internal, "Initializes internal logevent thread", "void", "bool", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerLogEvent__internal, "Logs event with GameEvent,Encryption", "void", "string, bool", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerMatchID__internal, "Gets the match ID", "string", "", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerStopLogging__internal, "Stops the logging thread, writes remaining queued messages", "void", "bool", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerIsLogging__internal, "Checks if the log thread is running, atomic", "bool", "", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerGetLogState__internal, "Checks various states, returns true false", "bool", "int", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCleanupLogs__internal, "Deletes oldest logs in platform/eventlogs when directory exceeds 20mb", "void", "", false);
 
     // for tracker api
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchGlobalTrackerSettings__internal, "Fetches global settings based on query", "string", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchBatchPersistenceData__internal, "Fetches batch player stats queries", "void", "array< string >, array< string >, array< string >"); //specify what stats|settings
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchPlayerPersistenceData__internal, "Initializes grabbing stats for player", "void", "string, array< string >, array< string >"); //specify what stats|settings
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetPlayerPersistenceData__internal, "Gets stats table for player from native map", "table", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerResetStats__internal, "Sets map value for player_oid stats to empty string", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdateLiveStats__internal, "Updates live server stats R5R.DEV", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdatePlayerCount__internal, "Updates LIVE player count on R5R.DEV", "void", "string, string, string, string, string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEndMatchUpdate__internal, "Updates match recap on R5R.DEV", "void", "string, string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEAVerify__internal, "Verifys EA Account on R5R.DEV", "void", "string, string, string");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchGlobalTrackerSettings__internal, "Fetches global settings based on query", "string", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchBatchPersistenceData__internal, "Fetches batch player stats queries", "void", "array< string >, array< string >, array< string >", false); //specify what stats|settings
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, FetchPlayerPersistenceData__internal, "Initializes grabbing stats for player", "void", "string, array< string >, array< string >", false); //specify what stats|settings
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetPlayerPersistenceData__internal, "Gets stats table for player from native map", "table", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerResetStats__internal, "Sets map value for player_oid stats to empty string", "void", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdateLiveStats__internal, "Updates live server stats R5R.DEV", "void", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdatePlayerCount__internal, "Updates LIVE player count on R5R.DEV", "void", "string, string, string, string, string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEndMatchUpdate__internal, "Updates match recap on R5R.DEV", "void", "string, string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEAVerify__internal, "Verifys EA Account on R5R.DEV", "void", "string, string, string", false);
 
     // for debugging the sqvm
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqprint__internal, "Prints string to console window from sqvm", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqerror__internal, "Prints error string to console window from sqvm", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqwarning__internal, "Prints warning string to console window from sqvm", "void", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, PrintStack, "PRINT STACK", "void", "");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqprint__internal, "Prints string to console window from sqvm", "void", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqerror__internal, "Prints error string to console window from sqvm", "void", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqwarning__internal, "Prints warning string to console window from sqvm", "void", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, PrintStack, "PRINT STACK", "void", "", false);
 
     //send a message as a bot. 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCreateServerBot__internal, "Creates a bot to send messages", "array< int >", "string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerServerMsg__internal, "Says message from specified senderId", "void", "string,int");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SaveRecordedAnimation, "Saves an anim_recording asset to be used by bakery. (dev only)", "void", "var recordedAnim, string fileName");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerCreateServerBot__internal, "Creates a bot to send messages", "array< int >", "string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerServerMsg__internal, "Says message from specified senderId", "void", "string,int", false);
+
+    //default sdk
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, SaveRecordedAnimation, "Saves an anim_recording asset to be used by bakery. (dev only)", "void", "var recordedAnim, string fileName", false);
 }
 
@@ -1614,8 +1617,7 @@ void Script_RegisterAdminServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByName, "Bans a player from the server by name", "void", "string name, string reason", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerById, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason", false);
 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by ip & nucleus id, returns true for success", "bool", "string, string");
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle");
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by ip & nucleus id, returns true for success", "bool", "string, string", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle", false);
 }
 

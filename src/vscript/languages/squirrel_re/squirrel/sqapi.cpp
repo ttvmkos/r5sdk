@@ -131,12 +131,6 @@ void sq_pop(HSQUIRRELVM v, SQInteger nelemstopop)
 }
 
 //---------------------------------------------------------------------------------
-void sq_pushnull(HSQUIRRELVM v)
-{
-	v->Push(_null_);
-}
-
-//---------------------------------------------------------------------------------
 SQRESULT sq_pushroottable(HSQUIRRELVM v)
 {
 	v->Push(v->_roottable);
