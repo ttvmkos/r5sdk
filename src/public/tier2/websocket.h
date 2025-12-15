@@ -135,6 +135,8 @@ public:
 	void SendData(const char* const dataBuf, const int32_t dataSize);
 	bool IsInitialized() const;
 
+	int32_t ReceiveData(char* outBuf, int32_t bufSize);
+
 private:
 	bool m_initialized;
 	ConnParams_s m_connParams;

@@ -528,7 +528,7 @@ static SQRESULT ServerScript_AddBanByID(HSQUIRRELVM v)
     }
 
     netadr_t netAddress;
-    if (netAddress.SetFromString(ip, true))
+    if (netAddress.SetFromString(ip, false))
     {
         if (g_BanSystem.AddEntry(&netAddress, id))
         {
@@ -815,14 +815,14 @@ static SQRESULT ServerScript_TrackerEAVerify__internal(HSQUIRRELVM v)
                 status_num = std::stoi(status);
             }
             catch (const std::invalid_argument& e) {
-                Msg(eDLL_T::SERVER, "Error: Invalid argument for conversion: %s in %s\n", e.what(), __FUNCTION__);
+                Msg(eDLL_T::SERVER, "Error: Invalid argument for conversion: %s in ServerScript_TrackerEAVerify__internal\n", e.what());
             }
             catch (const std::out_of_range& e) {
-                Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s in %s\n", e.what(), __FUNCTION__);
+                Msg(eDLL_T::SERVER, "Error: Value out of range for conversion: %s in ServerScript_TrackerEAVerify__internal\n", e.what());
             }
             catch (...)
             {
-                Msg(eDLL_T::SERVER, "Unknown error in %s\n", __FUNCTION__);
+                Msg(eDLL_T::SERVER, "Unknown error in ServerScript_TrackerEAVerify__internal\n");
             }
 
             if (g_pServer->IsActive())
@@ -968,23 +968,23 @@ static SQRESULT ServerScript_GetPlayerPersistenceData__internal(HSQUIRRELVM v)
     const SQChar* player_oid = nullptr;
 
     if (SQ_FAILED(sq_getstring(v, 2, &player_oid)) || !player_oid)
-    {
-        v_SQVM_ScriptError("Failed to retrieve 'player_oid' parameter.\n");
-        sq_pushinteger(v, -1);
-        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-    }
+     {
+         v_SQVM_ScriptError("Failed to retrieve 'player_oid' parameter.\n");
+         sq_pushinteger(v, -1);
+         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+     }
 
-    const char* statsJson = LOGGER::GetPlayerJsonData(player_oid);
+     std::string statsJson = LOGGER::GetPlayerJsonData(player_oid);
 
-    if (strcmp(statsJson, "") == 0 || strcmp(statsJson, "NA") == 0)
-    {
-        sq_pushinteger(v, -1);
-        SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
-    }
+     if (statsJson.empty() || statsJson == "NA")
+     {
+         sq_pushinteger(v, -1);
+         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+     }
 
-    //Msg(eDLL_T::SERVER, "Received JSON: %s\n", statsJson);
-    rapidjson::Document document;
-    if (document.Parse(statsJson).HasParseError())
+     //Msg(eDLL_T::SERVER, "Received JSON: %s\n", statsJson.c_str());
+     rapidjson::Document document;
+     if (document.Parse(statsJson.c_str()).HasParseError())
     {
         Error(eDLL_T::SERVER, NO_ERROR, "JSON parsing failed: %s\n", rapidjson::GetParseError_En(document.GetParseError()));
         sq_pushinteger(v, -1);
@@ -1219,15 +1219,15 @@ static SQRESULT ServerScript_FetchGlobalTrackerSettings__internal(HSQUIRRELVM v)
 
 static SQRESULT ServerScript_TrackerGetSetting__internal(HSQUIRRELVM v)
 {
-    const SQChar* setting_key = nullptr;
-    if (!SQ_SUCCEEDED(sq_getstring(v, 2, &setting_key)) || !VALID_CHARSTAR(setting_key))
-    {
-        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
-    }
+     const SQChar* setting_key = nullptr;
+     if (!SQ_SUCCEEDED(sq_getstring(v, 2, &setting_key)) || !VALID_CHARSTAR(setting_key))
+     {
+         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+     }
 
-    const char* setting_value = LOGGER::GetSetting(setting_key);
-    sq_pushstring(v, setting_value, -1);
-    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+     std::string setting_value = LOGGER::GetSetting(setting_key);
+     sq_pushstring(v, setting_value.c_str(), -1);
+     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
 

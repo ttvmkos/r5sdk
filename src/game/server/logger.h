@@ -1,7 +1,7 @@
 #pragma once
+#ifndef CLIENT_DLL
 #ifndef LOGGER_H
 #define LOGGER_H
-#ifndef CLIENT_DLL
 #include <string>
 #include <deque>
 #include <queue>
@@ -12,7 +12,12 @@
 #include <unordered_map>
 #include <atomic>
 #include <vector>
-#include "thirdparty/curl/include/curl/curl.h"
+#include <filesystem>
+#include "filesystem/ifilesystem.h"
+#include <rapidjson/document.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/stringbuffer.h>
+#include <game/server/logger_websocket.h>
 
 namespace LOGGER
 {
@@ -195,10 +200,10 @@ namespace LOGGER
 
     //settings
     void AddToConfigMap(const rapidjson::Value& value, const std::string& parentKey, int depth);
-    void LoadConfig(IFileSystem* pFileSystem, const char* configFileName);
-    void ReloadConfig(const char* configFileName);
-    const char* GetSetting(const char* key);
-    int64_t GetMaxLogfileSize(const char* settingValue);
+      void LoadConfig(IFileSystem* pFileSystem, const char* configFileName);
+      void ReloadConfig(const char* configFileName);
+      std::string GetSetting(const char* key); 
+      int64_t GetMaxLogfileSize(const char* settingValue);
 
     // Functions for sendtoapi
     std::string url_encode(const std::string& value);
@@ -222,9 +227,9 @@ namespace LOGGER
         const std::vector<std::string>& player_oids,
         const std::string& requestedStats,
         const std::string& requestedSettings
-    );
-    const char* GetPlayerJsonData(const char* player_oid); //on startup / player connect
-    void RunUpdateLiveStats(std::string stats_json); //onshutdown dispatch thread
+      );
+      std::string GetPlayerJsonData(const char* player_oid); //on startup / player connect 
+      void RunUpdateLiveStats(std::string stats_json); //onshutdown dispatch thread
     void UpdateLiveStats(std::string stats_json); //onshutdown 
     std::string FetchGlobalSettings(const char* query);//on startup init
 }
@@ -238,6 +243,7 @@ inline void Tracker_Shutdown()
     LOGGER::Logger::getInstance().Shutdown();
     LOGGER::TaskManager::getInstance().Shutdown();
     LOGGER::CURLConnectionPool::GetInstance().Shutdown();
+    LOGGER::TrackerSocketSystem()->Shutdown();
 }
-#endif // !CLIENT.DLL
 #endif // LOGGER_H
+#endif // !CLIENT.DLL

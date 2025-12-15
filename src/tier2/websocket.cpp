@@ -260,24 +260,34 @@ bool CWebSocket::ConnContext_s::Process(const double queryTime)
 {
 	const int32_t status = ProtoWebSocketStatus(webSocket, 'stat', NULL, 0);
 
+	// ADD VERBOSE LOGGING
+	/*static int logCounter = 0;
+	if (++logCounter % 30 == 0)  // Log every ~30 frames
+	{
+		Msg(eDLL_T::SERVER, "WebSocket[%s] status=%d state=%d\n",
+			address.String(), status, (int)state);
+	}*/
+
 	if (status == -1)
 	{
 		Destroy();
 		lastQueryTime = queryTime;
-
 		return false;
 	}
 	else if (!status)
 	{
 		lastQueryTime = queryTime;
-		return false;
+		return false;  // Still handshaking
 	}
 
 	tryCount = 0;
 	state = CS_LISTENING;
+	
+	//Msg(eDLL_T::SERVER, "WebSocket[%s] now LISTENING\n", address.String());
 
 	return true;
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: set parameters for this socket
@@ -329,4 +339,63 @@ void CWebSocket::ConnContext_s::Destroy()
 {
 	Disconnect();
 	state = CS_DESTROYED;
+}
+
+/*
+int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
+{
+	Assert(outBuf);
+	Assert(bufSize > 0);
+
+	if (!IsInitialized())
+		return 0;
+
+	for (ConnContext_s& conn : m_addressList)
+	{
+		if (conn.state != CS_LISTENING || !conn.webSocket)
+			continue;
+
+		int32_t received = ProtoWebSocketRecv(conn.webSocket, outBuf, bufSize);
+		if (received > 0)
+			return received;
+	}
+
+	return 0;
+}*/
+
+
+int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
+{
+	if (!IsInitialized())
+		return 0;
+
+	for (ConnContext_s& conn : m_addressList)
+	{
+		if (conn.state != CS_LISTENING || !conn.webSocket)
+		{
+			// Log why we're not listening
+			/*if (conn.webSocket)
+			{
+				static int logCounter = 0;
+				if (++logCounter % 100 == 0)
+				{
+					Msg(eDLL_T::SERVER, "WebSocket[%s] waiting... state=%d\n",
+						conn.address.String(), (int)conn.state);
+				}
+			}
+			continue;*/
+		}
+
+		int32_t received = ProtoWebSocketRecv(conn.webSocket, outBuf, bufSize);
+		if (received > 0)
+		{
+			/*
+			Msg(eDLL_T::SERVER, "WebSocket[%s] RECEIVED %d bytes\n",
+				conn.address.String(), received);
+			*/
+			return received;
+		}
+	}
+
+	return 0;
 }

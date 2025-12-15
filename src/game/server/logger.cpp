@@ -6,6 +6,7 @@
 #include <engine/host_state.h>
 #include <game/server/vscript_server.h>
 #include "logger.h"
+#include "logger_websocket.h"
 #include <networksystem/hostmanager.h>
 #include "vscript/vscript.h"
 #include "engine/cmd.h"
@@ -28,6 +29,8 @@ const std::string API_KEY = "tMcLsTYqcraC7K2j"; //public
 constexpr const char* R5RDEV_CONFIG = "r5rdev_config.json";
 constexpr const char* PLAYER_COUNT_ENDPOINT = "https://r5r.dev/api/playercount.php";
 const std::string STATS_API = "https://r5r.dev/api/stats8.php";
+constexpr const char* WS_ADDRESS = "r5r.dev";
+constexpr int WS_PORT = 9705;
 
 
 //-----------------------------------------------------------------------------
@@ -123,37 +126,38 @@ namespace LOGGER
             return;
         }
 
-        const char* subDir = GetSetting("logfolder");
-        const char* delete_all = GetSetting("server.DELETE_ALL_LOGS");
+        std::string subDir = GetSetting("logfolder");
+        std::string delete_all = GetSetting("server.DELETE_ALL_LOGS");
         bool DEL_ALL = false;
 
-        if (!delete_all || strcmp(delete_all, "") == 0)
+        if (delete_all.empty() || delete_all == "")
         {
             DEL_ALL = false;
         }
         else
         {
-            DEL_ALL = (strcmp(delete_all, "true") == 0);
+            DEL_ALL = (delete_all == "true");
         }
 
-        if ( !subDir || strcmp(subDir, "") == 0 )
+        if ( subDir.empty() || subDir == "" )
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Attempted to load an invalid setting value.\n");
             return;
         }
 
-        if (!pFileSystem->IsDirectory(subDir, "PLATFORM"))
+        if (!pFileSystem->IsDirectory(subDir.c_str(), "PLATFORM"))
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Directory does not exist: %s\n", subDir);
+            Error(eDLL_T::SERVER, NO_ERROR, "Directory does not exist: %s\n", subDir.c_str());
             return;
         }
 
-        int64_t sv_maxdir_size_t = GetMaxLogfileSize(GetSetting("server.MAX_LOGFILE_DIR_SIZE"));
+        std::string maxLogSizeSetting = GetSetting("server.MAX_LOGFILE_DIR_SIZE");
+        int64_t sv_maxdir_size_t = GetMaxLogfileSize(maxLogSizeSetting.c_str());
 
         sv_maxdir_size_t = sv_maxdir_size_t < 3 ? 20LL : sv_maxdir_size_t;
 
         char searchPath[MAX_PATH];
-        snprintf(searchPath, sizeof(searchPath), "%s/*.json", subDir);
+        snprintf(searchPath, sizeof(searchPath), "%s/*.json", subDir.c_str());
 
         struct FileInfo {
             std::string fullPath = "";
@@ -308,7 +312,7 @@ namespace LOGGER
 
 
     // get setting value by key
-    const char* GetSetting(const char* key)
+    std::string GetSetting(const char* key)
     {
         if (!key)
         {
@@ -321,10 +325,10 @@ namespace LOGGER
 
         if (itr != g_configMap.end())
         {
-            return itr->second.c_str();
+            return itr->second;
         }
 
-        return ""; //is this okay?
+        return "";
     }
 
 
@@ -333,7 +337,6 @@ namespace LOGGER
     void ReloadConfig(const char* configFileName)
     {
         {
-            //probably unsafe asf
             std::lock_guard<std::shared_timed_mutex> lock(g_configMapMutex);
             g_configMap.clear();
         }
@@ -728,8 +731,8 @@ namespace LOGGER
     /// STAT FUNCTIONS FOR SQVM ///////////////////////////////////////////////////////////
     //////////////////////////////
 
-     //input: oid, output: player stats if available in the playerstatsmap
-    const char* GetPlayerJsonData(const char* player_oid)
+    //input: oid, output: player stats if available in the playerstatsmap
+    std::string GetPlayerJsonData(const char* player_oid)
     {
         if (!player_oid)
         {
@@ -745,7 +748,7 @@ namespace LOGGER
             std::unordered_map<std::string, std::string>::iterator it = playerStatsMap.find( safeOid );
 
             if (it != playerStatsMap.end())
-                return it->second.c_str();
+                return it->second;
         }
         else
         {
@@ -936,7 +939,6 @@ namespace LOGGER
 
 
     //for individual players, stores data in playerStatsMap
-        //for individual players, stores data in playerStatsMap
     void TaskManager::RequestPlayerPersistenceData( const std::string& player_oid, const std::vector<std::string>& requestedStats, const std::vector<std::string>& requestedSettings )
     {
         if (player_oid.empty())
@@ -1018,7 +1020,7 @@ namespace LOGGER
             return;
         }
 
-        std::string uniquekey = GetSetting("uniquekey");
+        std::string uniquekey = GetSetting("apikey");
         Sanitize_AlphaNumHyphenUnderscore(uniquekey);
 
         std::string identifier = GetSetting("identifier");
@@ -1107,14 +1109,17 @@ namespace LOGGER
    // Sends join/leave data to api for various use. replace DISCORD_HOOK with internal r5r.dev functions via string starting with __apicall_ 
     void UPDATE_PLAYER_COUNT(const char* action, const char* player, const char* OID, const char* count, const char* DISCORD_HOOK)
     {
-        if (strcmp(DISCORD_HOOK, "") == 0)
-            DISCORD_HOOK = GetSetting("webhooks.PLAYERS_WEBHOOK");
+        std::string webhookUrl = DISCORD_HOOK;
+        if (webhookUrl.empty())
+        {
+            webhookUrl = GetSetting("webhooks.PLAYERS_WEBHOOK");
+        }
 
         std::string actionStr(action);
         std::string playerStr(player);
         std::string OIDStr(OID);
         std::string countStr(count);
-        std::string DISCORD_HOOKStr(DISCORD_HOOK);
+        std::string DISCORD_HOOKStr(webhookUrl);
 
         std::function<void()> task = [actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr]()
         {
@@ -1460,7 +1465,7 @@ namespace LOGGER
     Logger::Logger() : filePath("")
     {
         if ( FileSystem() != nullptr )
-            LoadConfig(FileSystem(), R5RDEV_CONFIG);
+            LoadConfig( FileSystem(), R5RDEV_CONFIG );
         else
         {
             Error(eDLL_T::SERVER, NOERROR, "Tracker: Filesystem not initialized, aborting.");
@@ -1501,6 +1506,18 @@ namespace LOGGER
         else
         {
             CVAR_LTHREAD_DEBOUNCE = 200;
+        }
+
+        // Initialize WebSocket connection to master server if enabled
+        std::string useWebSockets = GetSetting("server.USE_WEB_SOCKETS");
+        if ( useWebSockets == "true" )
+        {
+            TrackerSocketSystem()->Connect(WS_ADDRESS, WS_PORT);
+        }
+        else
+        {
+            Msg( eDLL_T::SERVER, "TrackerSocket: WebSocket disabled (server.USE_WEB_SOCKETS = %s)\n",
+                useWebSockets.empty() ? "not set" : useWebSockets.c_str() );
         }
     }
 
@@ -1782,7 +1799,8 @@ namespace LOGGER
 
         CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, "sendLogToAPI");
 
-        if (std::strcmp(GetSetting("server.AUTO_DELETE_STATLOGS"), "true") == 0)
+        std::string autoDeleteSetting = GetSetting("server.AUTO_DELETE_STATLOGS");
+        if (autoDeleteSetting == "true")
         {
             LOGGER::CleanupLogs(FileSystem());
         }
@@ -2085,8 +2103,8 @@ namespace LOGGER
 
         if (pCurrentLogPath == nullptr)
         {
-            const char* folder_setting = GetSetting("logfolder");
-            std::string folderPathStr = folder_setting ? std::string(folder_setting) : "eventlogs";
+            std::string folder_setting = GetSetting("logfolder");
+            std::string folderPathStr = !folder_setting.empty() ? folder_setting : "eventlogs";
             std::filesystem::path dirPath = std::filesystem::path("platform") / folderPathStr;
 
             bool dir_created = false;

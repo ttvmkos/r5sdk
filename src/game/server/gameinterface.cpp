@@ -22,6 +22,7 @@
 #include "game/server/util_server.h"
 #include "pluginsystem/pluginsystem.h"
 #include "game/server/recipientfilter.h"
+#include "game/server/logger_websocket.h"
 
 //-----------------------------------------------------------------------------
 // Purpose: retrieves the index of the client that issued the last command
@@ -352,6 +353,8 @@ static void ExecuteFrameServerJob(double flFrameTime, bool bRunOverlays, bool bU
 	v_ExecuteFrameServerJob(flFrameTime, bRunOverlays, bUpdateFrame);
 
 	LiveAPISystem()->RunFrame();
+	LOGGER::TrackerSocketSystem()->RunFrame();
+
 	DrawAllDebugOverlays();
 }
 
