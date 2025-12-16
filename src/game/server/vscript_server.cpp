@@ -584,7 +584,7 @@ static int64_t selfSetMatchID()
 // Check of is currently running -- returns true if logging, false if not running
 static SQRESULT ServerScript_TrackerIsLogging__internal(HSQUIRRELVM v)
 {
-    bool state = LOGGER::Logger::getInstance().isLogging();
+    bool state = LOGGER::Logger::getInstance().IsLogging();
     sq_pushbool(v, state);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
@@ -597,7 +597,7 @@ static SQRESULT ServerScript_TrackerGetLogState__internal(HSQUIRRELVM v)
     {
         LOGGER::Logger& logger = LOGGER::Logger::getInstance();
         LOGGER::Logger::LogState LogState = logger.intToLogState(flag);
-        bool state = logger.getLogState(LogState);
+        bool state = logger.GetLogState(LogState);
         sq_pushbool(v, state);
     }
     else
@@ -674,7 +674,7 @@ static SQRESULT ServerScript_TrackerStopLogging__internal(HSQUIRRELVM v)
     bool doSendToAPI = sendToAPI != 0;
 
     //DevMsg(eDLL_T::SERVER, "Send to API bool set to: %s \n", doSendToAPI ? "true" : "false");
-    LOGGER::pMkosLogger->stopLogging(doSendToAPI);
+    LOGGER::pMkosLogger->StopLogging(doSendToAPI);
 
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }

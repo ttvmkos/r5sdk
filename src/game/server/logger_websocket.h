@@ -27,10 +27,11 @@ namespace LOGGER
     {
     public:
         // Singleton access
-        static WebSocketCommandHandler& getInstance();
+        static WebSocketCommandHandler& getInstance(); //use TrackerSocketSystem()
 
         // ===== Connection Management =====
         bool Connect(const char* address, int port);
+        void Reconnect();
         void Disconnect();
         bool IsConnected() const;
         void RunFrame();
@@ -61,7 +62,7 @@ namespace LOGGER
         void HandleUpdateConfigCommand(const rapidjson::Value& params,
             const std::string& requestId);
         void HandleReloadBanlistCommand(const std::string& requestId);
-        
+
 
         // ===== Validation & Utilities =====
         bool ValidateMessage(const rapidjson::Document& doc,
@@ -126,6 +127,7 @@ namespace LOGGER
         std::shared_timed_mutex m_queueMutex;
 
         std::string m_serverAddress;
+        std::string m_connectedAddress;
         int m_serverPort;
         std::atomic<bool> m_isConnected;
         std::atomic<bool> m_initialized;
@@ -144,6 +146,20 @@ namespace LOGGER
     WebSocketCommandHandler* TrackerSocketSystem();
 }
 
-
 #endif // LOGGER_WEBSOCKET_H
 #endif // CLIENT_DLL
+
+static ConVar tracker_ws_enable( "tracker_ws_enable", "1", FCVAR_RELEASE, "Enable WebSocket remote command interface (0 = disabled, 1 = enabled)" );
+static ConVar tracker_ws_port( "tracker_ws_port", "9705", FCVAR_RELEASE, "WebSocket server port" );
+static ConVar tracker_ws_debug( "tracker_ws_debug", "0", FCVAR_RELEASE, "Enable WebSocket debug logging (0 = disabled, 1 = enabled)" );
+static ConVar tracker_ws_use_ssl( "tracker_use_ssl", "1", FCVAR_RELEASE, "Use SSL for WebSocket connection (0 = disabled, 1 = enabled)" );
+static ConVar tracker_ws_lax_ssl( "tracker_ws_lax_ssl", "0", FCVAR_RELEASE, "Lax SSL certificate validation (0 = strict, 1 = lax)" );
+static ConVar tracker_ws_buffer_size( "tracker_ws_buffer_size", "262144", FCVAR_RELEASE, "WebSocket buffer size in bytes" );
+static ConVar tracker_ws_max_retries( "tracker_ws_max_retries", "3", FCVAR_RELEASE, "Maximum number of WebSocket connection retries" );
+static ConVar tracker_ws_retry_time( "tracker_ws_retry_time", "5.0", FCVAR_RELEASE, "Time in seconds between WebSocket connection retries. float" );
+static ConVar tracker_ws_time_out( "tracker_ws_time_out", "125", FCVAR_RELEASE, "WebSocket connection timeout in seconds" );
+static ConVar tracker_ws_keep_alive( "tracker_ws_keep_alive", "60", FCVAR_RELEASE, "WebSocket keep-alive interval in seconds" );
+static ConVar tracker_ws_throttle_rate( "tracker_ws_throttle_rate", "0.10", FCVAR_RELEASE, "WebSocket message processing throttle rate in seconds. Default 100ms (0 = no throttling)" );
+
+static ConCommand tracker_ws_restart( "tracker_ws_restart", []() { LOGGER::TrackerSocketSystem()->Reconnect(); }, "Restart the WebSocket connection to the remote server.", FCVAR_RELEASE );
+static ConCommand tracker_ws_shutdown( "tracker_ws_shutdown", []() { LOGGER::TrackerSocketSystem()->Disconnect(); }, "Shutdown the WebSocket connection to the remote server.", FCVAR_RELEASE );

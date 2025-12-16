@@ -260,7 +260,6 @@ bool CWebSocket::ConnContext_s::Process(const double queryTime)
 {
 	const int32_t status = ProtoWebSocketStatus(webSocket, 'stat', NULL, 0);
 
-	// ADD VERBOSE LOGGING
 	/*static int logCounter = 0;
 	if (++logCounter % 30 == 0)  // Log every ~30 frames
 	{
@@ -341,31 +340,11 @@ void CWebSocket::ConnContext_s::Destroy()
 	state = CS_DESTROYED;
 }
 
-/*
 int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 {
-	Assert(outBuf);
-	Assert(bufSize > 0);
+	//Assert(outBuf);
+	//Assert(bufSize > 0);
 
-	if (!IsInitialized())
-		return 0;
-
-	for (ConnContext_s& conn : m_addressList)
-	{
-		if (conn.state != CS_LISTENING || !conn.webSocket)
-			continue;
-
-		int32_t received = ProtoWebSocketRecv(conn.webSocket, outBuf, bufSize);
-		if (received > 0)
-			return received;
-	}
-
-	return 0;
-}*/
-
-
-int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
-{
 	if (!IsInitialized())
 		return 0;
 
@@ -373,7 +352,6 @@ int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 	{
 		if (conn.state != CS_LISTENING || !conn.webSocket)
 		{
-			// Log why we're not listening
 			/*if (conn.webSocket)
 			{
 				static int logCounter = 0;
@@ -382,8 +360,8 @@ int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 					Msg(eDLL_T::SERVER, "WebSocket[%s] waiting... state=%d\n",
 						conn.address.String(), (int)conn.state);
 				}
-			}
-			continue;*/
+			}*/
+			continue;
 		}
 
 		int32_t received = ProtoWebSocketRecv(conn.webSocket, outBuf, bufSize);
@@ -399,3 +377,51 @@ int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 
 	return 0;
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: check if a specific address is actively listening for data
+//-----------------------------------------------------------------------------
+bool CWebSocket::IsListening(const char* address) const
+{
+	Assert(address);
+	for (const ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address && conn.state == CS_LISTENING && conn.webSocket)
+			return true;
+	}
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: check if a specific connection is established (handshaking or listening)
+//-----------------------------------------------------------------------------
+bool CWebSocket::IsConnected(const char* address) const
+{
+	Assert(address);
+	for (const ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address &&
+			(conn.state == CS_CONNECTED || conn.state == CS_LISTENING) &&
+			conn.webSocket)
+			return true;
+	}
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: check if a specific connection is in any non-failed state
+//-----------------------------------------------------------------------------
+bool CWebSocket::IsActive(const char* address) const
+{
+	Assert(address);
+	for (const ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address &&
+			conn.state != CS_DESTROYED &&
+			conn.state != CS_UNAVAIL &&
+			conn.webSocket)
+			return true;
+	}
+	return false;
+}
+

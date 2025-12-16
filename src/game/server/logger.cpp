@@ -21,19 +21,6 @@
 LOGGER::Logger* LOGGER::pMkosLogger = nullptr;
 
 //-----------------------------------------------------------------------------
-// CONSTANTS
-//-----------------------------------------------------------------------------
-
-const std::string SERVER_V = "rc_2.5";
-const std::string API_KEY = "tMcLsTYqcraC7K2j"; //public
-constexpr const char* R5RDEV_CONFIG = "r5rdev_config.json";
-constexpr const char* PLAYER_COUNT_ENDPOINT = "https://r5r.dev/api/playercount.php";
-const std::string STATS_API = "https://r5r.dev/api/stats8.php";
-constexpr const char* WS_ADDRESS = "r5r.dev";
-constexpr int WS_PORT = 9705;
-
-
-//-----------------------------------------------------------------------------
 // string manipulation sanitize function
 //-----------------------------------------------------------------------------
 
@@ -685,7 +672,6 @@ namespace LOGGER
 
     void TaskManager::ProcessTasks()
     {
-
         while (true)
         {
             std::function<void()> task;
@@ -791,7 +777,7 @@ namespace LOGGER
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
         CFmtStrMax urlBase("%s?TYPE=batch&KEY=%s&identifier=%s&requestedStats=%s&requestedSettings=%s",
-            STATS_API.c_str(), API_KEY.c_str(), identifier.c_str(), requestedStats.c_str(), requestedSettings.c_str());
+            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), identifier.c_str(), requestedStats.c_str(), requestedSettings.c_str());
         std::string url = urlBase.Get();
         
         for (const std::string& oid : player_oids)
@@ -918,7 +904,7 @@ namespace LOGGER
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
         CFmtStrMax urlStr("%s?KEY=%s&requestedStats=%s&player_oid=%s&identifier=%s&requestedSettings=%s",
-            STATS_API.c_str(), API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings);
+            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings);
 
         curl_easy_setopt(easy_handle, CURLOPT_URL, urlStr.Get());
         curl_easy_setopt(easy_handle, CURLOPT_WRITEFUNCTION, WriteCallback);
@@ -1030,7 +1016,7 @@ namespace LOGGER
 
         doc.AddMember("stats", stats, allocator);
         doc.AddMember("servername", rapidjson::Value(serverName.c_str(), allocator), allocator);
-        doc.AddMember("KEY", rapidjson::Value(API_KEY.c_str(), allocator), allocator);
+        doc.AddMember("KEY", rapidjson::Value(TRACKER_API_KEY.c_str(), allocator), allocator);
         doc.AddMember("uniquekey", rapidjson::Value(uniquekey.c_str(), allocator), allocator);
         doc.AddMember("identifier", rapidjson::Value(identifier.c_str(), allocator), allocator);
 
@@ -1043,7 +1029,7 @@ namespace LOGGER
         struct curl_slist* headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        curl_easy_setopt(curl, CURLOPT_URL, STATS_API.c_str());
+        curl_easy_setopt(curl, CURLOPT_URL, TRACKER_STATS_API_ENDPOINT.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData.c_str());
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
@@ -1093,10 +1079,10 @@ namespace LOGGER
 
 
         CFmtStr postData("servername=%s&action=%s&player_name=%s&OID=%s&current_count=%s&DISCORD_HOOK=%s&KEY=%s",
-            hostname->GetString(), action.c_str(), player.c_str(), oid.c_str(), count.c_str(), DISCORD_HOOK.c_str(), API_KEY.c_str());
+            hostname->GetString(), action.c_str(), player.c_str(), oid.c_str(), count.c_str(), DISCORD_HOOK.c_str(), TRACKER_API_KEY.c_str());
         
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
-        curl_easy_setopt( curl, CURLOPT_URL, PLAYER_COUNT_ENDPOINT );
+        curl_easy_setopt( curl, CURLOPT_URL, TRACKER_PLAYER_COUNT_ENDPOINT);
         curl_easy_setopt( curl, CURLOPT_TIMEOUT, 5L );
         curl_easy_setopt( curl, CURLOPT_POST, 1L );
 
@@ -1197,7 +1183,7 @@ namespace LOGGER
         }
 
         CFmtStrN<648> postData("servername=%s&matchID=%s&recap=%s&DISCORD_HOOK=%s&KEY=%s",
-            serverName.c_str(), matchID.c_str(), escaped_recap, discord_hook.c_str(), API_KEY.c_str());
+            serverName.c_str(), matchID.c_str(), escaped_recap, discord_hook.c_str(), TRACKER_API_KEY.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/endmatch.php");
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -1257,7 +1243,7 @@ namespace LOGGER
         }
 
         CFmtStr postData("token=%s&ea_acc=%s&OID=%s&KEY=%s",
-            token.c_str(), ea_name.c_str(), OID.c_str(), API_KEY.c_str());
+            token.c_str(), ea_name.c_str(), OID.c_str(), TRACKER_API_KEY.c_str());
 
 
         std::string readBuffer;
@@ -1303,7 +1289,7 @@ namespace LOGGER
         std::string readBuffer;
         std::string identifier = GetSetting("identifier");
 
-        CFmtStr postfields("KEY=%s&query=%s&identifier=%s", API_KEY.c_str(), query, identifier.c_str());
+        CFmtStr postfields("KEY=%s&query=%s&identifier=%s", TRACKER_API_KEY.c_str(), query, identifier.c_str());
         
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields.Get());   
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/globalsettings.php");
@@ -1465,7 +1451,7 @@ namespace LOGGER
     Logger::Logger() : filePath("")
     {
         if ( FileSystem() != nullptr )
-            LoadConfig( FileSystem(), R5RDEV_CONFIG );
+            LoadConfig( FileSystem(), TRACKER_CONFIG );
         else
         {
             Error(eDLL_T::SERVER, NOERROR, "Tracker: Filesystem not initialized, aborting.");
@@ -1474,8 +1460,8 @@ namespace LOGGER
 
         keyHex = this->eObj.hex2bytes("c7abf6c3574e60bb7e8c2945ff21ec53");
         ivHex = this->eObj.hex2bytes("ac6fe374229715e475928b70ab53648e");
-        setLogState(LogState::Busy, false);
-        setLogState(LogState::Ready, true);
+        SetLogState(LogState::Busy, false);
+        SetLogState(LogState::Ready, true);
 
         std::string sleeptime = GetSetting("settings.CVAR_LTHREAD_DEBOUNCE"); //disabled
         std::string max_buffer = GetSetting("settings.CVAR_MAX_BUFFER");
@@ -1509,10 +1495,15 @@ namespace LOGGER
         }
 
         // Initialize WebSocket connection to master server if enabled
-        std::string useWebSockets = GetSetting("server.USE_WEB_SOCKETS");
+
+        std::string useWebSockets = GetSetting( "server.USE_WEB_SOCKETS" );
         if ( useWebSockets == "true" )
-        {
-            TrackerSocketSystem()->Connect(WS_ADDRESS, WS_PORT);
+        {			
+			std::string trackerHostStr = GetSetting("server.TRACKER_HOST");
+            const char* trackerHost = trackerHostStr.empty() ? TRACKER_WS_ADDRESS : trackerHostStr.c_str();
+            int trackerPort = tracker_ws_port.GetInt();
+
+            TrackerSocketSystem()->Connect( trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT);
         }
         else
         {
@@ -1531,11 +1522,11 @@ namespace LOGGER
         if (s_isShutdown.exchange(true))
             return;
 
-        stopLoggingThread();
+        StopLoggingThread();
         if (apiThread.joinable())
             apiThread.join();
 
-        closeLogFile();
+        CloseLogFile();
         pMkosLogger = nullptr;
     }
 
@@ -1550,7 +1541,7 @@ namespace LOGGER
     /     Utility Functions
     /********************************/
 
-    void Logger::setLogState(LogState flag, bool value)
+    void Logger::SetLogState(LogState flag, bool value)
     {
         std::atomic<u_char> flags = StateBits.load();
 
@@ -1565,7 +1556,7 @@ namespace LOGGER
 
 
 
-    bool Logger::getLogState(LogState flag) const
+    bool Logger::GetLogState(LogState flag) const
     {
         return (StateBits.load() & static_cast<uint8_t>(flag)) != 0;
     }
@@ -1587,18 +1578,18 @@ namespace LOGGER
 
 
     //TODO: add state check 
-    void LOGGER::Logger::startLogging()
+    void LOGGER::Logger::StartLogging()
     {
         finished = false;
 
         try {
-            logThread = std::thread(&Logger::logToFile, this);
+            logThread = std::thread(&Logger::LogToFile, this);
         }
         catch (const std::exception& e) {
-            Error(eDLL_T::SERVER, NO_ERROR, "Exception when starting logToFile thread: %s\n", e.what());
+            Error(eDLL_T::SERVER, NO_ERROR, "Exception when starting LogToFile thread: %s\n", e.what());
         }
         catch (...) {
-            Error(eDLL_T::SERVER, NO_ERROR, "Unknown exception when starting logToFile thread.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Unknown exception when starting LogToFile thread.\n");
         }
     }
 
@@ -1651,7 +1642,7 @@ namespace LOGGER
 
 
     //atomic
-    bool Logger::isLogging()
+    bool Logger::IsLogging()
     {
         return !finished.load();
     }
@@ -1663,7 +1654,7 @@ namespace LOGGER
     /********************************/
 
     // ship to stats server
-    void LOGGER::Logger::sendLogToAPI()
+    void LOGGER::Logger::SendLogToAPI()
     {
         std::string matchID = GetEndingMatchID();
 
@@ -1710,7 +1701,11 @@ namespace LOGGER
         }
 
         //DevMsg(eDLL_T::SERVER, "Curl initialized...\n");
-        curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/tracker.php");
+        std::string trackerEndpoint = GetSetting( "server.TRACKER_ENDPOINT" );
+        if ( !trackerEndpoint.empty() )
+            curl_easy_setopt( curl, CURLOPT_URL, trackerEndpoint.c_str() );
+		else
+            curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/tracker.php");
 
         std::string serverName = hostname->GetString();
         std::string serverMap = g_pHostState->m_levelName;
@@ -1756,7 +1751,7 @@ namespace LOGGER
 
         body << "--" << boundary << "\r\n";
         body << "Content-Disposition: form-data; name=\"CODE\"\r\n\r\n";
-        body << API_KEY << "\r\n";
+        body << TRACKER_API_KEY << "\r\n";
 
         body << "--" << boundary << "\r\n";
         body << "Content-Disposition: form-data; name=\"identifier\"\r\n\r\n";
@@ -1797,7 +1792,7 @@ namespace LOGGER
 
         curl_slist_free_all(headers);
 
-        CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, "sendLogToAPI");
+        CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, "SendLogToAPI");
 
         std::string autoDeleteSetting = GetSetting("server.AUTO_DELETE_STATLOGS");
         if (autoDeleteSetting == "true")
@@ -1816,7 +1811,7 @@ namespace LOGGER
     //-----------------------------------------------------------------------------
 
 
-    bool LOGGER::Logger::openLogFile(const std::filesystem::path& Path)
+    bool LOGGER::Logger::OpenLogFile(const std::filesystem::path& Path)
     {
         if (Path.empty())
         {
@@ -1839,7 +1834,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::closeLogFile()
+    void LOGGER::Logger::CloseLogFile()
     {
         std::lock_guard<std::mutex> fileLock(fileMutex);
         if (logFile.is_open())
@@ -1851,7 +1846,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::writeBufferToFile(const std::deque<std::string>& q_buffer)
+    void LOGGER::Logger::WriteBufferToFile(const std::deque<std::string>& q_buffer)
     {
         std::lock_guard<std::mutex> guard(fileMutex);
 
@@ -1871,12 +1866,12 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::logToFile()
+    void LOGGER::Logger::LogToFile()
     {
         std::deque<std::string> writeBuffer;
 
-        this->setLogState(LogState::Busy, true);
-        this->setLogState(LogState::Ready, true);
+        this->SetLogState(LogState::Busy, true);
+        this->SetLogState(LogState::Ready, true);
 
         try
         {
@@ -1900,7 +1895,7 @@ namespace LOGGER
 
                 if (!writeBuffer.empty())
                 {
-                    writeBufferToFile(writeBuffer);
+                    WriteBufferToFile(writeBuffer);
                     writeBuffer.clear();
                 }
 
@@ -1912,16 +1907,16 @@ namespace LOGGER
         }
         catch (const std::exception& e)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Exception in logToFile thread: %s\n", e.what());
+            Error(eDLL_T::SERVER, NO_ERROR, "Exception in LogToFile thread: %s\n", e.what());
         }
         catch (...)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Unknown exception in logToFile thread.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Unknown exception in LogToFile thread.\n");
         }
 
-        this->setLogState(LogState::Safe, false);
-        this->setLogState(LogState::Busy, false);
-        this->setLogState(LogState::Ready, false);
+        this->SetLogState(LogState::Safe, false);
+        this->SetLogState(LogState::Busy, false);
+        this->SetLogState(LogState::Ready, false);
     }
 
 
@@ -1934,9 +1929,9 @@ namespace LOGGER
 
 
     //Log controlled stop logging
-    void Logger::stopLoggingThread()
+    void Logger::StopLoggingThread()
     {
-        if (isLogging())
+        if (IsLogging())
         {
             finished = true;
             setMatchID(0);
@@ -1954,7 +1949,7 @@ namespace LOGGER
             }
             else
             {
-                setLogState(LogState::Busy, false);
+                SetLogState(LogState::Busy, false);
             }
 
             bool wait = WaitForState(LogState::Busy, false, 5000);
@@ -1984,13 +1979,13 @@ namespace LOGGER
             return;
         }
 
-        if (isLogging())
+        if (IsLogging())
         {
             Warning(eDLL_T::SERVER, "WARNING: LOG THREAD WAS RUNNING DURING HANDLE NEW MATCH\n");
-            stopLoggingThread();
+            StopLoggingThread();
         }
 
-        startLogging();
+        StartLogging();
         Warning(eDLL_T::SERVER, ":::::::::::::::::::::::::::::::::::::: Logging thread started :::::::\n");
         Warning(eDLL_T::SERVER, ":::::: Match started with MatchID:  [  %s  ] :::::::\n", matchID);
     }
@@ -2000,16 +1995,16 @@ namespace LOGGER
 
     void LOGGER::Logger::CallClosure()
     {
-        closeLogFile();
+        CloseLogFile();
         ResetLogPath();
-        setLogState(LogState::Busy, false);
-        setLogState(LogState::Ready, true);
+        SetLogState(LogState::Busy, false);
+        SetLogState(LogState::Ready, true);
     }
 
 
-    void LOGGER::Logger::stopLogging(bool sendToAPI)
+    void LOGGER::Logger::StopLogging(bool sendToAPI)
     {
-        std::thread stopThread(&LOGGER::Logger::stopLogging_Async, this, sendToAPI);
+        std::thread stopThread(&LOGGER::Logger::StopLogging_Async, this, sendToAPI);
         if (stopThread.joinable())
         {
             stopThread.join();
@@ -2018,7 +2013,7 @@ namespace LOGGER
 
 
     // SQVM controlled-Stop logging true/false for api stat send
-    void LOGGER::Logger::stopLogging_Async(bool sendToAPI) //
+    void LOGGER::Logger::StopLogging_Async(bool sendToAPI) //
     {
         SaveEndingMatchID();
 
@@ -2064,7 +2059,7 @@ namespace LOGGER
                 {
                     apiThread.join();
                 }
-                apiThread = std::thread(&Logger::sendLogToAPI, this);
+                apiThread = std::thread(&Logger::SendLogToAPI, this);
             }
         }
         else
@@ -2146,7 +2141,7 @@ namespace LOGGER
         std::chrono::milliseconds timeout(timeout_in_ms);
         std::chrono::time_point<std::chrono::steady_clock> start = std::chrono::steady_clock::now();
 
-        while (getLogState(state) != flag)
+        while (GetLogState(state) != flag)
         {
             if (std::chrono::steady_clock::now() - start > timeout)
             {
@@ -2172,7 +2167,7 @@ namespace LOGGER
 
     void LOGGER::Logger::InitializeLogThread(bool encrypt)
     {
-        setLogState(LogState::Safe, false);
+        SetLogState(LogState::Safe, false);
         std::thread initThread(&LOGGER::Logger::InitializeLogThread_Async, this, encrypt);
         initThread.detach();
     }
@@ -2190,9 +2185,9 @@ namespace LOGGER
             return;
         }
 
-        if (isLogging())
+        if (IsLogging())
         {
-            stopLoggingThread();
+            StopLoggingThread();
         }
 
         const std::string matchID = std::to_string(getMatchID());
@@ -2216,10 +2211,10 @@ namespace LOGGER
 
             handleNewMatch(matchID.c_str());
 
-            if (pFilePath && !openLogFile(*pFilePath))
+            if (pFilePath && !OpenLogFile(*pFilePath))
             {
                 Error(eDLL_T::SERVER, NO_ERROR, "CRITICAL ERROR: Could not open file to write (nullptr?)\n");
-                stopLoggingThread();
+                StopLoggingThread();
                 return;
             }
         }
@@ -2247,7 +2242,7 @@ namespace LOGGER
         std::string gameMode = mp_gamemode->GetString();
 
         startLines.push_back(CFmtStrN<128>("|#MatchID:%s", matchID.c_str()).Get());
-        startLines.push_back(CFmtStrN<128>("|#Gameversion:%s", SERVER_V.c_str()).Get());
+        startLines.push_back(CFmtStrN<128>("|#Gameversion:%s", TRACKER_SERVER_V.c_str()).Get());
         startLines.push_back(CFmtStrN<128>("|#Gametype:%s", gameType.c_str()).Get());
         startLines.push_back(CFmtStrN<128>("|#Gamemode:%s", gameMode.c_str()).Get());
         startLines.push_back(CFmtStr("|#ServerName:%s", serverName.c_str()).Get());
@@ -2276,7 +2271,7 @@ namespace LOGGER
             cvLog.notify_one();
         }
 
-        setLogState(LogState::Safe, true);
+        SetLogState(LogState::Safe, true);
     }
 
 
@@ -2289,7 +2284,7 @@ namespace LOGGER
 
     void LOGGER::Logger::LogEvent(const char* logString, bool encrypt)
     {
-        if (!getLogState(LogState::Safe) || finished)
+        if (!GetLogState(LogState::Safe) || finished)
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Tried to queue to log but logthread is not fully initialized. \n");
             return;

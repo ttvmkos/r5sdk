@@ -145,6 +145,7 @@ void CBanSystem::LoadList(void)
 				}
 			}
 		}
+
 		Msg(eDLL_T::SERVER, "%s: Loaded v2 format banlist with %zu nucleus bans and %zu ip bans\n", __FUNCTION__, m_bannedIdList.size(), m_bannedIpList.size());
 		return;
 	}

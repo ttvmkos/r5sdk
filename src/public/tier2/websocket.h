@@ -136,6 +136,9 @@ public:
 	bool IsInitialized() const;
 
 	int32_t ReceiveData(char* outBuf, int32_t bufSize);
+	bool IsListening(const char* address) const;
+	bool IsConnected(const char* address) const;
+	bool IsActive(const char* address) const;
 
 private:
 	bool m_initialized;

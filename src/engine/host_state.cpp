@@ -231,7 +231,7 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			case HostStates_t::HS_NEW_GAME:
 			{
 				//if (LOGGER::Logger::getInstance().isLogging()) {
-				//	LOGGER::Logger::getInstance().stopLoggingThread();
+				//	LOGGER::Logger::getInstance().StopLoggingThread();
 				//}
 
 				g_pHostState->State_NewGame();
@@ -240,8 +240,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			case HostStates_t::HS_CHANGE_LEVEL_SP:
 			{
 #ifndef CLIENT_DLL
-				if (LOGGER::Logger::getInstance().isLogging()) {
-					LOGGER::Logger::getInstance().stopLoggingThread();
+				if (LOGGER::Logger::getInstance().IsLogging()) {
+					LOGGER::Logger::getInstance().StopLoggingThread();
 				}
 #endif // !CLIENT_DLL
 
@@ -251,8 +251,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			case HostStates_t::HS_CHANGE_LEVEL_MP:
 			{
 #ifndef CLIENT_DLL
-				if (LOGGER::Logger::getInstance().isLogging()) {
-					LOGGER::Logger::getInstance().stopLoggingThread();
+				if (LOGGER::Logger::getInstance().IsLogging()) {
+					LOGGER::Logger::getInstance().StopLoggingThread();
 				}
 #endif // !CLIENT_DLL
 
@@ -281,8 +281,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			{
 				
 #ifndef CLIENT_DLL
-				if (LOGGER::Logger::getInstance().isLogging()) {
-					LOGGER::Logger::getInstance().stopLoggingThread();
+				if (LOGGER::Logger::getInstance().IsLogging()) {
+					LOGGER::Logger::getInstance().StopLoggingThread();
 				}
 #endif
 				
