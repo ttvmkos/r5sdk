@@ -241,6 +241,12 @@ void sq_addref(HSQUIRRELVM v, SQObject* po)
 	_ss(v)->_refs_table.AddRef(*po);
 }
 
+void sq_removeref(HSQUIRRELVM v, SQObject* po)
+{
+	if (!ISREFCOUNTED(sq_type(*po))) return;
+	_ss(v)->_refs_table.RemoveRef(*po);
+}
+
 //---------------------------------------------------------------------------------
 SQBool sq_release(HSQUIRRELVM v, SQObject* po)
 {

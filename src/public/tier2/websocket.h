@@ -58,6 +58,9 @@ public:
 			timeOut = -1;
 			keepAlive = -1;
 			laxSSL = 0;
+
+			protocol = 0;
+			useTls = false;
 		}
 
 		// Total amount of buffer size that could be queued up and sent
@@ -81,6 +84,12 @@ public:
 		// Whether to validate the clients certificate, if this is set, no
 		// validation is performed
 		int32_t laxSSL;
+
+		// Protocol to use for SSL connections, if NULL the default is used
+		int32_t protocol;
+
+		// Enable tls required systems.
+		bool useTls;
 	};
 
 	//-------------------------------------------------------------------------
@@ -101,6 +110,7 @@ public:
 
 		bool Connect(const double queryTime, const ConnParams_s& params);
 		bool Process(const double queryTime);
+		const char* GetStateString(const ConnState_e contextState) const;
 
 		void SetParams(const ConnParams_s& params) const;
 
@@ -110,6 +120,7 @@ public:
 
 		ProtoWebSocketRefT* webSocket;
 		ConnState_e state;
+		int32_t protocol;
 
 		int tryCount; // Number of connection attempts
 		double lastQueryTime;
@@ -139,6 +150,8 @@ public:
 	bool IsListening(const char* address) const;
 	bool IsConnected(const char* address) const;
 	bool IsActive(const char* address) const;
+	ConnState_e GetState(const char* address) const;
+	const char* GetStateString(const ConnState_e state) const;
 
 private:
 	bool m_initialized;

@@ -251,9 +251,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			case HostStates_t::HS_CHANGE_LEVEL_MP:
 			{
 #ifndef CLIENT_DLL
-				if (LOGGER::Logger::getInstance().IsLogging()) {
+				if ( LOGGER::Logger::getInstance().IsLogging() )
 					LOGGER::Logger::getInstance().StopLoggingThread();
-				}
 #endif // !CLIENT_DLL
 
 				g_pHostState->State_ChangeLevelMP();
@@ -281,9 +280,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			{
 				
 #ifndef CLIENT_DLL
-				if (LOGGER::Logger::getInstance().IsLogging()) {
+				if ( LOGGER::Logger::getInstance().IsLogging() )
 					LOGGER::Logger::getInstance().StopLoggingThread();
-				}
 #endif
 				
 

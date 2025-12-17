@@ -1199,14 +1199,15 @@ static SQRESULT ServerScript_FetchGlobalTrackerSettings__internal(HSQUIRRELVM v)
                 if (!success)
                     Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_TrackerGlobalSettingsReady for query '%s'.\n", query);
 
-                sq_release(v, &queryObj);
+                //sq_release(v, &queryObj); //probably not needed, since we ref counted it.
+                //sq_removeref(v, &queryObj );
             });
 
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }
 
     v_SQVM_ScriptError("Failed to get Query string in %s", __FUNCTION__);
-    SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
 
@@ -1350,23 +1351,23 @@ static SQRESULT ServerScript_PrintStack(HSQUIRRELVM v)
 
         switch (type)
         {
-        case OT_NULL: typeName = "null"; break;
-        case OT_INTEGER: typeName = "integer"; break;
-        case OT_FLOAT: typeName = "float"; break;
-        case OT_BOOL: typeName = "bool"; break;
-        case OT_STRING: typeName = "string"; break;
-        case OT_TABLE: typeName = "table"; break;
-        case OT_ARRAY: typeName = "array"; break;
-        case OT_USERDATA: typeName = "userdata"; break;
-        case OT_CLOSURE: typeName = "closure"; break;
-        case OT_NATIVECLOSURE: typeName = "nativeclosure"; break;
-        case OT_USERPOINTER: typeName = "userpointer"; break;
-        case OT_THREAD: typeName = "thread"; break;
-        case OT_FUNCPROTO: typeName = "funcproto"; break;
-        case OT_CLASS: typeName = "class"; break;
-        case OT_INSTANCE: typeName = "instance"; break;
-        case OT_WEAKREF: typeName = "weakref"; break;
-        default: typeName = "unknown"; break;
+            case OT_NULL: typeName = "null"; break;
+            case OT_INTEGER: typeName = "integer"; break;
+            case OT_FLOAT: typeName = "float"; break;
+            case OT_BOOL: typeName = "bool"; break;
+            case OT_STRING: typeName = "string"; break;
+            case OT_TABLE: typeName = "table"; break;
+            case OT_ARRAY: typeName = "array"; break;
+            case OT_USERDATA: typeName = "userdata"; break;
+            case OT_CLOSURE: typeName = "closure"; break;
+            case OT_NATIVECLOSURE: typeName = "nativeclosure"; break;
+            case OT_USERPOINTER: typeName = "userpointer"; break;
+            case OT_THREAD: typeName = "thread"; break;
+            case OT_FUNCPROTO: typeName = "funcproto"; break;
+            case OT_CLASS: typeName = "class"; break;
+            case OT_INSTANCE: typeName = "instance"; break;
+            case OT_WEAKREF: typeName = "weakref"; break;
+            default: typeName = "unknown"; break;
         }
         Msg(eDLL_T::SERVER, "Stack [%d]: %s -- %s\n", i, name, typeName);
     }

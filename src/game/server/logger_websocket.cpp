@@ -13,6 +13,12 @@
 #include "tier2/websocket.h"
 #include <game/server/vscript_server.h> //required for FileSystem()
 
+// /thirdparty/dirtysdk/include/DirtySDK/proto/protossl.h
+constexpr int PROTOSSL_VERSION_TLS1_0 = (0x0301);
+constexpr int PROTOSSL_VERSION_TLS1_1 = (0x0302);
+constexpr int PROTOSSL_VERSION_TLS1_2 = (0x0303);
+constexpr int PROTOSSL_VERSION_TLS1_3 = (0x0304); 
+
 namespace LOGGER
 {
     //===========================================================================
@@ -31,96 +37,108 @@ namespace LOGGER
 
     WebSocketCommandHandler::WebSocketCommandHandler()
         : m_webSocket(nullptr)
-        , m_serverPort(tracker_ws_port.GetInt())
+        , m_serverPort(0)
         , m_isConnected(false)
         , m_initialized(false)
         , m_lastUpdateTime(0.0)
         , m_lastConnectAttempt(0.0)
         , m_cachedApiKey("")
         , m_configDirty(false)
-        , m_receiveBuffer(RECEIVE_BUFFER_SIZE) //255kb max (heap)
+        , m_receiveBuffer( tracker_ws_buffer_size.GetInt() ) //255kb max (heap)
         , m_messageCount(0)
-        , m_connectedAddress("")
+        , m_connectedAddress(nullptr)
+		, m_throttleRate(0.10f)
     {
     }
 
     WebSocketCommandHandler::~WebSocketCommandHandler()
     {
-        Disconnect();
+        Shutdown();
     }
 
     //===========================================================================
     // Connection Management
     //===========================================================================
 
-    bool WebSocketCommandHandler::Connect(const char* address, int port)
+    bool WebSocketCommandHandler::Connect(const char* trackerHostname, int port)
     {
-        if (!address || address[0] == '\0')
+        if (!trackerHostname || trackerHostname[0] == '\0')
         {
-            Error(eDLL_T::SERVER, NO_ERROR,
-                "TrackerSocket: Invalid address provided\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid address provided\n");
             return false;
         }
 
-        m_serverAddress = address;
+        m_serverHostname = trackerHostname;
         m_serverPort = port;
+        m_throttleRate = tracker_ws_throttle_rate.GetFloat();
 
         if (!m_initialized.load())
         {
             m_webSocket = std::make_unique<CWebSocket>();
 
+            bool useSSL = tracker_ws_use_ssl.GetBool();
+
             CWebSocket::ConnParams_s params;
-            params.bufSize = tracker_ws_buffer_size.GetInt(); //was 4096, now 256kb ( 262144 )
+            params.bufSize = tracker_ws_buffer_size.GetInt();
             params.retryTime = tracker_ws_retry_time.GetFloat();
             params.maxRetries = tracker_ws_max_retries.GetInt();
             params.timeOut = tracker_ws_time_out.GetInt();
             params.keepAlive = tracker_ws_keep_alive.GetInt();
-            params.laxSSL = tracker_ws_lax_ssl.GetInt();
+            params.laxSSL = !GetSetting("server.LAX_SSL").empty() ? static_cast<int32_t>( GetSetting("server.LAX_SSL") == "true" ) : tracker_ws_lax_ssl.GetInt();
+            params.useTls = useSSL;
+
+            int32_t tlsVersion = tracker_ws_tls_version.GetInt();
+            int32_t protocolVersion = -1;
+
+            if(tlsVersion == 0)
+                protocolVersion = PROTOSSL_VERSION_TLS1_0;
+            else if (tlsVersion == 1)
+                protocolVersion = PROTOSSL_VERSION_TLS1_1;
+            else if (tlsVersion == 2)
+                protocolVersion = PROTOSSL_VERSION_TLS1_2;
+            else if(tlsVersion == 3)
+                protocolVersion = PROTOSSL_VERSION_TLS1_3;
+            
+
+            params.protocol = useSSL ? protocolVersion ? PROTOSSL_VERSION_TLS1_3 : 0 : 0;
 
             std::string addressStr;
-            if (tracker_ws_use_ssl.GetBool())
-                addressStr = CFmtStr("wss://%s:%d", address, port).Get();
-            else 
-				addressStr = CFmtStr("ws://%s:%d", address, port).Get();
+            if (useSSL)
+                addressStr = CFmtStr("wss://%s:%d", trackerHostname, port).Get();
+            else
+                addressStr = CFmtStr("ws://%s:%d", trackerHostname, port).Get();
+
+            AllocateAddress( addressStr.c_str() );
 
             const char* errorMsg = nullptr;
-
-            if (!m_webSocket->Init(addressStr.c_str(), params, errorMsg))
+            if ( !m_webSocket->Init( addressStr.c_str(), params, errorMsg ) )
             {
-                Error(eDLL_T::SERVER, NO_ERROR,
-                    "TrackerSocket: Failed to initialize: %s\n",
-                    errorMsg ? errorMsg : "Unknown error");
+                Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Failed to initialize: %s\n", errorMsg ? errorMsg : "Unknown error");
                 return false;
             }
 
-			m_connectedAddress = addressStr;
             m_initialized.store(true);
-            Msg(eDLL_T::SERVER, "TrackerSocket: Initialized (address=%s, port=%d)\n",
-                address, port);
+            Msg( eDLL_T::SERVER, "TrackerSocket: Initialized (hostname=%s, port=%d)\n", trackerHostname, port );
         }
 
         m_lastConnectAttempt = Plat_FloatTime();
-        m_isConnected.store(true);  // Assume connected until timeout proves otherwise
+        m_isConnected.store(false);
 
-        if (tracker_ws_debug.GetBool())
-        {
-            Msg(eDLL_T::SERVER, "TrackerSocket: Connection attempt to %s:%d (will timeout in 15 seconds if server unreachable)\n",
-                address, port);
-        }
+        if ( tracker_ws_debug.GetBool() ) 
+            Msg( eDLL_T::SERVER, "TrackerSocket: Connection attempt to %s:%d\n", trackerHostname, port );
 
         return true;
     }
 
     void WebSocketCommandHandler::Disconnect()
     {
-        m_isConnected.store(false);
-
         if (m_webSocket)
-        {
             m_webSocket->DisconnectAll();
-        }
 
-        Msg(eDLL_T::SERVER, "TrackerSocket: Disconnected\n");
+        m_isConnected.store(false);
+        m_initialized.store(false);
+
+        Msg( eDLL_T::SERVER, "TrackerSocket: Disconnected\n" );
     }
 
     bool WebSocketCommandHandler::IsConnected() const
@@ -130,41 +148,56 @@ namespace LOGGER
 
     void WebSocketCommandHandler::Update()
     {
-        if (!m_initialized.load() || !m_webSocket)
+        if ( !m_initialized.load() || !m_webSocket )
             return;
 
         m_webSocket->Update();
 
-        // Check if connection attempt has timed out (15 seconds)
+        bool nowListening = m_webSocket->IsListening( m_connectedAddress );
+        bool wasConnected = m_isConnected.load();
+
+        if ( nowListening && !wasConnected )
+        {
+            m_isConnected.store(true);
+            m_lastConnectAttempt = 0.0;
+            Msg(eDLL_T::SERVER, "TrackerSocket: Successfully connected to %s:%d\n", m_serverHostname.c_str(), m_serverPort);
+        }
+        else if (!nowListening && wasConnected && !m_webSocket->IsActive( m_connectedAddress ))
+        {
+            m_isConnected.store(false);
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Lost connection to %s:%d\n", m_serverHostname.c_str(), m_serverPort);
+        }
+
         double timeSinceAttempt = Plat_FloatTime() - m_lastConnectAttempt;
-
-        if (timeSinceAttempt > 15.0 && !m_isConnected.load() && m_lastConnectAttempt > 0.0)
+        if ( timeSinceAttempt > 15.0 && !m_webSocket->IsActive( m_connectedAddress ) && m_lastConnectAttempt > 0.0 )
         {
-            // Initial connection attempt failed - server unreachable
-            Error(eDLL_T::SERVER, NO_ERROR,
-                "TrackerSocket: Failed to connect to %s:%d after 15 seconds (server unreachable)\n",
-                m_serverAddress.c_str(), m_serverPort);
-            m_lastConnectAttempt = 0.0;  // Reset so we don't spam errors
+            Error( eDLL_T::SERVER, NO_ERROR,"TrackerSocket: Failed to connect to %s:%d after 15 seconds\n",m_serverHostname.c_str(), m_serverPort ); 
+            m_lastConnectAttempt = 0.0;
         }
 
-        int32_t received = m_webSocket->ReceiveData(m_receiveBuffer.data(), RECEIVE_BUFFER_SIZE);
-        if (received > 0)
+        int32_t received = m_webSocket->ReceiveData( m_receiveBuffer.data(), RECEIVE_BUFFER_SIZE );
+        if ( received > 0 )
         {
-            std::string incomingMsg(m_receiveBuffer.data(), received);
-            OnMessageReceived(incomingMsg);
+            std::string incomingMsg( m_receiveBuffer.data(), received );
+            OnMessageReceived( incomingMsg );
         }
 
-        // Send queued responses only if we believe connection succeeded
-        // (No need to check m_isConnected here since SendData() silently fails on disconnected sockets)
+        if ( m_webSocket->IsListening( m_connectedAddress ) )
         {
             std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
-            while (!m_responseQueue.empty())
+            while ( !m_responseQueue.empty() )
             {
                 const std::string& response = m_responseQueue.front();
-                m_webSocket->SendData(response.c_str(),
-                    static_cast<int32_t>(response.length()));
+                m_webSocket->SendData( response.c_str(), static_cast<int32_t>( response.length() ) );
                 m_responseQueue.pop();
             }
+        }
+
+        if (m_webSocket->GetState(m_connectedAddress) == CWebSocket::CS_DESTROYED)
+        {
+            Msg(eDLL_T::SERVER, "TrackerSocket: Connection dropped. \n");
+            Shutdown();
+            return;
         }
 
         m_lastUpdateTime = Plat_FloatTime();
@@ -173,61 +206,53 @@ namespace LOGGER
     void WebSocketCommandHandler::Shutdown()
     {
         Disconnect();
-        m_initialized.store(false);
+        FreeAddress();
+        m_initialized.store( false );
     }
 
     //===========================================================================
     // Message Reception
     //===========================================================================
 
-    void WebSocketCommandHandler::OnMessageReceived(const std::string& rawMessage)
+    void WebSocketCommandHandler::OnMessageReceived( const std::string& rawMessage )
     {
         m_messageCount++;
 
-        if (rawMessage.empty())
+        if ( rawMessage.empty() )
         {
-            Error(eDLL_T::SERVER, NO_ERROR,
-                "TrackerSocket: Received empty message\n");
+            Error( eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Received empty message\n" );
             return;
         }
 
         rapidjson::Document doc;
-        doc.Parse(rawMessage.c_str());
+        doc.Parse( rawMessage.c_str() );
 
         if (doc.HasParseError())
         {
-            Error(eDLL_T::SERVER, NO_ERROR,
-                "TrackerSocket: Invalid JSON received (offset %zu): %s\n",
-                doc.GetErrorOffset(),
-                rapidjson::GetParseError_En(doc.GetParseError()));
+            Error( eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid JSON received (offset %zu): %s\n", doc.GetErrorOffset(), rapidjson::GetParseError_En( doc.GetParseError() ) );
             return;
         }
 
         // Validate request format
         std::string validationError;
-        if (!ValidateMessage(doc, validationError))
+        if ( !ValidateMessage( doc, validationError ) )
         {
-            Error(eDLL_T::SERVER, NO_ERROR,
-                "TrackerSocket: Message validation failed: %s\n",
-                validationError.c_str());
+            Error( eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Message validation failed: %s\n", validationError.c_str() );
             return;
         }
 
         // Authenticate request
-        if (!AuthenticateMessage(doc, validationError))
+        if ( !AuthenticateMessage( doc, validationError ) )
         {
-            SendResponse(doc["id"].GetString(), "error", nullptr,
-                "Authentication failed");
+            SendResponse( doc["id"].GetString(), "error", nullptr, "Authentication failed" );
 
-            Error(eDLL_T::SERVER, NO_ERROR,
-                "TrackerSocket: Message authentication failed: %s\n",
-                validationError.c_str());
+            Error( eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Message authentication failed: %s\n", validationError.c_str() );
             return;
         }
 
         // Queue for processing
         {
-            std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
+            std::lock_guard<std::shared_timed_mutex> lock( m_queueMutex );
 
             PendingMessage_t msg;
             msg.id = doc["id"].GetString();
@@ -236,21 +261,18 @@ namespace LOGGER
             msg.receivedTime = Plat_FloatTime();
             msg.retryCount = 0;
 
-            m_messageQueue.push(msg);
+            m_messageQueue.push( msg );
 
-            if (tracker_ws_debug.GetBool())
-            {
-                Msg(eDLL_T::SERVER, "TrackerSocket: Message queued (type=%s, id=%s)\n",
-                    msg.type.c_str(), msg.id.c_str());
-            }
+            if ( tracker_ws_debug.GetBool() )
+                Msg( eDLL_T::SERVER, "TrackerSocket: Message queued (type=%s, id=%s)\n", msg.type.c_str(), msg.id.c_str() );
         }
     }
 
     void WebSocketCommandHandler::ProcessMessageQueue()
     {
-        std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
+        std::lock_guard<std::shared_timed_mutex> lock( m_queueMutex );
 
-        while (!m_messageQueue.empty())
+        while ( !m_messageQueue.empty() )
         {
             const PendingMessage_t& msg = m_messageQueue.front();
 
@@ -258,14 +280,15 @@ namespace LOGGER
             rapidjson::Document doc;
             doc.Parse(msg.rawJson.c_str());
 
-            if (!doc.HasParseError())
+            if ( !doc.HasParseError() )
             {
                 // Queue async task for command execution
                 std::string msgId = msg.id;
                 std::string msgType = msg.type;
                 std::string rawJson = msg.rawJson;
 
-                std::function<void()> task = [this, msgId, rawJson]() {
+                std::function<void()> task = [this, msgId, rawJson]() 
+                {
                     rapidjson::Document cmdDoc;
                     cmdDoc.Parse(rawJson.c_str());
 
@@ -273,14 +296,13 @@ namespace LOGGER
                     {
                         DispatchCommand(cmdDoc, msgId);
                     }
-                    };
+                };
 
                 TaskManager::getInstance().AddTask(task);
             }
             else
             {
-                Error(eDLL_T::SERVER, NO_ERROR,
-                    "TrackerSocket: Failed to reparse queued message\n");
+                Error( eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Failed to reparse queued message\n" );
             }
 
             m_messageQueue.pop();
@@ -530,13 +552,14 @@ namespace LOGGER
 
     void WebSocketCommandHandler::HandleGetBanlistCommand(const std::string& requestId)
     {
-        std::function<void()> task = [this, requestId]() {
-            try {
-                // Load banlist.json file directly
+        std::function<void()> task = [this, requestId]() 
+        {
+            try 
+            {
                 FileHandle_t pFile = FileSystem()->Open("banlist.json", "rb", "PLATFORM");
                 if (!pFile)
                 {
-                    // No ban file exists - return empty list
+                    // no banlist..
                     rapidjson::Document response;
                     response.SetObject();
                     rapidjson::Value entries(rapidjson::kArrayType);
@@ -644,7 +667,7 @@ namespace LOGGER
                 Error(eDLL_T::SERVER, NO_ERROR,
                     "TrackerSocket: Exception in HandleGetBanlistCommand: %s\n", e.what());
             }
-            };
+        };
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
@@ -925,14 +948,13 @@ namespace LOGGER
                     return;
                 }
 
-                // Update values in document
                 for (const auto& [key, value] : updates)
                 {
                     size_t dotPos = key.find('.');
 
                     if (dotPos != std::string::npos)
                     {
-                        // Nested: "server.MAX_LOGFILE_DIR_SIZE"
+                        // Nested
                         std::string parentKey = key.substr(0, dotPos);
                         std::string childKey = key.substr(dotPos + 1);
 
@@ -1216,7 +1238,7 @@ namespace LOGGER
         static double lastWebSocketUpdate = 0.0;
         double currentTime = Plat_FloatTime();
 
-        if ( tracker_ws_throttle_rate.GetBool() && currentTime - lastWebSocketUpdate >= tracker_ws_throttle_rate.GetFloat() ) // 100ms throttle
+        if ( currentTime - lastWebSocketUpdate >= m_throttleRate ) // 100ms throttle default
         {
             getInstance().Update();
             getInstance().ProcessMessageQueue();
@@ -1229,11 +1251,46 @@ namespace LOGGER
         LOGGER::TrackerSocketSystem()->Disconnect();
 
         std::string trackerHostStr = LOGGER::GetSetting( "server.TRACKER_HOST" );
-        const char* trackerHost = trackerHostStr.empty() ? TRACKER_WS_ADDRESS : trackerHostStr.c_str();
+        const char* trackerHost = trackerHostStr.empty() ? tracker_ws_hostname.GetString() : trackerHostStr.c_str();
         int trackerPort = tracker_ws_port.GetInt();
 
-        Msg( eDLL_T::SERVER, "TrackerSocket: TRACKER_HOST=[%s] (len=%zu) \n", trackerHost, strlen( trackerHost ) );
+        Msg( eDLL_T::SERVER, "TrackerSocket: Reconnecting attempt -- TRACKER_HOST=[%s] (len=%zu) \n", trackerHost, strlen( trackerHost ) );
         LOGGER::TrackerSocketSystem()->Connect( trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT );
+    }
+
+    void WebSocketCommandHandler::AllocateAddress( const char* address )
+    {
+        FreeAddress();
+        if ( address && address[0] != '\0' )
+        {
+            size_t len = strlen(address) + 1;
+            m_connectedAddress = new char[len];
+            memcpy( const_cast<char*>( m_connectedAddress ), address, len );
+
+            if ( tracker_ws_debug.GetBool() )
+                Msg( eDLL_T::SERVER, "TrackerSocket: AllocateAddress stored=[%s] (len=%zu)\n", m_connectedAddress, len );
+
+        }
+    }
+
+    void WebSocketCommandHandler::FreeAddress()
+    {
+        if (m_connectedAddress)
+        {
+            delete[] m_connectedAddress;
+            m_connectedAddress = nullptr;
+        }
+    }
+
+    void WebSocketCommandHandler::Status()
+    {
+		const char* state = "Unknown";
+        if ( !m_connectedAddress || !m_webSocket )
+            state = "Disconnected";
+        else
+            state = m_webSocket->GetStateString( m_webSocket->GetState( m_connectedAddress ) );
+ 
+        Msg( eDLL_T::SERVER, "TrackerSocket: State: %s | MessageCount: %" PRIu64 " |  LastUpdate: %.2f | LastConnectAttempt: %.2f | InternalConnectedState: %s \n", state, m_messageCount.load(), m_lastUpdateTime, m_lastUpdateTime, m_isConnected ? "true" : "false" );
     }
 
     //-----------------------------------------------------------------------------

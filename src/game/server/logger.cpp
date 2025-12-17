@@ -1500,10 +1500,10 @@ namespace LOGGER
         if ( useWebSockets == "true" )
         {			
 			std::string trackerHostStr = GetSetting("server.TRACKER_HOST");
-            const char* trackerHost = trackerHostStr.empty() ? TRACKER_WS_ADDRESS : trackerHostStr.c_str();
+            const char* trackerHost = trackerHostStr.empty() ? tracker_ws_hostname.GetString() : trackerHostStr.c_str();
             int trackerPort = tracker_ws_port.GetInt();
 
-            TrackerSocketSystem()->Connect( trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT);
+            TrackerSocketSystem()->Connect( trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT );
         }
         else
         {

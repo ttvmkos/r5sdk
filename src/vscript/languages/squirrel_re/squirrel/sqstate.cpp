@@ -11,6 +11,14 @@ void RefTable::AddRef(SQObject& obj)
 	ref->refs++;
 }
 
+void RefTable::RemoveRef(SQObject& obj)
+{
+	SQHash mainpos;
+	RefNode* prev;
+	RefNode* ref = Get(obj, mainpos, &prev, true);
+	ref->refs--;
+}
+
 SQBool RefTable::Release(SQObject& obj)
 {
 	return v_RefTable__Release(this, &obj);
