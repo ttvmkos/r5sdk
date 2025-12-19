@@ -225,9 +225,11 @@ static SQRESULT ServerScript_BanPlayerByName(HSQUIRRELVM v)
 {
     const SQChar* playerName = nullptr;
     const SQChar* reason = nullptr;
+    const SQChar* bannedByID = nullptr;
 
     sq_getstring(v, 2, &playerName);
     sq_getstring(v, 3, &reason);
+    sq_getstring(v, 4, &bannedByID);
 
     if (!VALID_CHARSTAR(playerName))
     {
@@ -239,7 +241,10 @@ static SQRESULT ServerScript_BanPlayerByName(HSQUIRRELVM v)
     if (!VALID_CHARSTAR(reason))
         reason = nullptr;
 
-    g_BanSystem.BanPlayerByName(playerName, reason);
+    if (!VALID_CHARSTAR(bannedByID))
+        bannedByID = nullptr;
+
+    g_BanSystem.BanPlayerByName(playerName, bannedByID, reason);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -250,9 +255,11 @@ static SQRESULT ServerScript_BanPlayerById(HSQUIRRELVM v)
 {
     const SQChar* playerHandle = nullptr;
     const SQChar* reason = nullptr;
+    const SQChar* bannedByID = nullptr;
 
     sq_getstring(v, 2, &playerHandle);
     sq_getstring(v, 3, &reason);
+    sq_getstring(v, 4, &bannedByID);
 
     if (!VALID_CHARSTAR(playerHandle))
     {
@@ -264,7 +271,10 @@ static SQRESULT ServerScript_BanPlayerById(HSQUIRRELVM v)
     if (!VALID_CHARSTAR(reason))
         reason = nullptr;
 
-    g_BanSystem.BanPlayerById(playerHandle, reason);
+    if (!VALID_CHARSTAR(bannedByID))
+        bannedByID = nullptr;
+
+    g_BanSystem.BanPlayerById(playerHandle, bannedByID, reason);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -506,39 +516,30 @@ static SQRESULT ServerScript_NavMesh_GetNearestPosInBounds(HSQUIRRELVM v)
 //-----------------------------------------------------------------------------
 static SQRESULT ServerScript_AddBanByID(HSQUIRRELVM v)
 {
-    const SQChar* ip = nullptr;
-    const SQChar* p_id = nullptr;
+    const SQChar* nuc = nullptr;
+    const SQChar* reason = nullptr;
+    const SQChar* bannedByID = nullptr;
 
-    sq_getstring(v, 2, &ip);
-    sq_getstring(v, 3, &p_id);
-
-    bool bResult = false;
+    sq_getstring( v, 2, &nuc);
+    sq_getstring( v, 3, &reason  );
+    sq_getstring( v, 4, &bannedByID );
 
     // Discard empty strings, this will use the default message instead.
-    if (!VALID_CHARSTAR(ip))
-        ip = nullptr;
-
-    // string to NucleusID_t
-    char* endPtr = nullptr;
-    NucleusID_t id = strtoull(p_id, &endPtr, 10);
-
-    if (*endPtr != '\0')
+    if ( !VALID_CHARSTAR( nuc ) || !V_IsAllDigit( nuc ) )
     {
-        bResult = false;
+        nuc = nullptr;
+        Error( eDLL_T::SERVER, NO_ERROR, "Invalid UID passed to AddBanByID" );
+        SCRIPT_CHECK_AND_RETURN( v, SQ_OK );
     }
 
-    netadr_t netAddress;
-    if (netAddress.SetFromString(ip, false))
-    {
-        if (g_BanSystem.AddEntry(&netAddress, id))
-        {
-            g_BanSystem.SaveList();
-            bResult = true;
-        }
-    }
+    if ( !VALID_CHARSTAR( bannedByID ) )
+        bannedByID = nullptr;
 
-    sq_pushbool(v, bResult);
-    return SQ_OK;
+    if ( !VALID_CHARSTAR( reason ) )
+        reason = nullptr;
+
+    g_BanSystem.AddIdToBanlist( nuc, bannedByID, reason ); //needs profiled for possibly adding to task queue
+    SCRIPT_CHECK_AND_RETURN( v, SQ_OK );
 }
 
 std::atomic<int64_t> g_MatchID{ 0 };
@@ -1264,7 +1265,13 @@ static SQRESULT ServerScript_TrackerServerMsg__internal(HSQUIRRELVM v)
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
+static SQRESULT ServerScript_TrackerRestartWebsocket__internal(HSQUIRRELVM v)
+{
+    LOGGER::TrackerSocketSystem()->Shutdown();
+    LOGGER::TrackerSocketSystem()->Reconnect();
 
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+}
 
 static SQRESULT ServerScript_TrackerCreateServerBot__internal(HSQUIRRELVM v)
 {
@@ -1588,6 +1595,7 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdatePlayerCount__internal, "Updates LIVE player count on R5R.DEV", "void", "string, string, string, string, string", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEndMatchUpdate__internal, "Updates match recap on R5R.DEV", "void", "string, string", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEAVerify__internal, "Verifys EA Account on R5R.DEV", "void", "string, string, string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerRestartWebsocket__internal, "Restarts the websocket from scripts.", "void", "", false);
 
     // for debugging the sqvm
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, sqprint__internal, "Prints string to console window from sqvm", "void", "string", false);
@@ -1615,10 +1623,10 @@ void Script_RegisterAdminServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, KickPlayerByName, "Kicks a player from the server by name", "void", "string name, string reason", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, KickPlayerById, "Kicks a player from the server by handle or nucleus id", "void", "string id, string reason", false);
 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByName, "Bans a player from the server by name", "void", "string name, string reason", false);
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerById, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByName, "Bans a player from the server by name", "void", "string name, string reason, string bannedByID", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerById, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason, string bannedByID", false);
 
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by ip & nucleus id, returns true for success", "bool", "string, string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by nucleus id or ip, banning player id, and reason, returns true for success", "bool", "string nucleusId, string reason, string bannedByID", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle", false);
 }
 

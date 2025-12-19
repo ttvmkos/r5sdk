@@ -37,13 +37,19 @@ public:
 
 	struct BanMetadata_t
 	{
+		NucleusID_t m_NucleusID;
 		CUtlString m_PlayerName;
 		CUtlString m_BanReason;
+		CUtlString m_BannedByID;
 		int64_t m_BanTimestamp;
+		CUtlString m_IpAddress;
 
-		BanMetadata_t(const char* playerName = "", const char* banReason = "", int64_t timestamp = 0)
-			: m_PlayerName(playerName ? playerName : "")
+		BanMetadata_t(NucleusID_t nucleusID = 0, const char* playerName = "", const char* banReason = "", const char* bannedByID = "00000000", const char* ipAddress = nullptr, int64_t timestamp = 0)
+			: m_NucleusID(nucleusID)
+			, m_PlayerName(playerName ? playerName : "")
 			, m_BanReason(banReason ? banReason : "")
+			, m_BannedByID(bannedByID ? bannedByID : "")
+			, m_IpAddress(ipAddress ? ipAddress : "")
 			, m_BanTimestamp(timestamp)
 		{}
 	};
@@ -54,7 +60,7 @@ public:
 
 	void Clear();
 
-	bool AddEntry(const netadr_t* const adr, const NucleusID_t nuc, const char* playerName = "", const char* banReason = "");
+	bool AddEntry(const netadr_t* const adr, const NucleusID_t nuc, const char* playerName = "", const char* bannedByID = "00000000", const char* banReason = "");
 	bool DeleteEntry(const netadr_t* const adr, const NucleusID_t nuc);
 
 	bool IsBanned(const netadr_t* const adr, const NucleusID_t nuc) const;
@@ -62,19 +68,22 @@ public:
 	void KickPlayerByName(const char* playerName, const char* reason = nullptr);
 	void KickPlayerById(const char* playerHandle, const char* reason = nullptr);
 
-	void BanPlayerByName(const char* playerName, const char* reason = nullptr);
-	void BanPlayerById(const char* playerHandle, const char* reason = nullptr);
+	void BanPlayerByName(const char* playerName, const char* bannedByID, const char* reason = nullptr);
+	void BanPlayerById(const char* playerHandle, const char* bannedByID, const char* reason = nullptr);
+	void AddIdToBanlist(const char* playerHandle, const char* bannedByID, const char* reason = nullptr, const netadr_t* const adr = nullptr );
 
 	void UnbanPlayer(const char* criteria);
 
+	bool Bansystem_ValidateInputID(const char* str, NucleusID_t& out, int base = 10);
+
 private:
-	bool AddEntry(const in6_addr* const adr, const NucleusID_t nuc, const char* playerName = "", const char* banReason = "");
+	bool AddEntry(const in6_addr* const adr, const NucleusID_t nuc, const char* playerName = "", const char* bannedByID = "00000000", const char* banReason = "");
 	bool DeleteEntry(const in6_addr* const adr, const NucleusID_t nuc);
 
 	bool IsBanned(const in6_addr* const adr, const NucleusID_t nuc) const;
 
-	void AuthorPlayerByName(const char* playerName, const bool bBan, const char* reason = nullptr);
-	void AuthorPlayerById(const char* playerHandle, const bool bBan, const char* reason = nullptr);
+	void AuthorPlayerByName(const char* playerName, const bool bBan, const char* bannedByID = nullptr, const char* reason = nullptr);
+	void AuthorPlayerById(const char* playerHandle, const bool bBan, const char* bannedByID = nullptr, const char* reason = nullptr, const bool offline = false, const netadr_t* address = nullptr);
 
 	void NotifyBanAdded(const BanMetadata_t& metadata, const NucleusID_t nuc, const char* ipAddress);
 	std::string ConvertIpToString(const in6_addr* const adr) const;

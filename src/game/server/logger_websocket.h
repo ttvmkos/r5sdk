@@ -57,6 +57,7 @@ namespace LOGGER
         void HandleReloadConfigCommand(const std::string& requestId);
         void HandleUpdateConfigCommand(const rapidjson::Value& params, const std::string& requestId);
         void HandleReloadBanlistCommand(const std::string& requestId);
+        void HandleAddBanCommand(const rapidjson::Value& params, const std::string& requestId);
 
 
         // ===== Validation & Utilities =====
@@ -104,7 +105,8 @@ namespace LOGGER
             GET_STATS = 6,
             RELOAD_CONFIG = 7,
             UPDATE_CONFIG = 8,
-            RELOAD_BANLIST = 9
+            RELOAD_BANLIST = 9,
+            ADD_BAN = 10
         };
 
         // ===== Internal Helpers =====
