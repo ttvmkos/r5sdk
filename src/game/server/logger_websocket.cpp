@@ -958,21 +958,21 @@ namespace LOGGER
                     }
                     else
                     {
-                        // Top-level
                         doc[key.c_str()] = rapidjson::Value(value.c_str(), doc.GetAllocator());
                         if (tracker_ws_debug.GetBool())
                             Msg(eDLL_T::SERVER, "  Updated: %s = %s\n", key.c_str(), value.c_str());
                     }
                 }
 
-                // Serialize back to JSON
+                // serialize back to same
                 rapidjson::StringBuffer buf;
-                rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buf);
+                writer.SetIndent(' ', 4);
                 doc.Accept(writer);
 
                 std::string jsonStr = buf.GetString();
 
-                // Write back to disk
+                // use sdk FileSystem() to write
                 FileHandle_t writeFile = FileSystem()->Open("r5rdev_config.json", "wb", "PLATFORM");
                 if (!writeFile)
                 {
