@@ -239,7 +239,6 @@ SQRESULT sq_startconsttable(HSQUIRRELVM v);
 SQRESULT sq_endconsttable(HSQUIRRELVM v);
 
 void sq_addref(HSQUIRRELVM v, SQObject* po);
-void sq_removeref(HSQUIRRELVM v, SQObject* po);
 SQBool sq_release(HSQUIRRELVM v, SQObject* po);
 
 //void sq_newclosure(HSQUIRRELVM v, SQFUNCTION f, SQUnsignedInteger nupvalues);

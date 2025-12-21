@@ -1190,19 +1190,18 @@ static SQRESULT ServerScript_FetchGlobalTrackerSettings__internal(HSQUIRRELVM v)
         sq_addref(v, &queryObj);
 
         LOGGER::TaskManager::getInstance().AddTask([v, queryObj, query]() mutable
+        {
+            std::string settings = LOGGER::FetchGlobalSettings(query);
+
+            g_TaskQueue.Dispatch([query, settings,v, queryObj]() mutable
             {
-                std::string settings = LOGGER::FetchGlobalSettings(query);
-
-                bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_TrackerGlobalSettingsReady",
-                    settings.c_str(),
-                    "void functionref( string )");
-
+                bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_TrackerGlobalSettingsReady", settings.c_str(), "void functionref( string )");
                 if (!success)
                     Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_TrackerGlobalSettingsReady for query '%s'.\n", query);
 
-                //sq_release(v, &queryObj); //probably not needed, since we ref counted it.
-                //sq_removeref(v, &queryObj );
-            });
+                sq_release(v, &queryObj);
+            }, 1 );
+        });
 
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }
