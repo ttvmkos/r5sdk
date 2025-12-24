@@ -776,8 +776,8 @@ namespace LOGGER
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
 
-        CFmtStrMax urlBase("%s?TYPE=batch&KEY=%s&identifier=%s&requestedStats=%s&requestedSettings=%s",
-            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), identifier.c_str(), requestedStats.c_str(), requestedSettings.c_str());
+        CFmtStrMax urlBase("%s?TYPE=batch&KEY=%s&identifier=%s&requestedStats=%s&requestedSettings=%s&HOST_API_KEY=%s",
+            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), identifier.c_str(), requestedStats.c_str(), requestedSettings.c_str(), GetSetting("apikey").c_str());
         std::string url = urlBase.Get();
         
         for (const std::string& oid : player_oids)
@@ -902,9 +902,9 @@ namespace LOGGER
         std::string readBuffer;
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
-
-        CFmtStrMax urlStr("%s?KEY=%s&requestedStats=%s&player_oid=%s&identifier=%s&requestedSettings=%s",
-            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings);
+        
+        CFmtStrMax urlStr("%s?KEY=%s&requestedStats=%s&player_oid=%s&identifier=%s&requestedSettings=%s&HOST_API_KEY=%s",
+            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings, GetSetting("apikey").c_str() );
 
         curl_easy_setopt(easy_handle, CURLOPT_URL, urlStr.Get());
         curl_easy_setopt(easy_handle, CURLOPT_WRITEFUNCTION, WriteCallback);
@@ -1017,7 +1017,7 @@ namespace LOGGER
         doc.AddMember("stats", stats, allocator);
         doc.AddMember("servername", rapidjson::Value(serverName.c_str(), allocator), allocator);
         doc.AddMember("KEY", rapidjson::Value(TRACKER_API_KEY.c_str(), allocator), allocator);
-        doc.AddMember("uniquekey", rapidjson::Value(uniquekey.c_str(), allocator), allocator);
+        doc.AddMember("HOST_API_KEY", rapidjson::Value(uniquekey.c_str(), allocator), allocator);
         doc.AddMember("identifier", rapidjson::Value(identifier.c_str(), allocator), allocator);
 
         rapidjson::StringBuffer buffer;
@@ -1494,11 +1494,14 @@ namespace LOGGER
             CVAR_LTHREAD_DEBOUNCE = 200;
         }
 
-        // Initialize WebSocket connection to master server if enabled
-
-        std::string useWebSockets = GetSetting( "server.USE_WEB_SOCKETS" );
-        if ( useWebSockets == "true" )
-        {			
+        // Initialize WebSocket connection to tracker server if enabled
+        bool bConfigSet = !GetSetting("server.USE_WEB_SOCKETS").empty();
+        bool bUseWebsockets = GetSetting("server.USE_WEB_SOCKETS") == "true";
+        if (bConfigSet)
+            tracker_ws_enable.SetValue(bUseWebsockets);
+        
+        if (tracker_ws_enable.GetBool())
+        {	
 			std::string trackerHostStr = GetSetting("server.TRACKER_HOST");
             const char* trackerHost = trackerHostStr.empty() ? tracker_ws_hostname.GetString() : trackerHostStr.c_str();
             int trackerPort = tracker_ws_port.GetInt();
@@ -1507,8 +1510,7 @@ namespace LOGGER
         }
         else
         {
-            Msg( eDLL_T::SERVER, "TrackerSocket: WebSocket disabled (server.USE_WEB_SOCKETS = %s)\n",
-                useWebSockets.empty() ? "not set" : useWebSockets.c_str() );
+            Msg( eDLL_T::SERVER, "TrackerSocket: WebSocket disabled by config (%s)\n", bConfigSet ? "\"server.USE_WEB_SOCKETS\": \"false\"" : "Convar tracker_ws_enable is false" );
         }
     }
 

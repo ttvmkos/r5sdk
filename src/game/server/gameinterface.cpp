@@ -23,6 +23,7 @@
 #include "pluginsystem/pluginsystem.h"
 #include "game/server/recipientfilter.h"
 #include "game/server/logger_websocket.h"
+#include <tier1\fmtstr.h> 
 
 //-----------------------------------------------------------------------------
 // Purpose: retrieves the index of the client that issued the last command
@@ -136,6 +137,11 @@ void CServerGameDLL::OnReceivedSayTextMessage(CServerGameDLL* thisptr, int sende
 
 	if (!pSenderPlayer || !pSenderClient ||  !pSenderPlayer->IsConnected())
 		return;
+
+	if (tracker_ws_relay_chat.GetBool() && pSenderClient->IsHumanPlayer())
+	{
+		LOGGER::TrackerSocketSystem()->RelayChatMessage(pSenderPlayer->GetPlatformUserId(), pSenderPlayer->GetNetName(), text);
+	}
 
 	const bool bIsTeamChat = sv_overrideTeamChatRestriction.GetBool() ? sv_forceChatToTeamOnly->GetBool()  : isTeamChat;
 	const int nMaxClients = gpGlobals->maxClients;

@@ -157,6 +157,7 @@ void HostState_HandleAutoReload()
 			if (host_autoReloadRespectGameState.GetBool() && !g_hostReloadState)
 				return;
 
+			Msg(eDLL_T::SERVER, "Server auto reloaded at uptime: %.2f\n", gpGlobals->curTime);
 			Cbuf_AddText(Cbuf_GetCurrentPlayer(), "reload\n", cmd_source_t::kCommandSrcCode);
 		}
 	}

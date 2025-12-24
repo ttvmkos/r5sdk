@@ -337,8 +337,15 @@ void CWebSocket::ConnContext_s::SetParams(const ConnParams_s& params) const
 	if (params.keepAlive > 0)
 		ProtoWebSocketControl(webSocket, 'keep', params.keepAlive, 0, NULL);
 
-	if( params.useTls )
-		ProtoWebSocketControl(webSocket, 'extn', PROTOSSL_HELLOEXTN_SERVERNAME, 0, NULL);
+	if (params.useTls)
+	{
+		const int32_t helloExtn =
+			PROTOSSL_HELLOEXTN_SERVERNAME |
+			PROTOSSL_HELLOEXTN_SIGALGS |
+			PROTOSSL_HELLOEXTN_ALPN |
+			PROTOSSL_HELLOEXTN_ELLIPTIC_CURVES;
+		ProtoWebSocketControl(webSocket, 'extn', helloExtn, 0, NULL);
+	}
 
 	if (params.protocol > 0)
 		ProtoWebSocketControl(webSocket, 'vers', params.protocol, 0, NULL);
@@ -416,6 +423,29 @@ int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 
 	return 0;
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: disconnect a specific address only
+//-----------------------------------------------------------------------------
+bool CWebSocket::Disconnect(const char* address)
+{
+	Assert(address);
+
+	if ( !IsInitialized() )
+		return false;
+
+	for (ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address)
+		{
+			conn.Disconnect();
+			return true;
+		}
+	}
+
+	return false;
+}
+
 
 //-----------------------------------------------------------------------------
 // Purpose: check if a specific address is actively listening for data
@@ -503,4 +533,9 @@ const char* CWebSocket::ConnContext_s::GetStateString(const ConnState_e contextS
 		case CS_UNAVAIL:   return "CS_UNAVAIL";
 		default:           return "UNKNOWN_STATE";
 	}
+}
+
+int32_t CWebSocket::SetCaCert(uint8_t* pBuf, int32_t nRead)
+{
+	return ProtoSSLSetCACert(pBuf, nRead);
 }
