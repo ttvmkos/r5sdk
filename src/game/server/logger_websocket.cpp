@@ -55,10 +55,10 @@ namespace LOGGER
         const char* bundleFile = tracker_ws_ca_bundle_file.GetString();
         if (VALID_CHARSTAR(bundleFile))
         {
-            Msg(eDLL_T::SERVER, "Installing CA Bundle file: %s", bundleFile);
+            Msg(eDLL_T::SERVER, "Installing CA Bundle file: %s\n", bundleFile);
             if (!InstallCaBundleFromPlatform(bundleFile))
             {
-                Msg(eDLL_T::SERVER, "Setting tracker_ws_lax_ssl to 1");
+                Msg(eDLL_T::SERVER, "Setting tracker_ws_lax_ssl to 1\n");
                 tracker_ws_lax_ssl.SetValue("1");
             }
         }
@@ -1796,14 +1796,14 @@ namespace LOGGER
     {
         if (pPlatformFile == nullptr || pPlatformFile[0] == '\0')
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: CA bundle file not specified. Aborting..");
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: CA bundle file not specified. Aborting..\n");
             return false;
         }
 
         FileHandle_t pFile = FileSystem()->Open(pPlatformFile, "rb", "PLATFORM");
         if (!pFile)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Could not find CA bundle file '%s' in /platform. Aborting.", pPlatformFile);
+            Error(eDLL_T::SERVER, NO_ERROR, "Could not find CA bundle file '%s' in /platform. Aborting.\n", pPlatformFile);
             return false;
         }
 
@@ -1811,7 +1811,7 @@ namespace LOGGER
         if (nFileSize <= 0)
         {
             FileSystem()->Close(pFile);
-            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: CA bundle file '%s' was empty. Aborting..", pPlatformFile);
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: CA bundle file '%s' was empty. Aborting..\n", pPlatformFile);
             return false;
         }
 
@@ -1833,9 +1833,9 @@ namespace LOGGER
 
         FileSystem()->FreeOptimalReadBuffer(pBuf);
         if (iResult <= 0)
-            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: CA bundle file '%s' failed to set. Aborting..", pPlatformFile);
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: CA bundle file '%s' failed to set. Aborting..\n", pPlatformFile);
         else
-            Msg(eDLL_T::SERVER, "Successfully installed CA bundle file: '%s'", pPlatformFile);
+            Msg(eDLL_T::SERVER, "Successfully installed CA bundle file: '%s'\n", pPlatformFile);
 
         return (iResult >= 0);
     }
