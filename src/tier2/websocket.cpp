@@ -292,18 +292,21 @@ bool CWebSocket::ConnContext_s::Process(const double queryTime)
 		ProtoSSLAlertDescT alertInfo{};
 		ProtoWebSocketStatus(webSocket, 'alrt', &alertInfo, sizeof(alertInfo));
 
-		Error
-		(
-			eDLL_T::SERVER, 
-			NO_ERROR,
-			"WebSocket[%s] FAILED: status=-1, fail_code=%d (%s), alert_type=%d, alert_desc='%s', state=%s\n",
-			address.String(), 
-			failCode, 
-			errorMsg,
-			alertInfo.iAlertType,
-			alertInfo.pAlertDesc ? alertInfo.pAlertDesc : "null", 
-			GetStateString(state) 
-		);
+		if (tracker_ws_debug.GetBool())
+		{
+			Error
+			(
+				eDLL_T::SERVER,
+				NO_ERROR,
+				"WebSocket[%s] FAILED: status=-1, fail_code=%d (%s), alert_type=%d, alert_desc='%s', state=%s\n",
+				address.String(),
+				failCode,
+				errorMsg,
+				alertInfo.iAlertType,
+				alertInfo.pAlertDesc ? alertInfo.pAlertDesc : "null",
+				GetStateString(state)
+			);
+		}
 
 		Destroy();
 		lastQueryTime = queryTime;
@@ -339,12 +342,19 @@ void CWebSocket::ConnContext_s::SetParams(const ConnParams_s& params) const
 
 	if (params.useTls)
 	{
-		const int32_t helloExtn =
-			PROTOSSL_HELLOEXTN_SERVERNAME |
-			PROTOSSL_HELLOEXTN_SIGALGS |
-			PROTOSSL_HELLOEXTN_ALPN |
-			PROTOSSL_HELLOEXTN_ELLIPTIC_CURVES;
-		ProtoWebSocketControl(webSocket, 'extn', helloExtn, 0, NULL);
+		if (tracker_ws_enable.GetBool())
+		{
+			const int32_t helloExtn =
+				PROTOSSL_HELLOEXTN_SERVERNAME |
+				PROTOSSL_HELLOEXTN_SIGALGS |
+				PROTOSSL_HELLOEXTN_ALPN |
+				PROTOSSL_HELLOEXTN_ELLIPTIC_CURVES;
+			ProtoWebSocketControl(webSocket, 'extn', helloExtn, 0, NULL); //tracker, more secure due to inbound traffic. Must validate, lax ssl 0
+		}
+		else
+		{
+			ProtoWebSocketControl(webSocket, 'extn', PROTOSSL_HELLOEXTN_SERVERNAME, 0, NULL); //liveapi only
+		}
 	}
 
 	if (params.protocol > 0)

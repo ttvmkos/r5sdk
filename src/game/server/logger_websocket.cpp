@@ -11,7 +11,7 @@
 #include "tier1/fmtstr.h"
 #include "tier0/dbg.h"
 #include "tier2/websocket.h"
-#include <game/server/vscript_server.h> //required for FileSystem()
+#include <game/server/vscript_server.h>
 #include "engine/host.h"
 
 //CONSTS: /thirdparty/dirtysdk/include/DirtySDK/proto/protossl.h
@@ -51,17 +51,13 @@ namespace LOGGER
         , m_connectedAddress(nullptr)
         , m_throttleRate(0.10f)
         , m_authorized(false)
+        , m_forceLaxSSL(false)
     {
-        const char* bundleFile = tracker_ws_ca_bundle_file.GetString();
-        if (VALID_CHARSTAR(bundleFile))
-        {
-            Msg(eDLL_T::SERVER, "Installing CA Bundle file: %s\n", bundleFile);
-            if (!InstallCaBundleFromPlatform(bundleFile))
-            {
-                Msg(eDLL_T::SERVER, "Setting tracker_ws_lax_ssl to 1\n");
-                tracker_ws_lax_ssl.SetValue("1");
-            }
-        }
+        if (!tracker_ws_use_ssl.GetBool())
+            return;
+
+        if( !m_loadedCaBundle.load() )
+            __CheckInstallCA();
     }
 
     WebSocketCommandHandler::~WebSocketCommandHandler()
@@ -102,6 +98,9 @@ namespace LOGGER
         if (!m_initialized.load())
         {
             m_webSocket = std::make_unique<CWebSocket>();
+
+            if( m_forceLaxSSL )
+                tracker_ws_lax_ssl.SetValue("1"); //If the ca bundle is not installed, we have to set lax to 1
 
             bool useSSL = tracker_ws_use_ssl.GetBool();
 
@@ -175,7 +174,7 @@ namespace LOGGER
             Msg(eDLL_T::SERVER, "TrackerSocket: Disconnected\n");
 
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "Setting states to false (m_isConnected|m_initialized|m_authorized)\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket: Setting states to false (m_isConnected|m_initialized|m_authorized)\n");
 
         m_isConnected.store(false);
         m_initialized.store(false);
@@ -486,8 +485,7 @@ namespace LOGGER
             {
                 try
                 {
-                    g_BanSystem.KickPlayerByName(playerName.c_str(),
-                        reason.empty() ? nullptr : reason.c_str());
+                    g_BanSystem.KickPlayerByName(playerName.c_str(), reason.empty() ? nullptr : reason.c_str());
 
                     rapidjson::Document response;
                     response.SetObject();
@@ -580,11 +578,9 @@ namespace LOGGER
 
                     rapidjson::Value data(rapidjson::kObjectType);
                     data.AddMember("player_unbanned", true, alloc);
-                    data.AddMember("criteria",
-                        rapidjson::Value(criteria.c_str(), alloc), alloc);
+                    data.AddMember("criteria", rapidjson::Value(criteria.c_str(), alloc), alloc);
 
-                    SendResponse(requestId, "success", &data,
-                        "Player unbanned successfully");
+                    SendResponse(requestId, "success", &data, "Player unbanned successfully");
 
                     Msg(eDLL_T::SERVER, "TrackerSocket: Player %s unbanned\n",
                         criteria.c_str());
@@ -1053,7 +1049,7 @@ namespace LOGGER
                             changedDelete++;
 
                             if (tracker_ws_debug.GetBool())
-                                Msg(eDLL_T::SERVER, "  Deleted: %s.%s\n", parentKey.c_str(), childKey.c_str());
+                                Msg(eDLL_T::SERVER, "TrackerSocket: Deleted: %s.%s\n", parentKey.c_str(), childKey.c_str());
 
                             if (parentObj.MemberCount() == 0)
                             {
@@ -1061,7 +1057,7 @@ namespace LOGGER
                                 appliedDelete++;
                                 changedDelete++;
                                 if (tracker_ws_debug.GetBool())
-                                    Msg(eDLL_T::SERVER, "  Deleted empty parent: %s\n", parentKey.c_str());
+                                    Msg(eDLL_T::SERVER, "TrackerSocket: Deleted empty parent: %s\n", parentKey.c_str());
                             }
                         }
                         else
@@ -1076,7 +1072,7 @@ namespace LOGGER
                             changedDelete++;
 
                             if (tracker_ws_debug.GetBool())
-                                Msg(eDLL_T::SERVER, "  Deleted: %s\n", key.c_str());
+                                Msg(eDLL_T::SERVER, "TrackerSocket: Deleted: %s\n", key.c_str());
                         }
                     }
 
@@ -1162,7 +1158,7 @@ namespace LOGGER
                                 changedSet++;
 
                             if (tracker_ws_debug.GetBool())
-                                Msg(eDLL_T::SERVER, "  Updated: %s.%s = %s\n", parentKey.c_str(), childKey.c_str(), value.c_str());
+                                Msg(eDLL_T::SERVER, "TrackerSocket:  Updated: %s.%s = %s\n", parentKey.c_str(), childKey.c_str(), value.c_str());
                         }
                         else
                         {
@@ -1568,7 +1564,7 @@ namespace LOGGER
         if (strcmp(pOldValue, newValue) == 0)
         {
             if (tracker_ws_debug.GetBool())
-                Msg(eDLL_T::SERVER, "Nothing changed for '%s' \n", var->GetName());
+                Msg(eDLL_T::SERVER, "TrackerSocket: Nothing changed for '%s' \n", var->GetName());
 
             return;
         }
@@ -1800,10 +1796,16 @@ namespace LOGGER
             return false;
         }
 
+        if (!FileSystem()->FileExists(pPlatformFile, "PLATFORM"))
+        {
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Could not find CA bundle file '%s' in /platform. Aborting.\n", pPlatformFile);
+            return false;
+        }
+
         FileHandle_t pFile = FileSystem()->Open(pPlatformFile, "rb", "PLATFORM");
         if (!pFile)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Could not find CA bundle file '%s' in /platform. Aborting.\n", pPlatformFile);
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid file handle for '%s'. Aborting.\n", pPlatformFile);
             return false;
         }
 
@@ -1829,17 +1831,44 @@ namespace LOGGER
 
         pBuf[nRead] = '\0';
 
-        const int32_t iResult = m_webSocket->SetCaCert((uint8_t*)pBuf, (int32_t)nRead);
+        const int32_t iResult = CWebSocket::SetCaCert((uint8_t*)pBuf, (int32_t)nRead);
 
         FileSystem()->FreeOptimalReadBuffer(pBuf);
         if (iResult <= 0)
             Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: CA bundle file '%s' failed to set. Aborting..\n", pPlatformFile);
         else
-            Msg(eDLL_T::SERVER, "Successfully installed CA bundle file: '%s'\n", pPlatformFile);
+        {
+            m_loadedCaBundle.store(true);
+            Msg(eDLL_T::SERVER, "TrackerSocket: Successfully installed CA bundle file: '%s'\n", pPlatformFile);
+        }
 
         return (iResult >= 0);
     }
 
+    void WebSocketCommandHandler::__CheckInstallCA()
+    {
+        if (m_loadedCaBundle.load())
+        {
+            Error(eDLL_T::SERVER, NO_ERROR, "Cannot load CA file, already installed.");
+            return;
+        }
+
+        const char* bundleFile = tracker_ws_ca_bundle_file.GetString();
+        if (!VALID_CHARSTAR(bundleFile))
+            return;
+
+        Msg(eDLL_T::SERVER, "TrackerSocket: Installing CA Bundle file: %s\n", bundleFile);
+        if (!InstallCaBundleFromPlatform(bundleFile))
+        {
+            Msg(eDLL_T::SERVER, "TrackerSocket: tracker_ws_lax_ssl will be forced to 1 on connect\n");
+            m_forceLaxSSL = true; //If the ca bundle is not installed, we have to set laxssl to 1, as protossl wont be able to verify the certificates for Sectigo
+        }
+    }
+
+    bool WebSocketCommandHandler::IsInitialized()
+    {
+        return m_initialized.load();
+    }
 
     //-----------------------------------------------------------------------------
     // Singleton accessor
@@ -1858,7 +1887,7 @@ static void TrackerWs_OnConVarChanged(IConVar* var, const char* pOldValue, float
 {
     if (!var)
     {
-        Error(eDLL_T::SERVER, NO_ERROR, "*var was nullptr");
+        Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: *var was nullptr");
         return;
     }
 
@@ -1866,7 +1895,23 @@ static void TrackerWs_OnConVarChanged(IConVar* var, const char* pOldValue, float
     const char* newValue = pConVar->GetString();
 
     if (tracker_ws_debug.GetBool())
-        Msg(eDLL_T::SERVER, "Var changed: '%s'; old:'%s' new:'%s' \n", var->GetName(), pOldValue, newValue);
+        Msg(eDLL_T::SERVER, "TrackerSocket: Var changed: '%s'; old:'%s' new:'%s' \n", var->GetName(), pOldValue, newValue);
+
+    bool initialized = LOGGER::TrackerSocketSystem()->IsInitialized();
+
+    if (pConVar == &tracker_ws_ca_bundle_file)
+    {
+        if (initialized)
+        {
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Cannot load CA file after TrackerSocketSystem has been initialized. Changes have no effect.");
+            return;
+        }
+
+        LOGGER::TrackerSocketSystem()->__CheckInstallCA();
+    }
+
+    if ( !initialized )
+        return;
 
     LOGGER::TrackerSocketSystem()->OnWebSocketConVarChanged(var, pOldValue, flOldValue, newValue);
 }
@@ -1889,23 +1934,14 @@ ConVar tracker_ws_hostname("tracker_ws_hostname", "r5r.dev", FCVAR_RELEASE, "Web
 ConVar tracker_ws_tls_version("tracker_ws_tls_version", "3", FCVAR_RELEASE, "Forces SSL to Transport Layer Security version  ( 0: [1.0] | 1: [1.1] | 2: [1.2] | 3: [1.3][default] )", &TrackerWs_OnConVarChanged);
 ConVar tracker_ws_relay_chat("tracker_ws_relay_chat", "0", FCVAR_RELEASE, "Relays chat messages to qualified clients via web panel. (0 = disabled, 1 = enabled)", &TrackerWs_OnConVarChanged);
 ConVar tracker_ws_reconnect_on_change("tracker_ws_reconnect_on_change", "1", FCVAR_RELEASE, "Reconnect to remote socket when qualified convars are changed. (0 = disabled, 1 = enabled )");
-ConVar tracker_ws_ca_bundle_file("tracker_ws_ca_bundle_file", "Sectigobundle.pem", FCVAR_RELEASE, "Required to validate Sectigo certificate chains.");
+ConVar tracker_ws_ca_bundle_file("tracker_ws_ca_bundle_file", "Sectigobundle.pem", FCVAR_RELEASE, "Required to validate Sectigo certificate chains.", &TrackerWs_OnConVarChanged);
 
 //--------------------------------------------------------------------------
 // ConCommands
 //--------------------------------------------------------------------------
-static void TrackerWs_Reconnect()
-{
-    LOGGER::TrackerSocketSystem()->Reconnect();
-}
-static void TrackerWs_Shutdown()
-{
-    LOGGER::TrackerSocketSystem()->Shutdown();
-}
-static void TrackerWs_Status()
-{
-    LOGGER::TrackerSocketSystem()->Status();
-}
+static void TrackerWs_Reconnect(){ LOGGER::TrackerSocketSystem()->Reconnect(); }
+static void TrackerWs_Shutdown(){ LOGGER::TrackerSocketSystem()->Shutdown(); }
+static void TrackerWs_Status() { LOGGER::TrackerSocketSystem()->Status(); }
 
 ConCommand tracker_ws_restart("tracker_ws_restart", TrackerWs_Reconnect, "Restart the WebSocket connection to the remote server.", FCVAR_RELEASE);
 ConCommand tracker_ws_shutdown("tracker_ws_shutdown", TrackerWs_Shutdown, "Shutdown the WebSocket connection to the remote server.", FCVAR_RELEASE);

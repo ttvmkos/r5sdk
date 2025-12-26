@@ -246,8 +246,6 @@ inline void Tracker_Shutdown()
     LOGGER::TrackerSocketSystem()->Shutdown();
 }
 #endif // LOGGER_H
-#endif // !CLIENT.DLL
-
 //-----------------------------------------------------------------------------
 // CONSTANTS
 //-----------------------------------------------------------------------------
@@ -260,5 +258,7 @@ const std::string TRACKER_STATS_API_ENDPOINT = "https://r5r.dev/api/stats8.php";
 constexpr const char* TRACKER_WS_ADDRESS = "r5r.dev";
 constexpr int TRACKER_WS_PORT = 9705;
 
-static ConCommand tracker_reload_config("tracker_reload_config", [](const CCommand& args) {LOGGER::ReloadConfig(TRACKER_CONFIG);}, "Reloads the r5r.dev tracker configuration file.", FCVAR_RELEASE);
-static ConCommand tracker_shutdown("tracker_shutdown", [](const CCommand& args) {Tracker_Shutdown(); }, "Shuts down the r5r.dev tracker systems.", FCVAR_RELEASE);
+extern ConCommand tracker_reload_config;
+extern ConCommand tracker_shutdown;
+
+#endif // !CLIENT.DLL

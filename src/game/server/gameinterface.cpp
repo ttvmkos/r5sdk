@@ -139,9 +139,7 @@ void CServerGameDLL::OnReceivedSayTextMessage(CServerGameDLL* thisptr, int sende
 		return;
 
 	if (tracker_ws_relay_chat.GetBool() && pSenderClient->IsHumanPlayer())
-	{
 		LOGGER::TrackerSocketSystem()->RelayChatMessage(pSenderPlayer->GetPlatformUserId(), pSenderPlayer->GetNetName(), text);
-	}
 
 	const bool bIsTeamChat = sv_overrideTeamChatRestriction.GetBool() ? sv_forceChatToTeamOnly->GetBool()  : isTeamChat;
 	const int nMaxClients = gpGlobals->maxClients;

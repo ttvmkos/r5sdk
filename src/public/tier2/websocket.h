@@ -130,7 +130,7 @@ public:
 
 	CWebSocket();
 
-	int32_t SetCaCert(uint8_t* pBuf, int32_t nRead);
+	static int32_t SetCaCert(uint8_t* pBuf, int32_t nRead);
 	bool Init(const char* const addressList, const ConnParams_s& params, const char*& initError);
 	void Shutdown();
 

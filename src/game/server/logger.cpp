@@ -2326,4 +2326,7 @@ namespace LOGGER
     }
 
 } // namespace LOGGER
+
+inline ConCommand tracker_reload_config("tracker_reload_config", [](const CCommand& args) {LOGGER::ReloadConfig(TRACKER_CONFIG); }, "Reloads the r5r.dev tracker configuration file.", FCVAR_RELEASE);
+inline ConCommand tracker_shutdown("tracker_shutdown", [](const CCommand& args) {Tracker_Shutdown(); }, "Shuts down the r5r.dev tracker systems.", FCVAR_RELEASE);
 #endif

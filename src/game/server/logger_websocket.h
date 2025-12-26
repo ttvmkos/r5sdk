@@ -32,6 +32,7 @@ namespace LOGGER
 
         // ===== Connection Management =====
         bool InstallCaBundleFromPlatform(const char* pPlatformFile);
+        bool IsInitialized();
         bool Connect(const char* trackerHostname, int port);
         void Reconnect();
         void Disconnect();
@@ -71,6 +72,7 @@ namespace LOGGER
 
         // ===== Configuration =====
         void OnWebSocketConVarChanged(IConVar* var, const char* pOldValue, float flOldValue, const char* newValue);
+        void __CheckInstallCA();
 
     private:
         // Private constructor (singleton)
@@ -144,12 +146,14 @@ namespace LOGGER
         double m_lastUpdateTime;
         double m_lastConnectAttempt;
         float m_throttleRate;
+        bool m_forceLaxSSL;
 
         // Configuration caching
         std::string m_cachedApiKey;
         std::string m_cachedIdentifier;
         std::atomic<bool> m_configDirty{ false };
-        std::atomic< bool > m_pendingReconnect{ false };
+        std::atomic<bool> m_pendingReconnect{ false };
+        std::atomic<bool> m_loadedCaBundle{ false };
         std::vector<char> m_receiveBuffer;
     };
 
