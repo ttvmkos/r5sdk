@@ -77,6 +77,10 @@ namespace LOGGER
             return false;
         }
 
+        std::string configRelayChatValue = GetSetting("server.RELAY_CHAT_MESSAGES");
+        if (!configRelayChatValue.empty())
+            tracker_ws_relay_chat.SetValue(configRelayChatValue == "true" ? "1" : "0");
+
         m_serverHostname = trackerHostname;
         m_serverPort = port;
         m_throttleRate = tracker_ws_throttle_rate.GetFloat();
