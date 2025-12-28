@@ -989,7 +989,7 @@ namespace LOGGER
 
         if ( !curl )
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "[RunUpdateLiveStats] Failed to acquire curl handle from pool\n");
             return;
         }
 
@@ -1287,9 +1287,7 @@ namespace LOGGER
         }
 
         std::string readBuffer;
-        std::string identifier = GetSetting("identifier");
-
-        CFmtStr postfields("KEY=%s&query=%s&identifier=%s", TRACKER_API_KEY.c_str(), query, identifier.c_str());
+        CFmtStr postfields("KEY=%s&query=%s&identifier=%s&HOST_API_KEY=%s", TRACKER_API_KEY.c_str(), query, GetSetting("identifier").c_str(), GetSetting("apikey").c_str());
         
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields.Get());   
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/globalsettings.php");
@@ -1760,7 +1758,7 @@ namespace LOGGER
         body << identifier << "\r\n";
 
         body << "--" << boundary << "\r\n";
-        body << "Content-Disposition: form-data; name=\"uniquekey\"\r\n\r\n";
+        body << "Content-Disposition: form-data; name=\"HOST_API_KEY\"\r\n\r\n";
         body << uniquekey << "\r\n";
 
         body << "--" << boundary << "\r\n";

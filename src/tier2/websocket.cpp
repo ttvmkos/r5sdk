@@ -411,7 +411,7 @@ int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 	{
 		if ( conn.state != CS_LISTENING || !conn.webSocket )
 		{
-			if ( conn.webSocket )
+			if ( conn.webSocket && tracker_ws_debug.GetBool() )
 			{
 				static int logCounter = 0;
 				if (++logCounter % 100 == 0)

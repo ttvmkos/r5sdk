@@ -1179,7 +1179,7 @@ static SQRESULT ServerScript_FetchGlobalTrackerSettings__internal(HSQUIRRELVM v)
     const SQChar* query = nullptr;
     if (SQ_SUCCEEDED(sq_getstring(v, 2, &query)) && query)
     {
-        if (std::strcmp(query, "") == 0)
+        if (strcmp(query, "") == 0)
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Query string was empty\n");
             SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -1200,7 +1200,7 @@ static SQRESULT ServerScript_FetchGlobalTrackerSettings__internal(HSQUIRRELVM v)
                     Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_TrackerGlobalSettingsReady for query '%s'.\n", query);
 
                 sq_release(v, &queryObj);
-            }, 1 );
+            }, 0 );
         });
 
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
