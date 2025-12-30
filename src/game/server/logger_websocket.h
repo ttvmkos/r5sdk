@@ -125,8 +125,9 @@ namespace LOGGER
         CommandType_e GetCommandType(const std::string& typeStr);
         void DispatchCommand(const rapidjson::Document& doc, const std::string& requestId);
 
-        //not implemented yet
-        /*std::string BuildErrorResponse(const std::string& requestId,const char* errorCode, const char* message);*/
+        // ===== Utility =====
+        int32_t ClampBuffer(int32_t bufSize);
+        float ClampThrottleRate(float throttleValue);
 
         // ===== Data Members =====
         std::unique_ptr<CWebSocket> m_webSocket;
@@ -176,6 +177,7 @@ extern ConVar tracker_ws_tls_version;
 extern ConVar tracker_ws_relay_chat;
 extern ConVar tracker_ws_reconnect_on_change;
 extern ConVar tracker_ws_ca_bundle_file;
+extern ConVar tracker_ws_reconnect_on_newgame;
 
 extern ConCommand tracker_ws_restart;
 extern ConCommand tracker_ws_shutdown;

@@ -357,7 +357,7 @@ static void ExecuteFrameServerJob(double flFrameTime, bool bRunOverlays, bool bU
 	v_ExecuteFrameServerJob(flFrameTime, bRunOverlays, bUpdateFrame);
 
 	LiveAPISystem()->RunFrame();
-	LOGGER::TrackerSocketSystem()->RunFrame();
+	LOGGER::TrackerSocketSystem()->RunFrame(); //both of these (liveapi/tracker) should be removed, and this should loop an array of callbacks that get registered if initialized.
 
 	DrawAllDebugOverlays();
 }

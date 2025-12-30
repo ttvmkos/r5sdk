@@ -1497,6 +1497,9 @@ namespace LOGGER
         bool bUseWebsockets = GetSetting("server.USE_WEB_SOCKETS") == "true";
         if (bConfigSet)
             tracker_ws_enable.SetValue(bUseWebsockets);
+
+        bool bReconnectOnNewGame = GetSetting("server.RECONNECT_ON_NEWGAME") == "true";
+        tracker_ws_reconnect_on_newgame.SetValue(bReconnectOnNewGame ? "1" : "0");
         
         if (tracker_ws_enable.GetBool())
         {	
@@ -1654,7 +1657,7 @@ namespace LOGGER
     /********************************/
 
     // ship to stats server
-    void LOGGER::Logger::SendLogToAPI()
+    void LOGGER::Logger::SendLogToAPI() //This should be compressed
     {
         std::string matchID = GetEndingMatchID();
 
@@ -1984,6 +1987,9 @@ namespace LOGGER
             Warning(eDLL_T::SERVER, "WARNING: LOG THREAD WAS RUNNING DURING HANDLE NEW MATCH\n");
             StopLoggingThread();
         }
+
+        if (tracker_ws_reconnect_on_newgame.GetBool())
+            TrackerSocketSystem()->Reconnect();
 
         StartLogging();
         Warning(eDLL_T::SERVER, ":::::::::::::::::::::::::::::::::::::: Logging thread started :::::::\n");

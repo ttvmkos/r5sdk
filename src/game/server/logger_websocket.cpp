@@ -71,6 +71,12 @@ namespace LOGGER
 
     bool WebSocketCommandHandler::Connect(const char* trackerHostname, int port)
     {
+        if (!tracker_ws_enable.GetBool())
+        {
+            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Tried to connect to tracker websocket but tracker_ws_enable is 0/false");
+            return false;
+        }
+
         if (!trackerHostname || trackerHostname[0] == '\0')
         {
             Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid address provided\n");
@@ -83,18 +89,14 @@ namespace LOGGER
 
         m_serverHostname = trackerHostname;
         m_serverPort = port;
-        m_throttleRate = tracker_ws_throttle_rate.GetFloat();
+        m_throttleRate = ClampThrottleRate(tracker_ws_throttle_rate.GetFloat());
         m_cachedApiKey = GetSetting("apikey");
         m_cachedIdentifier = GetSetting("identifier");
 
         int32_t bufSize = tracker_ws_buffer_size.GetInt();
 
         //clamp
-        if (bufSize < 1024)
-            bufSize = 1024;
-
-        if (bufSize > (255 * 1024))
-            bufSize = (255 * 1024);
+        bufSize = ClampBuffer(bufSize);
 
         tracker_ws_buffer_size.SetValue(bufSize);
         m_receiveBuffer.resize(static_cast<size_t>(bufSize));
@@ -320,43 +322,40 @@ namespace LOGGER
 
     void WebSocketCommandHandler::ProcessMessageQueue()
     {
-        std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
+        std::queue<PendingMessage_t> localQueue;
 
-        while (!m_messageQueue.empty())
         {
-            const PendingMessage_t& msg = m_messageQueue.front();
+            std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
+            localQueue.swap(m_messageQueue);
+        }
 
-            rapidjson::Document doc;
-            doc.Parse(msg.rawJson.c_str());
+        while (!localQueue.empty())
+        {
+            PendingMessage_t msg = std::move(localQueue.front());
+            localQueue.pop();
 
-            if (!doc.HasParseError())
-            {
-                // async task for commands
-                std::string msgId = msg.id;
-                std::string msgType = msg.type;
-                std::string rawJson = msg.rawJson;
+            std::string msgId = std::move(msg.id);
+            std::string rawJson = std::move(msg.rawJson);
 
-                std::function<void()> task = [this, msgId, rawJson]()
+            std::function<void()> task =
+                [this, msgId, rawJson]()
+                {
+                    rapidjson::Document cmdDoc;
+                    cmdDoc.Parse(rawJson.c_str());
+
+                    if (cmdDoc.HasParseError())
                     {
-                        rapidjson::Document cmdDoc;
-                        cmdDoc.Parse(rawJson.c_str());
+                        Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid JSON in queued message ( id=%s )\n", msgId.c_str());
+                        return;
+                    }
 
-                        if (!cmdDoc.HasParseError())
-                        {
-                            DispatchCommand(cmdDoc, msgId);
-                        }
-                    };
+                    DispatchCommand(cmdDoc, msgId);
+                };
 
-                TaskManager::getInstance().AddTask(task);
-            }
-            else
-            {
-                Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Failed to reparse queued message\n");
-            }
-
-            m_messageQueue.pop();
+            TaskManager::getInstance().AddTask(task);
         }
     }
+
 
     //===========================================================================
     // Command Dispatching (Switch Case - Efficient)
@@ -397,9 +396,9 @@ namespace LOGGER
             return CommandType_e::UNKNOWN;
     }
 
-    void WebSocketCommandHandler::DispatchCommand(const rapidjson::Document& doc,
-        const std::string& requestId)
+    void WebSocketCommandHandler::DispatchCommand(const rapidjson::Document& doc, const std::string& requestId)
     {
+
         const std::string& typeStr = doc["type"].GetString();
         const auto& params = doc["params"];
 
@@ -674,24 +673,23 @@ namespace LOGGER
                             {
                                 rapidjson::Value newEntry(rapidjson::kObjectType);
 
-                                // Copy all relevant fields from entry
                                 if (entry.HasMember("nucleusId") && entry["nucleusId"].IsUint64())
                                     newEntry.AddMember("nucleusId", entry["nucleusId"].GetUint64(), alloc);
 
                                 if (entry.HasMember("playerName") && entry["playerName"].IsString())
-                                    newEntry.AddMember("playerName",
-                                        rapidjson::Value(entry["playerName"].GetString(), alloc), alloc);
+                                    newEntry.AddMember("playerName", rapidjson::Value(entry["playerName"].GetString(), alloc), alloc);
 
                                 if (entry.HasMember("ipAddress") && entry["ipAddress"].IsString())
-                                    newEntry.AddMember("ipAddress",
-                                        rapidjson::Value(entry["ipAddress"].GetString(), alloc), alloc);
+                                    newEntry.AddMember("ipAddress", rapidjson::Value(entry["ipAddress"].GetString(), alloc), alloc);
 
                                 if (entry.HasMember("banReason") && entry["banReason"].IsString())
-                                    newEntry.AddMember("banReason",
-                                        rapidjson::Value(entry["banReason"].GetString(), alloc), alloc);
+                                    newEntry.AddMember("banReason", rapidjson::Value(entry["banReason"].GetString(), alloc), alloc);
 
                                 if (entry.HasMember("banTimestamp") && entry["banTimestamp"].IsInt64())
                                     newEntry.AddMember("banTimestamp", entry["banTimestamp"].GetInt64(), alloc);
+
+                                if (entry.HasMember("bannedByID") && entry["bannedByID"].IsString())
+                                    newEntry.AddMember("bannedByID", rapidjson::Value(entry["bannedByID"].GetString(), alloc), alloc);
 
                                 if (entry.HasMember("banExpiryTimestamp") && entry["banExpiryTimestamp"].IsInt64())
                                     newEntry.AddMember("banExpiryTimestamp", entry["banExpiryTimestamp"].GetInt64(), alloc);
@@ -862,7 +860,7 @@ namespace LOGGER
                     auto& alloc = response.GetAllocator();
 
                     rapidjson::Value stats(rapidjson::kObjectType);
-                    stats.AddMember("message_count", m_messageCount.load(), alloc);
+                    stats.AddMember("socket_msg_count", m_messageCount.load(), alloc);
                     stats.AddMember("uptime_seconds", Plat_FloatTime(), alloc);
 
                     SendResponse(requestId, "success", &stats, "Stats retrieved");
@@ -1445,8 +1443,7 @@ namespace LOGGER
     // Message Validation & Authentication
     //===========================================================================
 
-    bool WebSocketCommandHandler::ValidateMessage(const rapidjson::Document& doc,
-        std::string& outError)
+    bool WebSocketCommandHandler::ValidateMessage(const rapidjson::Document& doc, std::string& outError)
     {
         if (!doc.IsObject())
         {
@@ -1475,8 +1472,7 @@ namespace LOGGER
         return true;
     }
 
-    bool WebSocketCommandHandler::AuthenticateMessage(const rapidjson::Document& doc,
-        std::string& outError)
+    bool WebSocketCommandHandler::AuthenticateMessage(const rapidjson::Document& doc, std::string& outError)
     {
         const std::string type = doc.HasMember("type") && doc["type"].IsString() ? doc["type"].GetString() : "";
 
@@ -1683,6 +1679,9 @@ namespace LOGGER
 
     void WebSocketCommandHandler::RunFrame()
     {
+        if (!tracker_ws_enable.GetBool())
+            return;
+
         if (m_configDirty.exchange(false))
             ApplyConVars();
 
@@ -1767,21 +1766,14 @@ namespace LOGGER
             return;
         }
 
-        m_throttleRate = tracker_ws_throttle_rate.GetFloat();
+        m_throttleRate = ClampThrottleRate( tracker_ws_throttle_rate.GetFloat() );
         m_cachedApiKey = GetSetting("apikey");
         m_cachedIdentifier = GetSetting("identifier");
-
-        if (m_throttleRate < 0.0f) //clamp non negative
-            m_throttleRate = 0.0f;
 
         // Buffer size (startup config only): clamp + store back to convar
         int32_t bufSize = tracker_ws_buffer_size.GetInt();
 
-        if (bufSize < 1024)
-            bufSize = 1024;
-
-        if (bufSize > (255 * 1024))
-            bufSize = (255 * 1024);
+        bufSize = ClampBuffer(bufSize);
 
         if (bufSize != tracker_ws_buffer_size.GetInt())
             tracker_ws_buffer_size.SetValue(bufSize);
@@ -1869,6 +1861,25 @@ namespace LOGGER
         }
     }
 
+    int32_t WebSocketCommandHandler::ClampBuffer(int32_t bufSize)
+    {
+        if (bufSize < 1024)
+            bufSize = 1024;
+
+        if (bufSize > (2 * 1024 * 1024)) //not sure why anyone would want 2mb, but here you go.
+            bufSize = (2 * 1024 * 1024);
+
+        return bufSize;
+    }
+
+    float WebSocketCommandHandler::ClampThrottleRate(float throttleValue)
+    {
+        if (throttleValue < 0.0f) //non negative
+            throttleValue = 0.0f;
+
+        return throttleValue;
+    }
+
     bool WebSocketCommandHandler::IsInitialized()
     {
         return m_initialized.load();
@@ -1939,6 +1950,7 @@ ConVar tracker_ws_tls_version("tracker_ws_tls_version", "3", FCVAR_RELEASE, "For
 ConVar tracker_ws_relay_chat("tracker_ws_relay_chat", "0", FCVAR_RELEASE, "Relays chat messages to qualified clients via web panel. (0 = disabled, 1 = enabled)", &TrackerWs_OnConVarChanged);
 ConVar tracker_ws_reconnect_on_change("tracker_ws_reconnect_on_change", "1", FCVAR_RELEASE, "Reconnect to remote socket when qualified convars are changed. (0 = disabled, 1 = enabled )");
 ConVar tracker_ws_ca_bundle_file("tracker_ws_ca_bundle_file", "Sectigobundle.pem", FCVAR_RELEASE, "Required to validate Sectigo certificate chains.", &TrackerWs_OnConVarChanged);
+ConVar tracker_ws_reconnect_on_newgame("tracker_ws_reconnect_on_newgame", "0", FCVAR_RELEASE, "Reconnect the socket for each new game.");
 
 //--------------------------------------------------------------------------
 // ConCommands

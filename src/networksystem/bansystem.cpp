@@ -228,6 +228,20 @@ void CBanSystem::SaveList(void) const
 
 	rapidjson::Value entries(rapidjson::kArrayType);
 
+	std::unordered_map<NucleusID_t, std::string> nucToIp;
+	nucToIp.reserve(m_banMetadataByIp.size());
+
+	for (const auto& kv : m_banMetadataByIp)
+	{
+		const std::string& ip = kv.first;
+		const BanMetadata_t& meta = kv.second;
+
+		if (meta.m_NucleusID != 0 && !ip.empty())
+		{
+			nucToIp[meta.m_NucleusID] = ip;
+		}
+	}
+
 	// ===============================
 	// Write nucleus ID bans
 	// ===============================
@@ -243,12 +257,26 @@ void CBanSystem::SaveList(void) const
 
 		entry.AddMember("nucleusId", id, allocator);
 
+		const char* ipOut = "";
+		std::string ipFallback;
+
+		if (pMeta && pMeta->m_IpAddress.Length() > 0)
+		{
+			ipOut = pMeta->m_IpAddress.Get();
+		}
+		else
+		{
+			auto ipIt = nucToIp.find(id);
+			if (ipIt != nucToIp.end())
+			{
+				ipFallback = ipIt->second;
+				ipOut = ipFallback.c_str();
+			}
+		}
+
 		entry.AddMember(
 			"ipAddress",
-			rapidjson::Value(
-				pMeta ? pMeta->m_IpAddress.Get() : "",
-				allocator
-			),
+			rapidjson::Value(ipOut, allocator),
 			allocator
 		);
 
@@ -294,24 +322,27 @@ void CBanSystem::SaveList(void) const
 	}
 
 	// ===============================
-	// Write IP-only bans
+	// Write IP-only bans (ONLY when they do not already have a nucleus record)
 	// ===============================
 	for (const auto& ipWrapper : m_bannedIpList)
 	{
 		std::string ipStr = ConvertIpToString(&ipWrapper.adr);
+		if (ipStr.empty())
+			continue;
 
 		auto it = m_banMetadataByIp.find(ipStr);
 		if (it == m_banMetadataByIp.end())
 			continue;
 
 		const BanMetadata_t& meta = it->second;
+
+		if (meta.m_NucleusID != 0 && m_bannedIdList.find(meta.m_NucleusID) != m_bannedIdList.end())
+			continue;
+
 		rapidjson::Value entry(rapidjson::kObjectType);
 
-		entry.AddMember(
-			"nucleusId", 
-			meta.m_NucleusID,
-			allocator);
-		
+		entry.AddMember("nucleusId", meta.m_NucleusID, allocator);
+
 		entry.AddMember(
 			"ipAddress",
 			rapidjson::Value(ipStr.c_str(), allocator),
@@ -364,6 +395,7 @@ void CBanSystem::SaveList(void) const
 	FileSystem()->Close(pFile);
 }
 
+
 void CBanSystem::Clear()
 {
 	m_bannedIdList.clear();
@@ -387,8 +419,9 @@ bool CBanSystem::AddEntry(const netadr_t* const adr, const NucleusID_t nuc, cons
 bool CBanSystem::AddEntry(const in6_addr* const adr, const NucleusID_t nuc, const char* playerName, const char* bannedByID, const char* banReason)
 {
 	bool nucAdded = false;
+	bool adrAdded = false;
 
-	std::string ipStr; 
+	std::string ipStr;
 
 	if (adr)
 		ipStr = ConvertIpToString(adr);
@@ -406,31 +439,24 @@ bool CBanSystem::AddEntry(const in6_addr* const adr, const NucleusID_t nuc, cons
 	if (nuc)
 	{
 		nucAdded = m_bannedIdList.insert(nuc).second;
-		if (nucAdded)
-			m_banMetadataById[nuc] = metadata;
+		m_banMetadataById[nuc] = metadata;
 	}
 
-	bool adrAdded = false;
-
-	if (adr)
+	if (adr && !ipStr.empty())
 	{
 		adrAdded = m_bannedIpList.insert(adr).second;
-		if (adrAdded)
-		{
-			ipStr = ConvertIpToString(adr);
-			if (!ipStr.empty())
-				m_banMetadataByIp[ipStr] = metadata;
-		}
+		m_banMetadataByIp[ipStr] = metadata;
 	}
 
 	// Notify websocket if something was added
-	if ((nucAdded || adrAdded) &&(nuc || adr))
+	if ((nucAdded || adrAdded) && (nuc || adr))
 	{
-		NotifyBanAdded( metadata, nuc, ipStr.empty() ? "" : ipStr.c_str() );
+		NotifyBanAdded(metadata, nuc, ipStr.empty() ? "" : ipStr.c_str());
 	}
 
 	return nucAdded || adrAdded;
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: deletes an entry in the banned list
@@ -942,6 +968,8 @@ void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan
 
 				pClient->Disconnect(REP_MARK_BAD, reason);
 				bDisconnect = true;
+
+				break;
 			}
 			else
 			{
@@ -953,6 +981,8 @@ void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan
 
 				pClient->Disconnect(REP_MARK_BAD, reason);
 				bDisconnect = true;
+
+				break;
 			}
 		}
 	}
