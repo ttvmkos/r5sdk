@@ -269,7 +269,7 @@ bool CWebSocket::ConnContext_s::Process(const double queryTime)
 	{
 		static int logCounter = 0;
 		if (++logCounter % 10 == 0)
-			Msg(eDLL_T::SERVER, "WebSocket[%s] status=%d state=%s\n", address.String(), status, GetStateString(state));
+			Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]:[%s] status=%d state=%s\n", address.String(), status, GetStateString(state));
 	}
 
 	if (status == -1)
@@ -298,7 +298,7 @@ bool CWebSocket::ConnContext_s::Process(const double queryTime)
 			(
 				eDLL_T::SERVER,
 				NO_ERROR,
-				"WebSocket[%s] FAILED: status=-1, fail_code=%d (%s), alert_type=%d, alert_desc='%s', state=%s\n",
+				"TrackerSocket[DEBUG]:[%s] FAILED: status=-1, fail_code=%d (%s), alert_type=%d, alert_desc='%s', state=%s\n",
 				address.String(),
 				failCode,
 				errorMsg,
@@ -415,7 +415,7 @@ int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 			{
 				static int logCounter = 0;
 				if (++logCounter % 100 == 0)
-					Msg( eDLL_T::SERVER, "WebSocket[%s] waiting... state=%s\n", conn.address.String(), GetStateString( conn.state ) );
+					Msg( eDLL_T::SERVER, "TrackerSocket[DEBUG]:[%s] waiting... state=%s\n", conn.address.String(), GetStateString( conn.state ) );
 			}
 
 			continue;
@@ -425,7 +425,7 @@ int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
 		if ( received > 0 )
 		{	
 			if( tracker_ws_debug.GetBool() )
-				Msg( eDLL_T::SERVER, "WebSocket[%s] RECEIVED %d bytes\n", conn.address.String(), received );
+				Msg( eDLL_T::SERVER, "TrackerSocket[DEBUG]:[%s] RECEIVED %d bytes\n", conn.address.String(), received );
 	
 			return received;
 		}

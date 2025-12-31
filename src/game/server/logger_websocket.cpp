@@ -163,7 +163,7 @@ namespace LOGGER
         m_isConnected.store(false);
 
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Connection attempt to %s:%d\n", trackerHostname, port);
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Connection attempt to %s:%d\n", trackerHostname, port);
 
         return true;
     }
@@ -180,7 +180,7 @@ namespace LOGGER
             Msg(eDLL_T::SERVER, "TrackerSocket: Disconnected\n");
 
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Setting states to false (m_isConnected|m_initialized|m_authorized)\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Setting states to false (m_isConnected|m_initialized|m_authorized)\n");
 
         m_isConnected.store(false);
         m_initialized.store(false);
@@ -316,7 +316,7 @@ namespace LOGGER
             m_messageQueue.push(msg);
 
             if (tracker_ws_debug.GetBool())
-                Msg(eDLL_T::SERVER, "TrackerSocket: Message queued (type=%s, id=%s)\n", msg.type.c_str(), msg.id.c_str());
+                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Message queued (type=%s, id=%s)\n", msg.type.c_str(), msg.id.c_str());
         }
     }
 
@@ -398,7 +398,6 @@ namespace LOGGER
 
     void WebSocketCommandHandler::DispatchCommand(const rapidjson::Document& doc, const std::string& requestId)
     {
-
         const std::string& typeStr = doc["type"].GetString();
         const auto& params = doc["params"];
 
@@ -509,7 +508,7 @@ namespace LOGGER
         TaskManager::getInstance().AddTask(task);
 
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Kick command queued for %s\n", playerName.c_str());
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Kick command queued for %s\n", playerName.c_str());
     }
 
     void WebSocketCommandHandler::HandleBanCommand(const rapidjson::Value& params,
@@ -553,7 +552,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Ban command queued for %s\n", playerName.c_str());
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Ban command queued for %s\n", playerName.c_str());
     }
 
     void WebSocketCommandHandler::HandleUnbanCommand(const rapidjson::Value& params,
@@ -596,7 +595,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Unban command queued for %s\n", criteria.c_str());
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Unban command queued for %s\n", criteria.c_str());
     }
 
     void WebSocketCommandHandler::HandleGetBanlistCommand(const std::string& requestId)
@@ -716,7 +715,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Get banlist command queued\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get banlist command queued\n");
     }
 
     void WebSocketCommandHandler::HandleGetPlayersCommand(const std::string& requestId)
@@ -796,7 +795,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Get players command queued\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get players command queued\n");
     }
 
     void WebSocketCommandHandler::HandleGetConfigCommand(const rapidjson::Value& params,
@@ -846,7 +845,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Get config command queued\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get config command queued\n");
     }
 
     void WebSocketCommandHandler::HandleGetStatsCommand(const std::string& requestId)
@@ -873,7 +872,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Get stats command queued\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get stats command queued\n");
     }
 
     void WebSocketCommandHandler::HandleReloadConfigCommand(const std::string& requestId)
@@ -903,7 +902,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Reload config command queued\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Reload config command queued\n");
     }
 
     void WebSocketCommandHandler::HandleUpdateConfigCommand(const rapidjson::Value& params, const std::string& requestId)
@@ -1051,7 +1050,7 @@ namespace LOGGER
                             changedDelete++;
 
                             if (tracker_ws_debug.GetBool())
-                                Msg(eDLL_T::SERVER, "TrackerSocket: Deleted: %s.%s\n", parentKey.c_str(), childKey.c_str());
+                                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Deleted: %s.%s\n", parentKey.c_str(), childKey.c_str());
 
                             if (parentObj.MemberCount() == 0)
                             {
@@ -1059,7 +1058,7 @@ namespace LOGGER
                                 appliedDelete++;
                                 changedDelete++;
                                 if (tracker_ws_debug.GetBool())
-                                    Msg(eDLL_T::SERVER, "TrackerSocket: Deleted empty parent: %s\n", parentKey.c_str());
+                                    Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Deleted empty parent: %s\n", parentKey.c_str());
                             }
                         }
                         else
@@ -1074,7 +1073,7 @@ namespace LOGGER
                             changedDelete++;
 
                             if (tracker_ws_debug.GetBool())
-                                Msg(eDLL_T::SERVER, "TrackerSocket: Deleted: %s\n", key.c_str());
+                                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Deleted: %s\n", key.c_str());
                         }
                     }
 
@@ -1160,7 +1159,7 @@ namespace LOGGER
                                 changedSet++;
 
                             if (tracker_ws_debug.GetBool())
-                                Msg(eDLL_T::SERVER, "TrackerSocket:  Updated: %s.%s = %s\n", parentKey.c_str(), childKey.c_str(), value.c_str());
+                                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]:  Updated: %s.%s = %s\n", parentKey.c_str(), childKey.c_str(), value.c_str());
                         }
                         else
                         {
@@ -1213,7 +1212,7 @@ namespace LOGGER
                                 changedSet++;
 
                             if (tracker_ws_debug.GetBool())
-                                Msg(eDLL_T::SERVER, "  Updated: %s = %s\n", key.c_str(), value.c_str());
+                                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Updated: %s = %s\n", key.c_str(), value.c_str());
                         }
                     }
 
@@ -1287,7 +1286,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Update config command queued\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Update config command queued\n");
     }
 
 
@@ -1314,7 +1313,7 @@ namespace LOGGER
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
         {
-            Msg(eDLL_T::SERVER, "TrackerSocket: Reload banlist command queued\n");
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Reload banlist command queued\n");
         }
     }
 
@@ -1373,7 +1372,7 @@ namespace LOGGER
 
         TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Add Ban command queued for %s\n", playerId.c_str());
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Add Ban command queued for %s\n", playerId.c_str());
     }
 
     void WebSocketCommandHandler::HandleReloadServerCommand(const std::string& requestId)
@@ -1389,9 +1388,16 @@ namespace LOGGER
         {
             const char* status = doc["status"].GetString();
             const char* reason = doc.HasMember("reason") && doc["reason"].IsString() ? doc["reason"].GetString() : "";
-            const rapidjson::Value* data = (doc.HasMember("data") && doc["data"].IsObject()) ? &doc["data"] : nullptr;
-
             const bool accepted = strcmp(status, "accepted") == 0;
+
+            rapidjson::Document dataDoc;
+            dataDoc.SetObject();
+            auto& alloc = dataDoc.GetAllocator();
+            dataDoc.AddMember("type", rapidjson::Value( accepted ? "connection.success" : "connection.failed", alloc), alloc);
+            dataDoc.AddMember("identifier", rapidjson::Value(m_cachedIdentifier.c_str(), alloc), alloc);
+            if (reason[0])
+                dataDoc.AddMember("reason", rapidjson::Value(reason, alloc), alloc);
+
             m_authorized.store(accepted);
 
             std::string message = accepted ? "Handshake accepted. Authenticated." : "Handshake declined. Disconnected.";
@@ -1399,7 +1405,7 @@ namespace LOGGER
                 message += std::string(" Reason: ") + reason;
 
             const char* responseStatus = accepted ? "success" : "error";
-            SendResponse(requestId, responseStatus, data, message);
+            SendResponse(requestId, responseStatus, &dataDoc, message);
 
             Msg(eDLL_T::SERVER, "TrackerSocket: Handshake %s%s%s\n", status, reason[0] ? " reason=" : "", reason);
 
@@ -1435,7 +1441,7 @@ namespace LOGGER
         }
 
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Handshake response queued (id=%s)\n", requestId.c_str());
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Handshake response queued (id=%s)\n", requestId.c_str());
     }
 
 
@@ -1564,7 +1570,7 @@ namespace LOGGER
         if (strcmp(pOldValue, newValue) == 0)
         {
             if (tracker_ws_debug.GetBool())
-                Msg(eDLL_T::SERVER, "TrackerSocket: Nothing changed for '%s' \n", var->GetName());
+                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Nothing changed for '%s' \n", var->GetName());
 
             return;
         }
@@ -1638,7 +1644,7 @@ namespace LOGGER
         }
 
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket: Response queued (id=%s, status=%s)\n", requestId.c_str(), status);
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Response queued (id=%s, status=%s)\n", requestId.c_str(), status);
     }
 
     void WebSocketCommandHandler::RelayChatMessage(unsigned __int64 senderNucleus, const char* name, const char* message)
@@ -1732,7 +1738,7 @@ namespace LOGGER
             memcpy(m_connectedAddress, address, len);
 
             if (tracker_ws_debug.GetBool())
-                Msg(eDLL_T::SERVER, "TrackerSocket: AllocateAddress stored=[%s] (len=%zu)\n", m_connectedAddress, len);
+                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: AllocateAddress stored=[%s] (len=%zu)\n", m_connectedAddress, len);
         }
     }
 
@@ -1910,7 +1916,7 @@ static void TrackerWs_OnConVarChanged(IConVar* var, const char* pOldValue, float
     const char* newValue = pConVar->GetString();
 
     if (tracker_ws_debug.GetBool())
-        Msg(eDLL_T::SERVER, "TrackerSocket: Var changed: '%s'; old:'%s' new:'%s' \n", var->GetName(), pOldValue, newValue);
+        Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Var changed: '%s'; old:'%s' new:'%s' \n", var->GetName(), pOldValue, newValue);
 
     bool initialized = LOGGER::TrackerSocketSystem()->IsInitialized();
 
