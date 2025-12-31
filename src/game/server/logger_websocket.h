@@ -179,7 +179,7 @@ extern ConVar tracker_ws_reconnect_on_change;
 extern ConVar tracker_ws_ca_bundle_file;
 extern ConVar tracker_ws_reconnect_on_newgame;
 
-extern ConCommand tracker_ws_restart;
+extern ConCommand tracker_ws_reconnect;
 extern ConCommand tracker_ws_shutdown;
 extern ConCommand tracker_ws_status;
 

@@ -469,8 +469,7 @@ namespace LOGGER
     // Command Handlers
     //===========================================================================
 
-    void WebSocketCommandHandler::HandleKickCommand(const rapidjson::Value& params,
-        const std::string& requestId)
+    void WebSocketCommandHandler::HandleKickCommand(const rapidjson::Value& params, const std::string& requestId)
     {
         if (!params.HasMember("player_name") || !params["player_name"].IsString())
         {
@@ -1965,7 +1964,7 @@ static void TrackerWs_Reconnect(){ LOGGER::TrackerSocketSystem()->Reconnect(); }
 static void TrackerWs_Shutdown(){ LOGGER::TrackerSocketSystem()->Shutdown(); }
 static void TrackerWs_Status() { LOGGER::TrackerSocketSystem()->Status(); }
 
-ConCommand tracker_ws_restart("tracker_ws_restart", TrackerWs_Reconnect, "Restart the WebSocket connection to the remote server.", FCVAR_RELEASE);
+ConCommand tracker_ws_reconnect("tracker_ws_reconnect", TrackerWs_Reconnect, "Restart the WebSocket connection to the remote server.", FCVAR_RELEASE);
 ConCommand tracker_ws_shutdown("tracker_ws_shutdown", TrackerWs_Shutdown, "Shutdown the WebSocket connection to the remote server.", FCVAR_RELEASE);
 ConCommand tracker_ws_status("tracker_ws_status", TrackerWs_Status, "Display the current status of the WebSocket connection to the remote server.", FCVAR_RELEASE);
 #endif // CLIENT_DLL

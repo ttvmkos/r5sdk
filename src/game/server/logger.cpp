@@ -61,7 +61,15 @@ static std::string Sanitize_NumbersOnly(const std::string& input)
 
 static void Script_CodeCallback_BatchStatsLoaded()
 {
-    g_pServerScript->ExecuteCodeCallback("CodeCallback_BatchStatsLoaded");
+    g_TaskQueue.Dispatch
+    (
+        []
+        { 
+            if(g_pServer->IsActive() )
+                g_pServerScript->ExecuteCodeCallback("CodeCallback_BatchStatsLoaded");
+        }
+        ,0 
+    );
 }
 
 inline static std::string join_fast(const std::vector<std::string>& vec, const std::string& delimiter)
@@ -838,8 +846,7 @@ namespace LOGGER
             rapidjson::Document document;
             if (document.Parse(stats_json.c_str()).HasParseError())
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "JSON parsing failed: %s\n",
-                    rapidjson::GetParseError_En(document.GetParseError()));
+                Error(eDLL_T::SERVER, NO_ERROR, "JSON parsing failed: %s\n", rapidjson::GetParseError_En(document.GetParseError()));
                 Script_CodeCallback_BatchStatsLoaded();
                 return;
             }
@@ -847,6 +854,17 @@ namespace LOGGER
             if (!document.IsObject())
             {
                 Error(eDLL_T::SERVER, NO_ERROR, "JSON root is not an object\n");
+                Script_CodeCallback_BatchStatsLoaded();
+                return;
+            }
+
+            if (document.HasMember("error"))
+            {
+                const char* errorMsg = "";
+                if (document["error"].IsString())
+                    errorMsg = document["error"].GetString();
+
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error fetching stats -- %s", errorMsg ? errorMsg : "");
                 Script_CodeCallback_BatchStatsLoaded();
                 return;
             }

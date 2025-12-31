@@ -999,6 +999,17 @@ static SQRESULT ServerScript_GetPlayerPersistenceData__internal(HSQUIRRELVM v)
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }
 
+    if (document.HasMember("error"))
+    {
+        const char* errorMsg = "";
+        if (document["error"].IsString())
+            errorMsg = document["error"].GetString();
+
+        Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error fetching stats -- %s", errorMsg ? errorMsg : "");
+        sq_pushinteger(v, -1);
+        SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+    }
+
     sq_newtable(v);
     for (rapidjson::Value::ConstMemberIterator itr = document.MemberBegin(); itr != document.MemberEnd(); ++itr)
     {
