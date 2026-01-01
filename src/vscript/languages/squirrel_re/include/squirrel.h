@@ -74,6 +74,9 @@ struct SQBufState;
 typedef char SQChar;
 struct SQString;
 
+// Define SQFUNCTION as a function pointer type for native functions in Squirrel
+typedef SQInteger(*SQFUNCTION)(HSQUIRRELVM v);
+
 #define SQOBJECT_REF_COUNTED 0x08000000
 #define SQOBJECT_NUMERIC		0x04000000
 #define SQOBJECT_DELEGABLE		0x02000000
@@ -236,6 +239,13 @@ SQRESULT sq_endconsttable(HSQUIRRELVM v);
 
 void sq_addref(HSQUIRRELVM v, SQObject* po);
 SQBool sq_release(HSQUIRRELVM v, SQObject* po);
+
+void sq_pushuserpointer(HSQUIRRELVM v, void* p);
+void sq_pushnull(HSQUIRRELVM v);
+SQObjectType sq_gettype(HSQUIRRELVM v, SQInteger idx);
+SQRESULT sq_next(HSQUIRRELVM v, SQInteger idx);
+SQRESULT sq_getarraysize(HSQUIRRELVM v, SQInteger idx, SQInteger* outSize);
+SQInteger sq_absindex(HSQUIRRELVM v, SQInteger idx);
 
 /*UTILITY MACRO*/
 #define sq_isnumeric(o) ((o)._type&SQOBJECT_NUMERIC)

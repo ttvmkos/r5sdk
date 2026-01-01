@@ -15,6 +15,26 @@
 #include "networksystem/bansystem.h"
 #include "game/server/gameinterface.h"
 
+//forward declaration
+namespace LOGGER {
+	class WebSocketCommandHandler;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: converts IPv6 address to string
+//-----------------------------------------------------------------------------
+std::string CBanSystem::ConvertIpToString(const in6_addr* const adr) const
+{
+	if (!adr)
+		return "";
+
+	char adrBuf[INET6_ADDRSTRLEN];
+	if (inet_ntop(AF_INET6, adr, adrBuf, sizeof(adrBuf)))
+		return std::string(adrBuf);
+
+	return "";
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: loads and parses the banned list
 //-----------------------------------------------------------------------------
@@ -34,7 +54,7 @@ void CBanSystem::LoadList(void)
 		return;
 	}
 
-	const u64 nBufSize = FileSystem()->GetOptimalReadSize(pFile, nFileSize+2);
+	const u64 nBufSize = FileSystem()->GetOptimalReadSize(pFile, nFileSize + 2);
 	char* const pBuf = (char*)FileSystem()->AllocOptimalReadBuffer(pFile, nBufSize, 0);
 
 	const ssize_t nRead = FileSystem()->ReadEx(pBuf, nBufSize, nFileSize, pFile);
@@ -64,9 +84,85 @@ void CBanSystem::LoadList(void)
 	// Buffer is no longer needed.
 	FileSystem()->FreeOptimalReadBuffer(pBuf);
 
+	// ===== Check if this is v2 format (has "version" and "entries") =====
+	if (document.IsObject() && document.HasMember("version"))
+	{
+		// This is v2 format - extract entries
+		if (document.HasMember("entries") && document["entries"].IsArray())
+		{
+			for (const rapidjson::Value& entry : document["entries"].GetArray())
+			{
+				if (!entry.IsObject())
+					continue;
+
+				NucleusID_t nuc = 0;
+				if (entry.HasMember("nucleusId") && entry["nucleusId"].IsUint64())
+					nuc = entry["nucleusId"].GetUint64();
+
+				std::string ipStr;
+				if (entry.HasMember("ipAddress") && entry["ipAddress"].IsString())
+				{
+					const char* ip = entry["ipAddress"].GetString();
+					if (ip && ip[0] != '\0')
+						ipStr = ip;
+				}
+
+				std::string playerName;
+				if (entry.HasMember("playerName") && entry["playerName"].IsString())
+				{
+					const char* name = entry["playerName"].GetString();
+					if (name)
+						playerName = name;
+				}
+
+				std::string banReason;
+				if (entry.HasMember("banReason") && entry["banReason"].IsString())
+				{
+					const char* reason = entry["banReason"].GetString();
+					if (reason)
+						banReason = reason;
+				}
+
+				int64_t banTimestamp = 0;
+				if (entry.HasMember("banTimestamp") && entry["banTimestamp"].IsInt64())
+					banTimestamp = entry["banTimestamp"].GetInt64();
+
+				std::string bannedByID;
+				if (entry.HasMember("bannedByID") && entry["bannedByID"].IsString())
+				{
+					const char* banner = entry["bannedByID"].GetString();
+					if (banner)
+						bannedByID = banner;
+				}
+
+				BanMetadata_t metadata(nuc, playerName.c_str(), banReason.c_str(), bannedByID.c_str(), ipStr.c_str(), banTimestamp);
+
+				if (nuc != 0)
+				{
+					m_bannedIdList.insert(nuc);
+					m_banMetadataById[nuc] = metadata;
+				}
+
+				if (!ipStr.empty())
+				{
+					netadr_t adr;
+					if (adr.SetFromString(ipStr.c_str(), true))
+					{
+						m_bannedIpList.insert(adr.GetIP());
+						m_banMetadataByIp[ipStr] = metadata;
+					}
+				}
+			}
+		}
+
+		Msg(eDLL_T::SERVER, "%s: Loaded v2 format banlist with %zu nucleus bans and %zu ip bans\n", __FUNCTION__, m_bannedIdList.size(), m_bannedIpList.size());
+		return;
+	}
+
+	// ===== Legacy v1 format (array of IDs and IPs) =====
 	if (!document.IsArray())
 	{
-		Error(eDLL_T::SERVER, 0, "%s: JSON root was not an array\n", __FUNCTION__);
+		Error(eDLL_T::SERVER, 0, "%s: JSON root was not an array or object\n", __FUNCTION__);
 		return;
 	}
 
@@ -82,7 +178,7 @@ void CBanSystem::LoadList(void)
 
 			if (nuc == 0)
 			{
-				Warning(eDLL_T::SERVER, "%s: Nucleus ID (%d) at index #%zd is zero!\n", __FUNCTION__, currIdx, nuc);
+				Warning(eDLL_T::SERVER, "%s: Nucleus ID (%llu) at index #%zd is zero!\n", __FUNCTION__, nuc, currIdx); //order was wrong on sdk
 				continue;
 			}
 
@@ -111,7 +207,7 @@ void CBanSystem::LoadList(void)
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: saves the banned list
+// Purpose: saves the banned list ( with v2 format )
 //-----------------------------------------------------------------------------
 void CBanSystem::SaveList(void) const
 {
@@ -123,68 +219,245 @@ void CBanSystem::SaveList(void) const
 	}
 
 	rapidjson::Document document;
-	document.SetArray();
+	document.SetObject();
 
 	rapidjson::Document::AllocatorType& allocator = document.GetAllocator();
 
+	// ===== V2 Format with metadata =====
+	document.AddMember("version", 2, allocator);
+	document.AddMember("lastUpdated", static_cast<int64_t>(time(nullptr)), allocator);
+
+	rapidjson::Value entries(rapidjson::kArrayType);
+
+	std::unordered_map<NucleusID_t, std::string> nucToIp;
+	nucToIp.reserve(m_banMetadataByIp.size());
+
+	for (const auto& kv : m_banMetadataByIp)
+	{
+		const std::string& ip = kv.first;
+		const BanMetadata_t& meta = kv.second;
+
+		if (meta.m_NucleusID != 0 && !ip.empty())
+		{
+			nucToIp[meta.m_NucleusID] = ip;
+		}
+	}
+
+	// ===============================
+	// Write nucleus ID bans
+	// ===============================
 	for (const NucleusID_t id : m_bannedIdList)
 	{
-		document.PushBack(id, allocator);
-	}
+		const BanMetadata_t* pMeta = nullptr;
 
-	ssize_t idx = -1;
+		auto it = m_banMetadataById.find(id);
+		if (it != m_banMetadataById.end())
+			pMeta = &it->second;
 
-	for (const IPv6Wrapper_s& ip : m_bannedIpList)
-	{
-		idx++;
-		char adrBuf[INET6_ADDRSTRLEN];
-		
-		if (!inet_ntop(AF_INET6, &ip.adr, adrBuf, sizeof(adrBuf)))
+		rapidjson::Value entry(rapidjson::kObjectType);
+
+		entry.AddMember("nucleusId", id, allocator);
+
+		const char* ipOut = "";
+		std::string ipFallback;
+
+		if (pMeta && pMeta->m_IpAddress.Length() > 0)
 		{
-			Error(eDLL_T::SERVER, NO_ERROR, "%s - Unable to convert listed network address #%zd for write -- skipping...\n", __FUNCTION__, idx);
-			continue; // Should never happen.
+			ipOut = pMeta->m_IpAddress.Get();
+		}
+		else
+		{
+			auto ipIt = nucToIp.find(id);
+			if (ipIt != nucToIp.end())
+			{
+				ipFallback = ipIt->second;
+				ipOut = ipFallback.c_str();
+			}
 		}
 
-		document.PushBack(rapidjson::Value(adrBuf, strlen(adrBuf), allocator), allocator);
+		entry.AddMember(
+			"ipAddress",
+			rapidjson::Value(ipOut, allocator),
+			allocator
+		);
+
+		entry.AddMember(
+			"playerName",
+			rapidjson::Value(
+				pMeta ? pMeta->m_PlayerName.Get() : "Unknown",
+				allocator
+			),
+			allocator
+		);
+
+		entry.AddMember(
+			"banReason",
+			rapidjson::Value(
+				pMeta ? pMeta->m_BanReason.Get() : "",
+				allocator
+			),
+			allocator
+		);
+
+		entry.AddMember(
+			"banTimestamp",
+			pMeta
+			? pMeta->m_BanTimestamp
+			: static_cast<int64_t>(time(nullptr)),
+			allocator
+		);
+
+		entry.AddMember(
+			"bannedByID",
+			rapidjson::Value(
+				pMeta ? pMeta->m_BannedByID.Get() : "",
+				allocator
+			),
+			allocator
+		);
+
+		entry.AddMember("banExpiryTimestamp", 0, allocator); //todo
+		entry.AddMember("banType", 0, allocator); //todo
+
+		entries.PushBack(entry, allocator);
 	}
 
-	rapidjson::StringBuffer buffer;
-	JSON_DocumentToBufferDeserialize(document, buffer);
+	// ===============================
+	// Write IP-only bans (ONLY when they do not already have a nucleus record)
+	// ===============================
+	for (const auto& ipWrapper : m_bannedIpList)
+	{
+		std::string ipStr = ConvertIpToString(&ipWrapper.adr);
+		if (ipStr.empty())
+			continue;
 
-	FileSystem()->Write(buffer.GetString(), buffer.GetSize(), pFile);
+		auto it = m_banMetadataByIp.find(ipStr);
+		if (it == m_banMetadataByIp.end())
+			continue;
+
+		const BanMetadata_t& meta = it->second;
+
+		if (meta.m_NucleusID != 0 && m_bannedIdList.find(meta.m_NucleusID) != m_bannedIdList.end())
+			continue;
+
+		rapidjson::Value entry(rapidjson::kObjectType);
+
+		entry.AddMember("nucleusId", meta.m_NucleusID, allocator);
+
+		entry.AddMember(
+			"ipAddress",
+			rapidjson::Value(ipStr.c_str(), allocator),
+			allocator
+		);
+
+		entry.AddMember(
+			"playerName",
+			rapidjson::Value(meta.m_PlayerName.Get(), allocator),
+			allocator
+		);
+
+		entry.AddMember(
+			"banReason",
+			rapidjson::Value(meta.m_BanReason.Get(), allocator),
+			allocator
+		);
+
+		entry.AddMember(
+			"banTimestamp",
+			meta.m_BanTimestamp,
+			allocator
+		);
+
+		entry.AddMember(
+			"bannedByID",
+			rapidjson::Value(meta.m_BannedByID.Get(), allocator),
+			allocator
+		);
+
+		entry.AddMember("banExpiryTimestamp", 0, allocator);
+		entry.AddMember("banType", 0, allocator);
+
+		entries.PushBack(entry, allocator);
+	}
+
+	document.AddMember("entries", entries, allocator);
+
+	rapidjson::StringBuffer buffer;
+	rapidjson::PrettyWriter< rapidjson::StringBuffer > writer(buffer);
+	writer.SetIndent(' ', 2);
+	document.Accept(writer);
+
+	FileSystem()->Write(
+		buffer.GetString(),
+		buffer.GetSize(),
+		pFile
+	);
+
 	FileSystem()->Close(pFile);
 }
+
 
 void CBanSystem::Clear()
 {
 	m_bannedIdList.clear();
 	m_bannedIpList.clear();
+	m_banMetadataById.clear();
+	m_banMetadataByIp.clear();
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: adds a banned player entry to the banned list
 // Input  : *ipAddress - 
 //			nucleusId - 
+//			playerName -
+//			banReason -
 //-----------------------------------------------------------------------------
-bool CBanSystem::AddEntry(const netadr_t* const adr, const NucleusID_t nuc)
+bool CBanSystem::AddEntry(const netadr_t* const adr, const NucleusID_t nuc, const char* playerName, const char* bannedByID, const char* banReason)
 {
-	return AddEntry(adr->GetIP(), nuc);
+	return AddEntry( adr ? adr->GetIP() : nullptr, nuc, playerName, bannedByID, banReason);
 }
 
-bool CBanSystem::AddEntry(const in6_addr* const adr, const NucleusID_t nuc)
+bool CBanSystem::AddEntry(const in6_addr* const adr, const NucleusID_t nuc, const char* playerName, const char* bannedByID, const char* banReason)
 {
 	bool nucAdded = false;
-
-	if (nuc)
-		nucAdded = m_bannedIdList.insert(nuc).second;
-
 	bool adrAdded = false;
 
+	std::string ipStr;
+
 	if (adr)
+		ipStr = ConvertIpToString(adr);
+
+	BanMetadata_t metadata
+	(
+		nuc,
+		playerName ? playerName : "Unknown",
+		banReason,
+		bannedByID ? bannedByID : "Unknown",
+		ipStr.c_str(),
+		time(nullptr)
+	);
+
+	if (nuc)
+	{
+		nucAdded = m_bannedIdList.insert(nuc).second;
+		m_banMetadataById[nuc] = metadata;
+	}
+
+	if (adr && !ipStr.empty())
+	{
 		adrAdded = m_bannedIpList.insert(adr).second;
+		m_banMetadataByIp[ipStr] = metadata;
+	}
+
+	// Notify websocket if something was added
+	if ((nucAdded || adrAdded) && (nuc || adr))
+	{
+		NotifyBanAdded(metadata, nuc, ipStr.empty() ? "" : ipStr.c_str());
+	}
 
 	return nucAdded || adrAdded;
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: deletes an entry in the banned list
@@ -193,96 +466,7 @@ bool CBanSystem::AddEntry(const in6_addr* const adr, const NucleusID_t nuc)
 //-----------------------------------------------------------------------------
 bool CBanSystem::DeleteEntry(const netadr_t* const adr, const NucleusID_t nuc)
 {
-	return DeleteEntry(adr->GetIP(), nuc);
-}
-
-bool CBanSystem::DeleteEntry(const in6_addr* const adr, const NucleusID_t nuc)
-{
-	bool nucRemoved = false;
-
-	if (nuc)
-		nucRemoved = m_bannedIdList.erase(nuc) != 0;
-
-	bool adrRemoved = false;
-
-	if (adr)
-		adrRemoved = m_bannedIpList.erase(adr) != 0;
-
-	return nucRemoved || adrRemoved;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: checks if specified ip address or nucleus id is banned
-// Input  : *ipAddress - 
-//			nucleusId - 
-// Output : true if banned, false if not banned
-//-----------------------------------------------------------------------------
-bool CBanSystem::IsBanned(const netadr_t* const adr, const NucleusID_t nuc) const
-{
-	return IsBanned(adr->GetIP(), nuc);
-}
-
-bool CBanSystem::IsBanned(const in6_addr* const adr, const NucleusID_t nuc) const
-{
-	if (nuc && m_bannedIdList.find(nuc) != m_bannedIdList.end())
-		return true;
-
-	if (adr && m_bannedIpList.find(adr) != m_bannedIpList.end())
-		return true;
-
-	return false;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: kicks a player by given name
-// Input  : *playerName - 
-//			*reason - 
-//-----------------------------------------------------------------------------
-void CBanSystem::KickPlayerByName(const char* playerName, const char* reason)
-{
-	if (!VALID_CHARSTAR(playerName))
-		return;
-
-	AuthorPlayerByName(playerName, false, reason);
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: kicks a player by given handle or id
-// Input  : *playerHandle - 
-//			*reason - 
-//-----------------------------------------------------------------------------
-void CBanSystem::KickPlayerById(const char* playerHandle, const char* reason)
-{
-	if (!VALID_CHARSTAR(playerHandle))
-		return;
-
-	AuthorPlayerById(playerHandle, false, reason);
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: bans a player by given name
-// Input  : *playerName - 
-//			*reason - 
-//-----------------------------------------------------------------------------
-void CBanSystem::BanPlayerByName(const char* playerName, const char* reason)
-{
-	if (!VALID_CHARSTAR(playerName))
-		return;
-
-	AuthorPlayerByName(playerName, true, reason);
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: bans a player by given handle or id
-// Input  : *playerHandle - 
-//			*reason - 
-//-----------------------------------------------------------------------------
-void CBanSystem::BanPlayerById(const char* playerHandle, const char* reason)
-{
-	if (!VALID_CHARSTAR(playerHandle))
-		return;
-
-	AuthorPlayerById(playerHandle, true, reason);
+	return DeleteEntry(adr ? adr->GetIP() : nullptr, nuc);
 }
 
 static bool BanSystem_ConvertAddress(const char* const address, in6_addr* const addr)
@@ -299,20 +483,180 @@ static bool BanSystem_ConvertAddress(const char* const address, in6_addr* const 
 	return true;
 }
 
+bool CBanSystem::DeleteEntry(const in6_addr* const adr, const NucleusID_t nuc)
+{
+	bool bRemoved = false;
+
+	if (nuc)
+	{
+		if (m_bannedIdList.erase(nuc) > 0)
+			bRemoved = true;
+	}
+
+	std::string ipStr;
+
+	if (adr)
+	{
+		ipStr = ConvertIpToString(adr);
+
+		if (!ipStr.empty())
+		{
+			if (m_bannedIpList.erase(adr) > 0)
+				bRemoved = true;
+		}
+	}
+
+	const BanMetadata_t* pMeta = nullptr;
+
+	if (nuc)
+	{
+		auto it = m_banMetadataById.find(nuc);
+		if (it != m_banMetadataById.end())
+			pMeta = &it->second;
+	}
+
+	if (!pMeta && !ipStr.empty())
+	{
+		auto it = m_banMetadataByIp.find(ipStr);
+		if (it != m_banMetadataByIp.end())
+			pMeta = &it->second;
+	}
+
+	//pairs
+	if (pMeta)
+	{
+		// paired nucleus
+		if (pMeta->m_NucleusID != 0)
+		{
+			m_bannedIdList.erase(pMeta->m_NucleusID);
+			m_banMetadataById.erase(pMeta->m_NucleusID);
+		}
+
+		// paired ip
+		if (pMeta->m_IpAddress.Length() > 0)
+		{
+			in6_addr pairedAdr;
+
+			if (BanSystem_ConvertAddress(
+				pMeta->m_IpAddress.Get(),
+				&pairedAdr
+			))
+			{
+				m_bannedIpList.erase(&pairedAdr);
+				m_banMetadataByIp.erase(pMeta->m_IpAddress.Get());
+			}
+		}
+	}
+
+	//meta
+	if (nuc)
+		m_banMetadataById.erase(nuc);
+
+	if (!ipStr.empty())
+		m_banMetadataByIp.erase(ipStr);
+
+	return bRemoved;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: checks if specified ip address or nucleus id is banned
+// Input  : *ipAddress - 
+//			nucleusId - 
+// Output : true if banned, false if not banned
+//-----------------------------------------------------------------------------
+bool CBanSystem::IsBanned(const netadr_t* const adr, const NucleusID_t nuc) const
+{
+	return IsBanned(adr ? adr->GetIP() : nullptr, nuc);
+}
+
+bool CBanSystem::IsBanned(const in6_addr* const adr, const NucleusID_t nuc) const
+{
+	if (nuc && m_bannedIdList.find(nuc) != m_bannedIdList.end())
+		return true;
+
+	if (adr && m_bannedIpList.find(adr) != m_bannedIpList.end())
+		return true;
+
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: notifies websocket when a ban is added
+// Input  : metadata, nucleusId, ipAddress
+//-----------------------------------------------------------------------------
+void CBanSystem::NotifyBanAdded(const BanMetadata_t& metadata, const NucleusID_t nuc, const char* ipAddress)
+{
+	// TODO: Send websocket notification with ban details
+	// This will integrate with the logger_websocket system to notify the portal
+	// Payload should include: nucleusId, ipAddress, playerName, banReason, banTimestamp
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: kicks a player by given name
+// Input  : *playerName - 
+//			*reason - 
+//-----------------------------------------------------------------------------
+void CBanSystem::KickPlayerByName(const char* playerName, const char* reason)
+{
+	if (!VALID_CHARSTAR(playerName))
+		return;
+
+	AuthorPlayerByName(playerName, false, nullptr, reason);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: kicks a player by given handle or id
+// Input  : *playerHandle - 
+//			*reason - 
+//-----------------------------------------------------------------------------
+void CBanSystem::KickPlayerById(const char* playerHandle, const char* reason)
+{
+	if (!VALID_CHARSTAR(playerHandle))
+		return;
+
+	AuthorPlayerById(playerHandle, false, nullptr, reason);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: bans a player by given name
+// Input  : *playerName - 
+//			*reason - 
+//-----------------------------------------------------------------------------
+void CBanSystem::BanPlayerByName(const char* playerName, const char* bannedByID, const char* reason)
+{
+	if (!VALID_CHARSTAR(playerName))
+		return;
+
+	AuthorPlayerByName(playerName, true, bannedByID, reason);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: bans a player by given handle or id
+// Input  : *playerHandle - 
+//			*reason - 
+//-----------------------------------------------------------------------------
+void CBanSystem::BanPlayerById(const char* playerHandle, const char* bannedByID, const char* reason)
+{
+	if (!VALID_CHARSTAR(playerHandle))
+		return;
+
+	AuthorPlayerById(playerHandle, true, bannedByID, reason);
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: unbans a player by given nucleus id or ip address
 // Input  : *criteria - 
 //-----------------------------------------------------------------------------
-void CBanSystem::UnbanPlayer(const char* criteria)
+/*void CBanSystem::UnbanPlayer(const char* criteria)
 {
 	bool bSave = false;
 
-	if (V_IsAllDigit(criteria)) // Check if we have an ip address or nucleus id.
+	if (V_IsAllDigit(criteria))
 	{
 		char* pEnd = nullptr;
 		const uint64_t nTargetID = strtoull(criteria, &pEnd, 10);
 
-		if (DeleteEntry((in6_addr*)nullptr, nTargetID)) // Delete ban entry.
+		if (DeleteEntry((in6_addr*)nullptr, nTargetID))
 		{
 			bSave = true;
 		}
@@ -323,7 +667,7 @@ void CBanSystem::UnbanPlayer(const char* criteria)
 
 		if (BanSystem_ConvertAddress(criteria, &address))
 		{
-			if (DeleteEntry(&address, 0)) // Delete ban entry.
+			if (DeleteEntry(&address, 0))
 			{
 				bSave = true;
 			}
@@ -332,10 +676,137 @@ void CBanSystem::UnbanPlayer(const char* criteria)
 
 	if (bSave)
 	{
-		SaveList(); // Save modified vector to file.
+		SaveList();
+		Msg(eDLL_T::SERVER, "Removed '%s' from banned list\n", criteria);
+	}
+}*/
+
+
+void CBanSystem::UnbanPlayer(const char* criteria)
+{
+	if (!VALID_CHARSTAR(criteria))
+		return;
+
+	NucleusID_t nTargetID = 0;
+	in6_addr targetAddress = {};
+	bool bFoundEntry = false;
+
+	// Parse banlist.json to find the matching entry
+	FileHandle_t pFile = FileSystem()->Open("banlist.json", "rb", "PLATFORM");
+	if (pFile)
+	{
+		const ssize_t nFileSize = FileSystem()->Size(pFile);
+		if (nFileSize > 0)
+		{
+			const u64 nBufSize = FileSystem()->GetOptimalReadSize(pFile, nFileSize + 2);
+			char* const pBuf = (char*)FileSystem()->AllocOptimalReadBuffer(pFile, nBufSize, 0);
+
+			const ssize_t nRead = FileSystem()->ReadEx(pBuf, nBufSize, nFileSize, pFile);
+			FileSystem()->Close(pFile);
+
+			if (nRead > 0)
+			{
+				pBuf[nFileSize] = '\0';
+
+				rapidjson::Document document;
+				if (!document.Parse(pBuf, nRead).HasParseError() && document.IsObject())
+				{
+					if (document.HasMember("entries") && document["entries"].IsArray())
+					{
+						for (const rapidjson::Value& entry : document["entries"].GetArray())
+						{
+							if (!entry.IsObject())
+								continue;
+
+							bool bMatch = false;
+
+							// Check by nucleus ID (if criteria is a digit)
+							if (V_IsAllDigit(criteria))
+							{
+								char* pEnd = nullptr;
+								const uint64_t nProvidedID = strtoull(criteria, &pEnd, 10);
+
+								if (entry.HasMember("nucleusId") &&
+									entry["nucleusId"].IsUint64() &&
+									entry["nucleusId"].GetUint64() == nProvidedID)
+								{
+									nTargetID = nProvidedID;
+									bMatch = true;
+								}
+							}
+							// Check by IP address
+							else
+							{
+								if (entry.HasMember("ipAddress") &&
+									entry["ipAddress"].IsString())
+								{
+									const char* entryIp = entry["ipAddress"].GetString();
+									if (strcmp(entryIp, criteria) == 0)
+									{
+										BanSystem_ConvertAddress(entryIp, &targetAddress);
+										bMatch = true;
+									}
+								}
+							}
+
+							// Check by player name
+							if (!bMatch && entry.HasMember("playerName") &&
+								entry["playerName"].IsString())
+							{
+								const char* entryName = entry["playerName"].GetString();
+								if (entryName && strcmp(entryName, criteria) == 0)
+								{
+									bMatch = true;
+								}
+							}
+
+							if (bMatch)
+							{
+								// Extract both nucleus ID and IP from the matched entry
+								if (entry.HasMember("nucleusId") && entry["nucleusId"].IsUint64())
+									nTargetID = entry["nucleusId"].GetUint64();
+
+								if (entry.HasMember("ipAddress") && entry["ipAddress"].IsString())
+									BanSystem_ConvertAddress(entry["ipAddress"].GetString(), &targetAddress);
+
+								bFoundEntry = true;
+								break;
+							}
+						}
+					}
+				}
+
+				FileSystem()->FreeOptimalReadBuffer(pBuf);
+			}
+		}
+		else
+		{
+			FileSystem()->Close(pFile);
+		}
+	}
+
+	if (!bFoundEntry)
+	{
+		Warning(eDLL_T::SERVER, "No ban entry found matching '%s'\n", criteria);
+		return;
+	}
+
+	// Delete from memory (both nucleus ID and IP)
+	bool bRemoved = DeleteEntry(&targetAddress, nTargetID);
+
+	if (bRemoved)
+	{
+		// SaveList() will write the updated memory structures back to disk
+		SaveList();
 		Msg(eDLL_T::SERVER, "Removed '%s' from banned list\n", criteria);
 	}
 }
+
+void CBanSystem::AddIdToBanlist(const char* playerHandle, const char* bannedByID, const char* reason, const netadr_t* const address  )
+{
+	AuthorPlayerById(playerHandle, true, bannedByID, reason, true, address);
+}
+
 
 //-----------------------------------------------------------------------------
 // Purpose: authors player by given name
@@ -343,7 +814,7 @@ void CBanSystem::UnbanPlayer(const char* criteria)
 //			shouldBan   - (only kicks if false)
 //			*reason     - 
 //-----------------------------------------------------------------------------
-void CBanSystem::AuthorPlayerByName(const char* playerName, const bool shouldBan, const char* reason)
+void CBanSystem::AuthorPlayerByName(const char* playerName, const bool shouldBan, const char* bannedByID, const char* reason)
 {
 	Assert(VALID_CHARSTAR(playerName));
 	bool bDisconnect = false;
@@ -351,6 +822,9 @@ void CBanSystem::AuthorPlayerByName(const char* playerName, const bool shouldBan
 
 	if (!reason)
 		reason = shouldBan ? "Banned from server" : "Kicked from server";
+
+	if (!bannedByID)
+		bannedByID = "00000000";
 
 	for (int i = 0; i < gpGlobals->maxClients; i++)
 	{
@@ -364,7 +838,7 @@ void CBanSystem::AuthorPlayerByName(const char* playerName, const bool shouldBan
 		{
 			if (strcmp(playerName, pNetChan->GetName()) == NULL) // Our wanted name?
 			{
-				if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID()) && !bSave)
+				if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID(), playerName, bannedByID, reason) && !bSave)
 					bSave = true;
 
 				pClient->Disconnect(REP_MARK_BAD, reason);
@@ -389,13 +863,56 @@ static bool BanSystem_CompareAddress(const in6_addr* const a, const in6_addr* co
 	return IN6_ADDR_EQUAL(a, b);
 }
 
+bool CBanSystem::Bansystem_ValidateInputID(const char* str, NucleusID_t& out, int base)
+{
+	if (!str || !*str || *str == '-') return false;
+
+	size_t start = (*str == '+') ? 1 : 0;
+	if (!str[start]) 
+		return false;
+
+	const unsigned __int64 max_val = 18446744073709551615ULL;
+	const unsigned __int64 max_safe = max_val / base;
+	const unsigned __int64 max_digit = max_val % base;
+
+	unsigned __int64 result = 0;
+
+	for (size_t i = start; str[i]; ++i)
+	{
+		int digit;
+		if (std::isdigit(static_cast<unsigned char>(str[i]))) 
+		{
+			digit = str[i] - '0';
+		}
+		else 
+		{
+			digit = 10 + std::tolower(static_cast<unsigned char>(str[i])) - 'a';
+		}
+
+		if (digit >= base) 
+			return false;
+
+		if (result > max_safe || (result == max_safe && digit > max_digit)) {
+			return false;
+		}
+
+		result = result * base + digit;
+	}
+
+	out = result;
+	return true;
+}
+
+
 //-----------------------------------------------------------------------------
 // Purpose: authors player by given nucleus id or ip address
 // Input  : *playerHandle - 
 //			shouldBan     - (only kicks if false)
+//			bannedByID	  - The player that banned them or server dummy value of: 00000000
 //			*reason       - 
+//			bool offline  - Whether this is a add-to-banlist entry rather than a player already in server
 //-----------------------------------------------------------------------------
-void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan, const char* reason)
+void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan, const char* bannedByID, const char* reason, const bool offline, const netadr_t* address )
 {
 	Assert(VALID_CHARSTAR(playerHandle));
 
@@ -414,51 +931,76 @@ void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan
 	if (!reason)
 		reason = shouldBan ? "Banned from server" : "Kicked from server";
 
-	for (int i = 0; i < gpGlobals->maxClients; i++)
+	if (!bannedByID)
+		bannedByID = "00000000";
+
+	if (!offline)
 	{
-		CClient* const pClient = g_pServer->GetClient(i);
-		const CNetChan* const pNetChan = pClient->GetNetChan();
-
-		if (!pNetChan)
-			continue;
-
-		if (bOnlyDigits)
+		for (int i = 0; i < gpGlobals->maxClients; i++)
 		{
-			char* pEnd = nullptr;
-			const uint64_t nTargetID = strtoull(playerHandle, &pEnd, 10);
+			CClient* const pClient = g_pServer->GetClient(i);
+			const CNetChan* const pNetChan = pClient->GetNetChan();
 
-			if (nTargetID >= MAX_PLAYERS) // Is it a possible nucleusID?
-			{
-				const NucleusID_t nNucleusID = pClient->GetNucleusID();
-
-				if (nNucleusID != nTargetID)
-					continue;
-			}
-			else // If its not try by handle.
-			{
-				const edict_t nClientID = pClient->GetHandle();
-
-				if (nClientID != nTargetID)
-					continue;
-			}
-
-			if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID()) && !bSave)
-				bSave = true;
-
-			pClient->Disconnect(REP_MARK_BAD, reason);
-			bDisconnect = true;
-		}
-		else
-		{
-			if (!BanSystem_CompareAddress(pNetChan->GetRemoteAddress().GetIP(), &playerAdr))
+			if (!pNetChan)
 				continue;
 
-			if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID()) && !bSave)
-				bSave = true;
+			if (bOnlyDigits)
+			{
+				char* pEnd = nullptr;
+				const uint64_t nTargetID = strtoull(playerHandle, &pEnd, 10);
 
-			pClient->Disconnect(REP_MARK_BAD, reason);
-			bDisconnect = true;
+				if (nTargetID >= MAX_PLAYERS) // Is it a possible nucleusID?
+				{
+					const NucleusID_t nNucleusID = pClient->GetNucleusID();
+
+					if (nNucleusID != nTargetID)
+						continue;
+				}
+				else // If its not try by handle.
+				{
+					const edict_t nClientID = pClient->GetHandle();
+
+					if (nClientID != nTargetID)
+						continue;
+				}
+
+				if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID(), pNetChan->GetName(), bannedByID, reason) && !bSave)
+					bSave = true;
+
+				pClient->Disconnect(REP_MARK_BAD, reason);
+				bDisconnect = true;
+
+				break;
+			}
+			else
+			{
+				if (!BanSystem_CompareAddress(pNetChan->GetRemoteAddress().GetIP(), &playerAdr))
+					continue;
+
+				if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID(), pNetChan->GetName(), bannedByID, reason) && !bSave)
+					bSave = true;
+
+				pClient->Disconnect(REP_MARK_BAD, reason);
+				bDisconnect = true;
+
+				break;
+			}
 		}
+	}
+	else
+	{
+		NucleusID_t nuc;
+		if (!Bansystem_ValidateInputID(playerHandle, nuc))
+		{
+			Error(eDLL_T::SERVER, NO_ERROR, "Invalid player handle passed to BanSystem.");
+			return;
+		}
+
+		//attempt to save by input only. 
+		if (nuc && AddEntry(address, nuc, "Unknown", bannedByID, reason)) //potentially add setting username support. Tracker can look this up prior to sending.
+			bSave = true;
+		else
+			Msg(eDLL_T::SERVER, "Could not add '%s' to banned list.", playerHandle);
 	}
 
 	if (bSave)
@@ -495,31 +1037,30 @@ static void _Author_Client_f(const CCommand& args, const KickType_e type)
 
 	switch (type)
 	{
-	case KICK_NAME:
-	{
-		g_BanSystem.KickPlayerByName(args.Arg(1), szReason);
-		break;
-	}
-	case KICK_ID:
-	{
-		g_BanSystem.KickPlayerById(args.Arg(1), szReason);
-		break;
-	}
-	case BAN_NAME:
-	{
-		g_BanSystem.BanPlayerByName(args.Arg(1), szReason);
-		break;
-	}
-	case BAN_ID:
-	{
-		g_BanSystem.BanPlayerById(args.Arg(1), szReason);
-		break;
-	}
-	default:
-	{
-		// Code bug.
-		Assert(0);
-	}
+		case KICK_NAME:
+		{
+			g_BanSystem.KickPlayerByName(args.Arg(1), szReason);
+			break;
+		}
+		case KICK_ID:
+		{
+			g_BanSystem.KickPlayerById(args.Arg(1), szReason);
+			break;
+		}
+		case BAN_NAME:
+		{
+			g_BanSystem.BanPlayerByName(args.Arg(1), "00000000", szReason);
+			break;
+		}
+		case BAN_ID:
+		{
+			g_BanSystem.BanPlayerById(args.Arg(1), "00000000", szReason);
+			break;
+		}
+		default:
+		{
+			Assert(0);
+		}
 	}
 }
 static void Host_Kick_f(const CCommand& args)
@@ -550,7 +1091,7 @@ static void Host_Unban_f(const CCommand& args)
 static void Host_ReloadBanList_f()
 {
 	g_BanSystem.Clear();
-	g_BanSystem.LoadList(); // Reload banned list.
+	g_BanSystem.LoadList();
 }
 
 static ConCommand kick("kick", Host_Kick_f, "Kick a client from the server by user name", FCVAR_RELEASE, nullptr, "kick \"<userId>\"");

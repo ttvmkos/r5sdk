@@ -248,7 +248,7 @@ CC_CreateFakePlayer_f
   on the server
 =====================
 */
-static void CC_CreateFakePlayer_f(const CCommand& args)
+void CC_CreateFakePlayer_f(const CCommand& args)
 {
 	if (!g_pServer->IsActive())
 		return;

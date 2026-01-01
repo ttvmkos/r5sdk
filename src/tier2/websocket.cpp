@@ -10,6 +10,9 @@
 #include "DirtySDK/proto/protossl.h"
 #include "DirtySDK/proto/protowebsocket.h"
 
+#ifndef LOGGER_WEBSOCKET_H
+#include "game/server/logger_websocket.h"
+#endif
 
 //-----------------------------------------------------------------------------
 // constructors/destructors
@@ -240,9 +243,11 @@ bool CWebSocket::ConnContext_s::Connect(const double queryTime, const ConnParams
 
 	SetParams(params);
 
-	if (ProtoWebSocketConnect(webSocket, address.String()) != NULL)
+	int32_t connectResult = ProtoWebSocketConnect(webSocket, address.String());
+	if ( connectResult != NULL)
 	{
 		// Failure
+		Error( eDLL_T::SERVER, NO_ERROR, "WebSocketConnect failed: %d\n", connectResult );
 		Destroy();
 		return false;
 	}
@@ -260,24 +265,67 @@ bool CWebSocket::ConnContext_s::Process(const double queryTime)
 {
 	const int32_t status = ProtoWebSocketStatus(webSocket, 'stat', NULL, 0);
 
+	if ( tracker_ws_debug.GetBool() )
+	{
+		static int logCounter = 0;
+		if (++logCounter % 10 == 0)
+			Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]:[%s] status=%d state=%s\n", address.String(), status, GetStateString(state));
+	}
+
 	if (status == -1)
 	{
+		int32_t failCode = ProtoWebSocketStatus(webSocket, 'fail', NULL, 0);
+
+		const char* errorMsg = "UNKNOWN";
+		switch (failCode)
+		{
+			case -1:  errorMsg = "DNS_FAILURE"; break;
+			case -10: errorMsg = "TCP_CONNECTION_FAILURE"; break;
+			case -20: errorMsg = "CERT_INVALID"; break;
+			case -21: errorMsg = "CERT_HOST_MISMATCH"; break;
+			case -22: errorMsg = "CERT_NOT_TRUSTED"; break;
+			case -30: errorMsg = "SECURE_SETUP_FAILURE"; break;
+			case -31: errorMsg = "SECURE_FAILURE"; break;
+			case 0: errorMsg = "NO ERROR"; break;
+		}
+
+		ProtoSSLAlertDescT alertInfo{};
+		ProtoWebSocketStatus(webSocket, 'alrt', &alertInfo, sizeof(alertInfo));
+
+		if (tracker_ws_debug.GetBool())
+		{
+			Error
+			(
+				eDLL_T::SERVER,
+				NO_ERROR,
+				"TrackerSocket[DEBUG]:[%s] FAILED: status=-1, fail_code=%d (%s), alert_type=%d, alert_desc='%s', state=%s\n",
+				address.String(),
+				failCode,
+				errorMsg,
+				alertInfo.iAlertType,
+				alertInfo.pAlertDesc ? alertInfo.pAlertDesc : "null",
+				GetStateString(state)
+			);
+		}
+
 		Destroy();
 		lastQueryTime = queryTime;
-
 		return false;
 	}
 	else if (!status)
 	{
 		lastQueryTime = queryTime;
-		return false;
+		return false;  // Still handshaking
 	}
 
 	tryCount = 0;
 	state = CS_LISTENING;
+	
+	//Msg(eDLL_T::SERVER, "WebSocket[%s] now LISTENING\n", address.String());
 
 	return true;
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: set parameters for this socket
@@ -291,6 +339,26 @@ void CWebSocket::ConnContext_s::SetParams(const ConnParams_s& params) const
 
 	if (params.keepAlive > 0)
 		ProtoWebSocketControl(webSocket, 'keep', params.keepAlive, 0, NULL);
+
+	if (params.useTls)
+	{
+		if (tracker_ws_enable.GetBool())
+		{
+			const int32_t helloExtn =
+				PROTOSSL_HELLOEXTN_SERVERNAME |
+				PROTOSSL_HELLOEXTN_SIGALGS |
+				PROTOSSL_HELLOEXTN_ALPN |
+				PROTOSSL_HELLOEXTN_ELLIPTIC_CURVES;
+			ProtoWebSocketControl(webSocket, 'extn', helloExtn, 0, NULL); //tracker, more secure due to inbound traffic. Must validate, lax ssl 0
+		}
+		else
+		{
+			ProtoWebSocketControl(webSocket, 'extn', PROTOSSL_HELLOEXTN_SERVERNAME, 0, NULL); //liveapi only
+		}
+	}
+
+	if (params.protocol > 0)
+		ProtoWebSocketControl(webSocket, 'vers', params.protocol, 0, NULL);
 
 	ProtoWebSocketControl(webSocket, 'ncrt', params.laxSSL, 0, NULL);
 	ProtoWebSocketUpdate(webSocket);
@@ -329,4 +397,155 @@ void CWebSocket::ConnContext_s::Destroy()
 {
 	Disconnect();
 	state = CS_DESTROYED;
+}
+
+int32_t CWebSocket::ReceiveData(char* outBuf, int32_t bufSize)
+{
+	//Assert(outBuf);
+	//Assert(bufSize > 0);
+
+	if (!IsInitialized())
+		return 0;
+
+	for (ConnContext_s& conn : m_addressList)
+	{
+		if ( conn.state != CS_LISTENING || !conn.webSocket )
+		{
+			if ( conn.webSocket && tracker_ws_debug.GetBool() )
+			{
+				static int logCounter = 0;
+				if (++logCounter % 100 == 0)
+					Msg( eDLL_T::SERVER, "TrackerSocket[DEBUG]:[%s] waiting... state=%s\n", conn.address.String(), GetStateString( conn.state ) );
+			}
+
+			continue;
+		}
+
+		int32_t received = ProtoWebSocketRecv(conn.webSocket, outBuf, bufSize);
+		if ( received > 0 )
+		{	
+			if( tracker_ws_debug.GetBool() )
+				Msg( eDLL_T::SERVER, "TrackerSocket[DEBUG]:[%s] RECEIVED %d bytes\n", conn.address.String(), received );
+	
+			return received;
+		}
+	}
+
+	return 0;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: disconnect a specific address only
+//-----------------------------------------------------------------------------
+bool CWebSocket::Disconnect(const char* address)
+{
+	Assert(address);
+
+	if ( !IsInitialized() )
+		return false;
+
+	for (ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address)
+		{
+			conn.Disconnect();
+			return true;
+		}
+	}
+
+	return false;
+}
+
+
+//-----------------------------------------------------------------------------
+// Purpose: check if a specific address is actively listening for data
+//-----------------------------------------------------------------------------
+bool CWebSocket::IsListening(const char* address) const
+{
+	Assert(address);
+	for (const ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address && conn.state == CS_LISTENING && conn.webSocket)
+			return true;
+	}
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: check if a specific connection is established (handshaking or listening)
+//-----------------------------------------------------------------------------
+bool CWebSocket::IsConnected(const char* address) const
+{
+	Assert(address);
+	for (const ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address &&
+			(conn.state == CS_CONNECTED || conn.state == CS_LISTENING) &&
+			conn.webSocket)
+			return true;
+	}
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: check if a specific connection is in any non-failed state
+//-----------------------------------------------------------------------------
+bool CWebSocket::IsActive(const char* address) const
+{
+	Assert(address);
+	for (const ConnContext_s& conn : m_addressList)
+	{
+		if (conn.address == address &&
+			conn.state != CS_DESTROYED &&
+			conn.state != CS_UNAVAIL &&
+			conn.webSocket)
+			return true;
+	}
+	return false;
+}
+
+
+CWebSocket::ConnState_e CWebSocket::GetState(const char* address) const
+{
+	Assert( address );
+	for (const ConnContext_s& conn : m_addressList)
+	{
+		if ( conn.address == address )
+			return conn.state;
+	}
+
+	return CS_UNAVAIL; // Not found
+}
+
+const char* CWebSocket::GetStateString(const ConnState_e state) const
+{
+	switch (state)
+	{
+		case CS_CREATE:    return "CS_CREATE";
+		case CS_CONNECTED: return "CS_CONNECTED";
+		case CS_LISTENING: return "CS_LISTENING";
+		case CS_DESTROYED: return "CS_DESTROYED";
+		case CS_RETRY:     return "CS_RETRY";
+		case CS_UNAVAIL:   return "CS_UNAVAIL";
+		default:           return "UNKNOWN_STATE";
+	}
+}
+
+const char* CWebSocket::ConnContext_s::GetStateString(const ConnState_e contextState) const
+{
+	switch (contextState)
+	{
+		case CS_CREATE:    return "CS_CREATE";
+		case CS_CONNECTED: return "CS_CONNECTED";
+		case CS_LISTENING: return "CS_LISTENING";
+		case CS_DESTROYED: return "CS_DESTROYED";
+		case CS_RETRY:     return "CS_RETRY";
+		case CS_UNAVAIL:   return "CS_UNAVAIL";
+		default:           return "UNKNOWN_STATE";
+	}
+}
+
+int32_t CWebSocket::SetCaCert(uint8_t* pBuf, int32_t nRead)
+{
+	return ProtoSSLSetCACert(pBuf, nRead);
 }

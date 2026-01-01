@@ -63,6 +63,7 @@
 
  /* The last #include file should be: */
 #include "curl_memory.h"
+#include "curl_memory.h"
 #include "memdebug.h"
 
 /* ALPN requires version 8.1 of the Windows SDK, which was
@@ -1440,6 +1441,9 @@ int Curl_schannel_shutdown(struct connectdata *conn, int sockindex)
   infof(data, "schannel: shutting down SSL/TLS connection with %s port %hu\n",
         hostname, conn->remote_port);
 
+  if (!s_pSecFn)
+      return CURLE_OK; //mkos extra safeguard #2
+
   if(connssl->cred && connssl->ctxt) {
     SecBufferDesc BuffDesc;
     SecBuffer Buffer;
@@ -1452,6 +1456,11 @@ int Curl_schannel_shutdown(struct connectdata *conn, int sockindex)
 
     InitSecBuffer(&Buffer, SECBUFFER_TOKEN, &dwshut, sizeof(dwshut));
     InitSecBufferDesc(&BuffDesc, &Buffer, 1);
+
+    if (!connssl || !connssl->ctxt)
+    {
+        return CURLE_SSL_CONNECT_ERROR; // mkos extra safegguard
+    }
 
     sspi_status = s_pSecFn->ApplyControlToken(&connssl->ctxt->ctxt_handle,
                                               &BuffDesc);

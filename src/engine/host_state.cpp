@@ -58,6 +58,12 @@
 #include "game/shared/vscript_shared.h"
 
 #ifndef CLIENT_DLL
+#if !defined(LOGGER_H)
+	#include "game/server/logger.h"
+#endif
+#endif // !CLIENT_DLL
+
+#ifndef CLIENT_DLL
 static ConVar host_statusRefreshRate("host_statusRefreshRate", "0.5", FCVAR_RELEASE, "Host status refresh rate (seconds).", true, 0.f, false, 0.f);
 
 static ConVar host_autoReloadRate("host_autoReloadRate", "0", FCVAR_RELEASE, "Time in seconds between each auto-reload (disabled if null).");
@@ -151,6 +157,7 @@ void HostState_HandleAutoReload()
 			if (host_autoReloadRespectGameState.GetBool() && !g_hostReloadState)
 				return;
 
+			Msg(eDLL_T::SERVER, "Server auto reloaded at uptime: %.2f\n", gpGlobals->curTime);
 			Cbuf_AddText(Cbuf_GetCurrentPlayer(), "reload\n", cmd_source_t::kCommandSrcCode);
 		}
 	}
@@ -229,11 +236,22 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			}
 			case HostStates_t::HS_CHANGE_LEVEL_SP:
 			{
+#ifndef CLIENT_DLL
+				if (LOGGER::Logger::getInstance().IsLogging()) {
+					LOGGER::Logger::getInstance().StopLoggingThread();
+				}
+#endif // !CLIENT_DLL
+
 				g_pHostState->State_ChangeLevelSP();
 				break;
 			}
 			case HostStates_t::HS_CHANGE_LEVEL_MP:
 			{
+#ifndef CLIENT_DLL
+				if ( LOGGER::Logger::getInstance().IsLogging() )
+					LOGGER::Logger::getInstance().StopLoggingThread();
+#endif // !CLIENT_DLL
+
 				g_pHostState->State_ChangeLevelMP();
 				break;
 			}
@@ -257,6 +275,13 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			}
 			case HostStates_t::HS_GAME_SHUTDOWN:
 			{
+				
+#ifndef CLIENT_DLL
+				if ( LOGGER::Logger::getInstance().IsLogging() )
+					LOGGER::Logger::getInstance().StopLoggingThread();
+#endif
+				
+
 				Msg(eDLL_T::ENGINE, "%s: Shutdown host game\n", __FUNCTION__);
 				CHostState__State_GameShutDown(g_pHostState);
 				break;

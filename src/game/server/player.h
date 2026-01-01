@@ -755,7 +755,7 @@ private:
 };
 static_assert(sizeof(CPlayer) == 0x7EF0);
 
-inline QAngle*(*CPlayer__EyeAngles)(CPlayer* pPlayer, QAngle* pAngles);
+inline QAngle* (*CPlayer__EyeAngles)(CPlayer* pPlayer, QAngle* pAngles);
 inline void(*CPlayer__PlayerRunCommand)(CPlayer* pPlayer, CUserCmd* pUserCmd, IMoveHelper* pMover);
 inline bool(*CPlayer__PhysicsSimulate)(CPlayer* pPlayer, int numPerIteration, bool adjustTimeBase);
 inline void(*CPlayer__ApplyViewPunch)(CPlayer* pPlayer, const CTakeDamageInfo* inputInfo);
@@ -782,5 +782,7 @@ class VPlayer : public IDetour
 	virtual void Detour(const bool bAttach) const;
 };
 ///////////////////////////////////////////////////////////////////////////////
+
+void CC_CreateFakePlayer_f(const CCommand& args);
 
 #endif // PLAYER_H

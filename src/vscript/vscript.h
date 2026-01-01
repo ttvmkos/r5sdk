@@ -25,6 +25,7 @@ SQBool Script_LoadScriptFile(CSquirrelVM* const s, const SQChar* path, const SQC
 bool Script_ParseScriptList(SQCONTEXT context, const char* scriptListPath, RSON::Node_t* rson, char** scriptArray, int* pScriptCount, char** precompiledScriptArray, int precompiledScriptCount);
 
 void Script_Execute(const SQChar* code, const SQCONTEXT context);
+ScriptStatus_t Script_ExecuteFunction(CSquirrelVM* s, HSCRIPT hFunction, const ScriptVariant_t* const pArgs, unsigned int nArgs, ScriptVariant_t* const pReturn, HSCRIPT hScope);
 
 ///////////////////////////////////////////////////////////////////////////////
 class VScript : public IDetour
