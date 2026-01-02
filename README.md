@@ -1,4 +1,4 @@
-THe active branch is:
+The active branch is:
 https://github.com/ttvmkos/r5sdk/tree/tracker-r5r
 
 
