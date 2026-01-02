@@ -1404,7 +1404,7 @@ namespace LOGGER
                 message += std::string(" Reason: ") + reason;
 
             const char* responseStatus = accepted ? "success" : "error";
-            SendResponse(requestId, responseStatus, &dataDoc, message);
+            SendResponse(requestId, responseStatus, &dataDoc, message, "engine.ack");
 
             Msg(eDLL_T::SERVER, "TrackerSocket: Handshake %s%s%s\n", status, reason[0] ? " reason=" : "", reason);
 
@@ -1612,13 +1612,16 @@ namespace LOGGER
     void WebSocketCommandHandler::SendResponse(const std::string& requestId,
         const char* status,
         const rapidjson::Value* data,
-        const std::string& message)
+        const std::string& message,
+        const char* type = "" )
     {
         rapidjson::Document response;
         response.SetObject();
         auto& alloc = response.GetAllocator();
 
         // Build response
+        if( type && strcmp( type, "" ) != 0 )
+            response.AddMember("type", rapidjson::Value(type, alloc), alloc);
         response.AddMember("id", rapidjson::Value(requestId.c_str(), alloc), alloc);
         response.AddMember("status", rapidjson::Value(status, alloc), alloc);
         response.AddMember("timestamp", Plat_FloatTime(), alloc);

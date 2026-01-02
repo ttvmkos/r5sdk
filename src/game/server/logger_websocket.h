@@ -47,7 +47,7 @@ namespace LOGGER
         void ProcessMessageQueue();
 
         // ===== Message Transmission =====
-        void SendResponse(const std::string& requestId, const char* status, const rapidjson::Value* data, const std::string& message);
+        void SendResponse(const std::string& requestId, const char* status, const rapidjson::Value* data, const std::string& message, const char* type = "");
         void RelayChatMessage(unsigned __int64 senderNucleus, const char* name, const char* message);
 
         // ===== Command Handlers =====
