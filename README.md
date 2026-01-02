@@ -1,3 +1,8 @@
+THe active branch is:
+https://github.com/ttvmkos/r5sdk/tree/tracker-r5r
+
+
+
 # Source SDK
 * This repository houses the source code for the development package targeting the game **Apex Legends**.
 
