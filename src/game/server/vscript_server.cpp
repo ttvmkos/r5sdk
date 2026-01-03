@@ -1069,8 +1069,17 @@ static SQRESULT ServerScript_GetPlayerPersistenceData__internal(HSQUIRRELVM v)
         const char* errorMsg = "";
         if (document["error"].IsString())
             errorMsg = document["error"].GetString();
+        
+        bool available = true; //assume marked available unless api response indicates stats are not available for this player.
+        if (document.HasMember("data") && document["data"].IsObject())
+        {
+            if (document["data"].HasMember("available") && document["data"]["available"].IsBool())
+                available = document["data"]["available"].GetBool();
+        }
 
-        Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error fetching stats -- %s", errorMsg ? errorMsg : "");
+        if( available ) //only show non standard errors.
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error fetching stats -- %s", errorMsg ? errorMsg : "");
+
         sq_pushinteger(v, -1);
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }

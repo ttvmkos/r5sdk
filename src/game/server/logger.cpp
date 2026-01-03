@@ -1073,7 +1073,7 @@ namespace LOGGER
 
         std::thread updateLiveStatsThread([stats_json]() {
             RunUpdateLiveStats(stats_json);
-            });
+        });
 
         updateLiveStatsThread.detach();
     }

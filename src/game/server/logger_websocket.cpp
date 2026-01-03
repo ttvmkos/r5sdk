@@ -1613,7 +1613,7 @@ namespace LOGGER
         const char* status,
         const rapidjson::Value* data,
         const std::string& message,
-        const char* type = "" )
+        const char* type)
     {
         rapidjson::Document response;
         response.SetObject();
