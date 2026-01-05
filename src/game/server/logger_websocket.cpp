@@ -382,6 +382,10 @@ namespace TRACKER
             return CommandType_e::HANDSHAKE;
         else if (typeStr == "toggle_mute")
             return CommandType_e::TOGGLE_PLAYER_MUTE;
+        else if (typeStr == "send_message")
+            return CommandType_e::SEND_MESSAGE;
+        else if (typeStr == "timeout_player")
+            return CommandType_e::TOGGLE_TIMEOUT;
         else
 
             return CommandType_e::UNKNOWN;
@@ -450,6 +454,14 @@ namespace TRACKER
 
         case CommandType_e::TOGGLE_PLAYER_MUTE:
             HandleToggleMute(params, requestId);
+            break;
+
+        case CommandType_e::SEND_MESSAGE:
+            HandleSendMessage(params, requestId);
+            break;
+        
+        case CommandType_e::TOGGLE_TIMEOUT:
+            HandleTimeoutCommand(params, requestId);
             break;
 
         case CommandType_e::UNKNOWN:
@@ -1336,7 +1348,8 @@ namespace TRACKER
 
         SendResponse(requestId, "success", nullptr, "Reloading server.");
         Msg(eDLL_T::SERVER, "TrackerSocket: Request to reload server dispatched.");
-        g_TaskQueue.Dispatch(Host_ReparseAllScripts, 0);
+        
+        g_TaskQueue.Dispatch(Host_Reload, 0);
     }
 
     void WebSocketCommandHandler::HandleHandshakeCommand(const rapidjson::Document& doc, const std::string& requestId)
@@ -1536,6 +1549,165 @@ namespace TRACKER
 
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Toggle mute command queued for %s\n", criteria.c_str());
+    }
+
+    void WebSocketCommandHandler::HandleSendMessage(const rapidjson::Value& params, const std::string& requestId)
+    {
+        if (!g_pServer->IsActive())
+        {
+            SendResponse(requestId, "error", nullptr, "Game is not running");
+            return;
+        }
+
+        if (!params.IsObject())
+        {
+            SendResponse(requestId, "error", nullptr, "params must be an object");
+            return;
+        }
+
+        if (!params.HasMember("player_criteria") || !params["player_criteria"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Missing required field: player_criteria");
+            return;
+        }
+
+        if (!params.HasMember("from_user") || !params["from_user"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Invalid or missing field: from_user");
+            return;
+        }
+
+        if (!params.HasMember("message") || !params["message"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Invalid or missing field: message");
+            return;
+        }
+
+        if (!params.HasMember("bool_to_all") || !params["bool_to_all"].IsBool())
+        {
+            SendResponse(requestId, "error", nullptr, "Invalid or missing field: bool_to_all");
+            return;
+        }
+
+        const char* criteria = params["player_criteria"].GetString();
+        bool bToAll = params["bool_to_all"].GetBool();
+        if (bToAll == false)
+        {
+            if (!g_BanSystem.IsPlayerInServer(criteria))
+            {
+                SendResponse(requestId, "error", nullptr, "Player is not in server to message");
+                return;
+            }
+        }
+
+        const char* message = params["message"].GetString();
+        if (!V_IsValidUTF8(message))
+        {
+            SendResponse(requestId, "error", nullptr, "'message' contains invalid characters");
+            return;
+        }
+
+        const char* fromUser = params["from_user"].GetString();
+        if (!V_IsValidUTF8(fromUser))
+        {
+            SendResponse(requestId, "error", nullptr, "'from_user' user contains invalid characters");
+            return;
+        }
+
+        bool success = CALL_SERVER_SCRIPT_FUNC( "CodeCallback_SendMessage", criteria, fromUser, message, bToAll, "void functionref( string, string, string, bool )" );
+
+        if (!success)
+        {
+            SendResponse(requestId, "error", nullptr, "Could not call CodeCallback_SendMessage");
+            return;
+        }
+
+        SendResponse(requestId, "success", nullptr, "Message sent");
+    }
+
+    void WebSocketCommandHandler::HandleTimeoutCommand(const rapidjson::Value& params, const std::string& requestId)
+    {
+        if (!g_pServer->IsActive())
+        {
+            SendResponse(requestId, "error", nullptr, "Game is not running");
+            return;
+        }
+
+        if (!params.IsObject())
+        {
+            SendResponse(requestId, "error", nullptr, "params must be an object");
+            return;
+        }
+
+        if (!params.HasMember("player_criteria") || !params["player_criteria"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Missing required field: player_criteria");
+            return;
+        }
+
+        if (!params.HasMember("from_user") || !params["from_user"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Invalid or missing field: from_user");
+            return;
+        }
+
+        if (!params.HasMember("reason") || !params["reason"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Invalid or missing field: reason");
+            return;
+        }
+
+        if (!params.HasMember("bool_toggle") || !params["bool_toggle"].IsBool())
+        {
+            SendResponse(requestId, "error", nullptr, "Invalid or missing field: bool_toggle");
+            return;
+        }
+
+        if (!params.HasMember("timeout_amount") || !params["timeout_amount"].IsInt())
+        {
+            SendResponse(requestId, "error", nullptr, "Invalid or missing field: timeout_amount");
+            return;
+        }
+
+        const char* criteria = params["player_criteria"].GetString();
+        if (!V_IsValidUTF8(criteria))
+        {
+            SendResponse(requestId, "error", nullptr, "'player_criteria' contains invalid characters");
+            return;
+        }
+
+        if (!g_BanSystem.IsPlayerInServer(criteria))
+        {
+            SendResponse(requestId, "error", nullptr, "Player is not in server to timeout");
+            return;
+        }
+
+        const char* reason = params["reason"].GetString();
+        if (!V_IsValidUTF8(reason))
+        {
+            SendResponse(requestId, "error", nullptr, "'reason' contains invalid characters");
+            return;
+        }
+        
+        const char* fromUser = params["from_user"].GetString();
+        if (!V_IsValidUTF8(fromUser))
+        {
+            SendResponse(requestId, "error", nullptr, "'from_user' user contains invalid characters");
+            return;
+        }
+
+        bool toggle = params["bool_toggle"].GetBool();
+        int timeoutAmount = params["timeout_amount"].GetInt();
+
+        bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_TimeoutCommand", toggle, criteria, timeoutAmount, fromUser, reason, "void functionref( bool, string, int, string, string )");
+
+        if (!success)
+        {
+            SendResponse(requestId, "error", nullptr, "Could not call CodeCallback_TimeoutCommand");
+            return;
+        }
+
+        SendResponse(requestId, "success", nullptr, "Timeout player requested");
     }
 
 

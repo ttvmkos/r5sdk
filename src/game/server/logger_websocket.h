@@ -67,6 +67,8 @@ namespace TRACKER
         void HandleAddBanCommand(const rapidjson::Value& params, const std::string& requestId);
         void HandleReloadServerCommand(const std::string& requestId);
         void HandleToggleMute(const rapidjson::Value& params, const std::string& requestId);
+        void HandleSendMessage(const rapidjson::Value& params, const std::string& requestId);
+        void HandleTimeoutCommand(const rapidjson::Value& params, const std::string& requestId);
 
 
         // ===== Validation & Utilities =====
@@ -123,6 +125,8 @@ namespace TRACKER
             RELOAD_SERVER = 11,
             HANDSHAKE = 12,
             TOGGLE_PLAYER_MUTE = 13,
+            SEND_MESSAGE = 14,
+            TOGGLE_TIMEOUT = 15
         };
 
         // ===== Internal Helpers =====
