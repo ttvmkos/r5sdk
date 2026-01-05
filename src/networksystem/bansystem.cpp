@@ -14,9 +14,10 @@
 #include "filesystem/filesystem.h"
 #include "networksystem/bansystem.h"
 #include "game/server/gameinterface.h"
+#include "game/server/logger.h"
 
 //forward declaration
-namespace LOGGER {
+namespace TRACKER {
 	class WebSocketCommandHandler;
 }
 
@@ -737,8 +738,7 @@ void CBanSystem::UnbanPlayer(const char* criteria)
 							// Check by IP address
 							else
 							{
-								if (entry.HasMember("ipAddress") &&
-									entry["ipAddress"].IsString())
+								if (entry.HasMember("ipAddress") && entry["ipAddress"].IsString())
 								{
 									const char* entryIp = entry["ipAddress"].GetString();
 									if (strcmp(entryIp, criteria) == 0)
@@ -750,8 +750,7 @@ void CBanSystem::UnbanPlayer(const char* criteria)
 							}
 
 							// Check by player name
-							if (!bMatch && entry.HasMember("playerName") &&
-								entry["playerName"].IsString())
+							if (!bMatch && entry.HasMember("playerName") && entry["playerName"].IsString())
 							{
 								const char* entryName = entry["playerName"].GetString();
 								if (entryName && strcmp(entryName, criteria) == 0)
@@ -852,9 +851,17 @@ void CBanSystem::AuthorPlayerByName(const char* playerName, const bool shouldBan
 		SaveList();
 		Msg(eDLL_T::SERVER, "Added '%s' to banned list\n", playerName);
 	}
+	else if (!bDisconnect && shouldBan)
+	{
+		Msg(eDLL_T::SERVER, "Could not find player '%s' to ban\n", playerName);
+	}
 	else if (bDisconnect)
 	{
 		Msg(eDLL_T::SERVER, "Kicked '%s' from server\n", playerName);
+	}
+	else if(!shouldBan)
+	{
+		Msg(eDLL_T::SERVER, "Could not find player '%s' to kick\n", playerName);
 	}
 }
 
@@ -1008,11 +1015,251 @@ void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan
 		SaveList();
 		Msg(eDLL_T::SERVER, "Added '%s' to banned list\n", playerHandle);
 	}
+	else if (!bDisconnect && shouldBan)
+	{
+		Msg(eDLL_T::SERVER, "Could not find player '%s' to ban\n", playerHandle);
+	}
 	else if (bDisconnect)
 	{
 		Msg(eDLL_T::SERVER, "Kicked '%s' from server\n", playerHandle);
 	}
+	else if (!shouldBan)
+	{
+		Msg(eDLL_T::SERVER, "Could not find player '%s' to kick\n", playerHandle);
+	}
 }
+
+bool CBanSystem::IsBannedInMetaData(const char* criteria, const char* ipAddress, char* outContext)
+{
+	if (outContext)
+		outContext[0] = '\0';
+
+	auto WriteContext = [&](const char* where, const BanMetadata_t* meta)
+		{
+			if (!outContext)
+				return;
+
+			const char* reason = "Banned from server";
+			if (meta && meta->m_BanReason.Length() > 0)
+				reason = meta->m_BanReason.Get();
+
+			V_snprintf(outContext, 256, "%s:%s", where ? where : "", reason ? reason : "");
+		};
+
+	if (VALID_CHARSTAR(criteria))
+	{
+		NucleusID_t nuc = 0;
+
+		if (V_IsAllDigit(criteria) && Bansystem_ValidateInputID(criteria, nuc) && nuc != 0 && nuc >= MAX_PLAYERS)
+		{
+			auto itMeta = m_banMetadataById.find(nuc);
+			if (itMeta != m_banMetadataById.end())
+			{
+				WriteContext("criteria_uid_meta", &itMeta->second);
+				return true;
+			}
+
+			if (m_bannedIdList.find(nuc) != m_bannedIdList.end())
+			{
+				WriteContext("criteria_uid_list", nullptr);
+				return true;
+			}
+		}
+		else
+		{
+			netadr_t parsedCriteria;
+			const in6_addr* pCriteriaIp = nullptr;
+			std::string normalizedCriteriaIp;
+
+			if (parsedCriteria.SetFromString(criteria, true))
+			{
+				pCriteriaIp = parsedCriteria.GetIP();
+
+				if (pCriteriaIp)
+					normalizedCriteriaIp = ConvertIpToString(pCriteriaIp);
+			}
+
+			if (!normalizedCriteriaIp.empty())
+			{
+				auto itMetaDirect = m_banMetadataByIp.find(criteria);
+				if (itMetaDirect != m_banMetadataByIp.end())
+				{
+					WriteContext("criteria_ip_meta", &itMetaDirect->second);
+					return true;
+				}
+
+				auto itMetaNorm = m_banMetadataByIp.find(normalizedCriteriaIp);
+				if (itMetaNorm != m_banMetadataByIp.end())
+				{
+					WriteContext("criteria_ip_meta_norm", &itMetaNorm->second);
+					return true;
+				}
+
+				if (pCriteriaIp && m_bannedIpList.find(pCriteriaIp) != m_bannedIpList.end())
+				{
+					WriteContext("criteria_ip_list", nullptr);
+					return true;
+				}
+			}
+			else
+			{
+				for (const auto& kv : m_banMetadataById)
+				{
+					const BanMetadata_t& meta = kv.second;
+
+					if (meta.m_PlayerName.Length() <= 0)
+						continue;
+
+					if (V_stricmp(meta.m_PlayerName.Get(), criteria) != 0)
+						continue;
+
+					WriteContext("criteria_name_meta_id", &meta);
+					return true;
+				}
+
+				for (const auto& kv : m_banMetadataByIp)
+				{
+					const BanMetadata_t& meta = kv.second;
+
+					if (meta.m_PlayerName.Length() <= 0)
+						continue;
+
+					if (V_stricmp(meta.m_PlayerName.Get(), criteria) != 0)
+						continue;
+
+					WriteContext("criteria_name_meta_ip", &meta);
+					return true;
+				}
+			}
+		}
+	}
+
+	if (VALID_CHARSTAR(ipAddress))
+	{
+		auto itMetaDirect = m_banMetadataByIp.find(ipAddress);
+		if (itMetaDirect != m_banMetadataByIp.end())
+		{
+			WriteContext("ip_meta", &itMetaDirect->second);
+			return true;
+		}
+
+		netadr_t parsed;
+		const in6_addr* pIp = nullptr;
+		std::string normalizedIp;
+
+		if (parsed.SetFromString(ipAddress, true))
+		{
+			pIp = parsed.GetIP();
+
+			if (pIp)
+				normalizedIp = ConvertIpToString(pIp);
+		}
+
+		if (!normalizedIp.empty())
+		{
+			auto itMetaNorm = m_banMetadataByIp.find(normalizedIp);
+			if (itMetaNorm != m_banMetadataByIp.end())
+			{
+				WriteContext("ip_meta_norm", &itMetaNorm->second);
+				return true;
+			}
+		}
+
+		if (pIp && m_bannedIpList.find(pIp) != m_bannedIpList.end())
+		{
+			WriteContext("ip_list", nullptr);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+int CBanSystem::FindPlayerInServerIndex(const char* criteria)
+{
+	if (!VALID_CHARSTAR(criteria))
+		return -1;
+
+	bool bOnlyDigits = V_IsAllDigit(criteria);
+
+	uint64_t nTargetID = 0;
+
+	if (bOnlyDigits)
+	{
+		char* pEnd = nullptr;
+		nTargetID = strtoull(criteria, &pEnd, 10);
+
+		if (pEnd == criteria)
+			bOnlyDigits = false;
+	}
+
+	for (int i = 0; i < gpGlobals->maxClients; i++)
+	{
+		CClient* const pClient = g_pServer->GetClient(i);
+		if (!pClient)
+			continue;
+
+		const CNetChan* const pNetChan = pClient->GetNetChan();
+		if (!pNetChan)
+			continue;
+
+		if (bOnlyDigits)
+		{
+			if (nTargetID >= MAX_PLAYERS) // treat as nucleus id
+			{
+				const NucleusID_t nNucleusID = pClient->GetNucleusID();
+
+				if (nNucleusID == nTargetID)
+					return i;
+			}
+			else // treat as client handle
+			{
+				const edict_t nClientID = pClient->GetHandle();
+
+				if (nClientID == nTargetID)
+					return i;
+			}
+		}
+		else // I don't actually like this, as player names can be all numbers.. but for now.
+		{
+			const char* clientName = pNetChan->GetName();
+
+			if (VALID_CHARSTAR(clientName) && V_stricmp(clientName, criteria) == 0)
+				return i;
+		}
+	}
+
+	return -1;
+}
+
+
+bool CBanSystem::IsPlayerInServer(const char* criteria)
+{
+	return FindPlayerInServerIndex(criteria) != -1;
+}
+
+bool CBanSystem::TextBanPlayer(const char* const pszCriteria, const char* const pszReason, const char* const pszExpiry, const char* const pszMutedBy, bool toggle, bool bRemoteCommand, int expiryUnixTimestamp)
+{
+	int idx = FindPlayerInServerIndex(pszCriteria);
+
+	if (idx < 0)
+		return false;
+
+	CClient* const pClient = g_pServer->GetClient(idx);
+	CClientExtended* const pClientExtended = pClient->GetClientExtended();
+	pClientExtended->SetClientIsCommsBanned(toggle);
+
+	if (toggle)
+		pClientExtended->SetCommsBanInfo(pszReason, pszExpiry);
+
+
+	bool bServerMute = pszMutedBy && strcmp(pszMutedBy, "SERVER") == 0;
+	if (!bRemoteCommand && !bServerMute)
+		TrackerSocketSystem()->RelayChatMute(pClient->GetClientName(), pClient->GetNucleusID(), pszReason, pszExpiry, pszMutedBy, toggle, expiryUnixTimestamp);
+
+	return true;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Console command handlers

@@ -64,6 +64,10 @@ public:
 	bool DeleteEntry(const netadr_t* const adr, const NucleusID_t nuc);
 
 	bool IsBanned(const netadr_t* const adr, const NucleusID_t nuc) const;
+	bool IsBannedInMetaData(const char* criteria, const char* ipAddress = nullptr, char* outReason = nullptr); //usage is primarily for admin purposes, not for player lookups.
+	bool IsPlayerInServer(const char* criteria);
+	int FindPlayerInServerIndex(const char* criteria);
+	bool TextBanPlayer(const char* const pszCriteria, const char* const pszReason, const char* const pszExpiry, const char* const mutedBy, bool toggle, bool bRemoteCommand = false, int expiryUnixTimestamp = 0);
 
 	void KickPlayerByName(const char* playerName, const char* reason = nullptr);
 	void KickPlayerById(const char* playerHandle, const char* reason = nullptr);

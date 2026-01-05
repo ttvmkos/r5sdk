@@ -53,6 +53,7 @@ static void SQVM_ServerScript_f(const CCommand& args)
         Script_Execute(args.ArgS(), SQCONTEXT::SERVER);
     }
 }
+
 static ConCommand script("script", SQVM_ServerScript_f, "Run input code as SERVER script on the VM", FCVAR_DEVELOPMENTONLY | FCVAR_GAMEDLL | FCVAR_CHEAT | FCVAR_SERVER_FRAME_THREAD);
 
 //-----------------------------------------------------------------------------
@@ -361,6 +362,22 @@ static SQRESULT ServerScript_SendServerTextMessage(HSQUIRRELVM v)
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
+static SQRESULT ServerScript_IsMuted(HSQUIRRELVM v)
+{
+    CPlayer* pPlayer = nullptr;
+
+    if (!v_sq_getentity(v, reinterpret_cast<SQEntity*>(&pPlayer)))
+        return SQ_ERROR;
+
+    CClientExtended* const pClientExtended = g_pServer->GetClientExtended(pPlayer->GetEdict() - 1);
+
+    if (!pClientExtended)
+        return SQ_ERROR;
+
+    sq_pushbool(v, pClientExtended->IsClientCommsBanned());
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: gets the number of real players on this server
 //-----------------------------------------------------------------------------
@@ -603,7 +620,7 @@ static SQRESULT ServerScript_AddBanByID(HSQUIRRELVM v)
     if ( !VALID_CHARSTAR( reason ) )
         reason = nullptr;
 
-    g_BanSystem.AddIdToBanlist( nuc, bannedByID, reason ); //needs profiled for possibly adding to task queue
+    g_BanSystem.AddIdToBanlist( nuc, bannedByID, reason );
     SCRIPT_CHECK_AND_RETURN( v, SQ_OK );
 }
 
@@ -650,26 +667,23 @@ static int64_t selfSetMatchID()
 // Check of is currently running -- returns true if logging, false if not running
 static SQRESULT ServerScript_TrackerIsLogging__internal(HSQUIRRELVM v)
 {
-    bool state = LOGGER::Logger::getInstance().IsLogging();
-    sq_pushbool(v, state);
+    sq_pushbool(v, g_pTracker->IsLogging());
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
-static SQRESULT ServerScript_TrackerGetLogState__internal(HSQUIRRELVM v)
+static SQRESULT ServerScript_TrackerGetLogState__internal(HSQUIRRELVM v) //probably should deprecate
 {
     SQInteger flag = NULL;
 
     if (SQ_SUCCEEDED(sq_getinteger(v, 2, &flag)))
     {
-        LOGGER::Logger& logger = LOGGER::Logger::getInstance();
-        LOGGER::Logger::LogState LogState = logger.intToLogState(flag);
-        bool state = logger.GetLogState(LogState);
+        bool state = g_pTracker->GetLogState(g_pTracker->intToLogState(flag));
         sq_pushbool(v, state);
     }
     else
     {
         Error(eDLL_T::SERVER, NO_ERROR, "SQ_ERROR: SQ_GetLogState");
-        sq_pushbool(v, false);
+        sq_pushbool(v, SQFalse);
     }
 
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -677,10 +691,10 @@ static SQRESULT ServerScript_TrackerGetLogState__internal(HSQUIRRELVM v)
 
 
 
-static SQRESULT ServerScript_TrackerLogEvent__internal(HSQUIRRELVM v)
+static SQRESULT ServerScript_TrackerLogEvent__internal(HSQUIRRELVM v) //Todo: Deprecate og logstrings and pull from squirrel global stat structs. 
 {
     const SQChar* logString = nullptr;
-    SQBool encrypt = false;
+    SQBool encrypt = SQFalse;
 
     SQRESULT getStringResult = sq_getstring(v, 2, &logString);
     SQRESULT getBoolResult = sq_getbool(v, 3, &encrypt);
@@ -693,7 +707,7 @@ static SQRESULT ServerScript_TrackerLogEvent__internal(HSQUIRRELVM v)
             SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
         }
 
-        LOGGER::pMkosLogger->LogEvent(logString, encrypt);
+        g_pTracker->LogEvent(logString, encrypt);
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }
     else
@@ -706,22 +720,20 @@ static SQRESULT ServerScript_TrackerLogEvent__internal(HSQUIRRELVM v)
 
 static SQRESULT ServerScript_InitializeTrackerLogThread__internal(HSQUIRRELVM v)
 {
-    SQBool encrypt = false;
+    SQBool encrypt = SQFalse;
     if (getMatchID() == 0)
-    {
         selfSetMatchID();
-    }
 
     if (SQ_FAILED(sq_getbool(v, 2, &encrypt)))
     {
         v_SQVM_ScriptError("Failed to retrieve 'encrypt' parameter in %s", __FUNCTION__);
+        sq_pushbool(v, SQFalse);
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
 
-    LOGGER::Logger& logger = LOGGER::Logger::getInstance();
-    logger.InitializeLogThread(encrypt);
+    g_pTracker->InitializeLogThread(encrypt);
+    sq_pushbool(v, SQTrue);
 
-    sq_pushbool(v, true);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -737,11 +749,7 @@ static SQRESULT ServerScript_TrackerStopLogging__internal(HSQUIRRELVM v)
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
 
-    bool doSendToAPI = sendToAPI != 0;
-
-    //DevMsg(eDLL_T::SERVER, "Send to API bool set to: %s \n", doSendToAPI ? "true" : "false");
-    LOGGER::pMkosLogger->StopLogging(doSendToAPI);
-
+    g_pTracker->StopLogging(sendToAPI != SQFalse);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -752,7 +760,7 @@ static SQRESULT ServerScript_TrackerStopLogging__internal(HSQUIRRELVM v)
 
 static SQRESULT ServerScript_TrackerCleanupLogs__internal(HSQUIRRELVM v)
 {
-    LOGGER::CleanupLogs(FileSystem());
+    TRACKER::CleanupLogs(FileSystem());
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -870,12 +878,12 @@ static SQRESULT ServerScript_TrackerEAVerify__internal(HSQUIRRELVM v)
     std::string oid(pOID);
     std::string ea_name(pEAName);
 
-    LOGGER::TaskManager::getInstance().AddTask
+    TrackerDispatch
     (
-        [token, oid, ea_name]()
+        [token = std::move(token), oid = std::move(oid), ea_name = std::move(ea_name)]()
         {
             int32_t status_num = 0;
-            std::string status = LOGGER::VerifyEaAccount(token, oid, ea_name);
+            std::string status = TRACKER::VerifyEaAccount(token, oid, ea_name);
 
             try {
                 status_num = std::stoi(status);
@@ -891,11 +899,11 @@ static SQRESULT ServerScript_TrackerEAVerify__internal(HSQUIRRELVM v)
                 Msg(eDLL_T::SERVER, "Unknown error in ServerScript_TrackerEAVerify__internal\n");
             }
 
-            if (g_pServer->IsActive())
-            {
-                g_TaskQueue.Dispatch
-                (
-                    [oid, status_num]
+            g_TaskQueue.Dispatch
+            (
+                [oid, status_num]
+                {
+                    if (g_pServer->IsActive())
                     {
                         const char* const oidC = oid.c_str();
                         bool success = CALL_SERVER_SCRIPT_FUNC
@@ -908,10 +916,10 @@ static SQRESULT ServerScript_TrackerEAVerify__internal(HSQUIRRELVM v)
 
                         if (!success)
                             Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_VerifyEaAccount for oid '%s'.\n", oid.c_str());
-                    },
-                        0
-                        );
-            }
+                    }
+                },
+                0
+           );
         }
     );
 
@@ -941,7 +949,7 @@ static SQRESULT ServerScript_TrackerUpdatePlayerCount__internal(HSQUIRRELVM v)
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
 
-    LOGGER::UPDATE_PLAYER_COUNT(action, player, OID, count, DISCORD_HOOK);
+    TRACKER::UPDATE_PLAYER_COUNT(action, player, OID, count, DISCORD_HOOK);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -958,7 +966,7 @@ static SQRESULT ServerScript_TrackerEndMatchUpdate__internal(HSQUIRRELVM v)
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
 
-    LOGGER::NOTIFY_END_OF_MATCH(recap, DISCORD_HOOK);
+    TRACKER::NOTIFY_END_OF_MATCH(recap, DISCORD_HOOK);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -976,7 +984,6 @@ static SQRESULT ServerScript_FetchPlayerPersistenceData__internal(HSQUIRRELVM v)
         v_SQVM_ScriptError("Failed to retrieve 'player_oid' parameter.\n");
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
-
     if (sq_gettype(v, 3) != OT_ARRAY)
     {
         v_SQVM_ScriptError("Second parameter is expected to be of type array. %s provided.\n", IdType2Name(sq_gettype(v, 3)));
@@ -988,13 +995,15 @@ static SQRESULT ServerScript_FetchPlayerPersistenceData__internal(HSQUIRRELVM v)
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
 
+    std::string playerUID = player_oid;
     std::vector<std::string> requestedStats = SQArrayToVector<std::string>(v, 3);
     std::vector<std::string> requestedSettings = SQArrayToVector<std::string>(v, 4);
 
-    LOGGER::TaskManager::getInstance().RequestPlayerPersistenceData(
-        player_oid,
-        requestedStats,
-        requestedSettings
+    TRACKER::TaskManager::getInstance().RequestPlayerPersistenceData
+    (
+        std::move( playerUID ),
+        std::move( requestedStats ),
+        std::move( requestedSettings )
     );
 
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
@@ -1022,8 +1031,10 @@ static SQRESULT ServerScript_FetchBatchPersistenceData__internal(HSQUIRRELVM v)
     std::vector<std::string> requestedStats = SQArrayToVector<std::string>(v, 3);
     std::vector<std::string> requestedSettings = SQArrayToVector<std::string>(v, 4);
 
-    LOGGER::TaskManager::getInstance().RequestBatchPlayerPersistenceData(
-        playerOids, requestedStats, requestedSettings);
+    TRACKER::TaskManager::getInstance().RequestBatchPlayerPersistenceData(
+        std::move(playerOids),
+        std::move(requestedStats),
+        std::move(requestedSettings));
 
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
@@ -1040,7 +1051,7 @@ static SQRESULT ServerScript_GetPlayerPersistenceData__internal(HSQUIRRELVM v)
          SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
      }
 
-     std::string statsJson = LOGGER::GetPlayerJsonData(player_oid);
+     std::string statsJson = TRACKER::GetPlayerJsonData(player_oid);
 
      if (statsJson.empty() || statsJson == "NA")
      {
@@ -1240,7 +1251,7 @@ static SQRESULT ServerScript_TrackerUpdateLiveStats__internal(HSQUIRRELVM v)
 
     std::string copyStatsJson(stats_json); //we must do this, as a thread is spawned to ship livestats
 
-    LOGGER::UpdateLiveStats(copyStatsJson);
+    TRACKER::UpdateLiveStats(copyStatsJson);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -1251,7 +1262,7 @@ static SQRESULT ServerScript_TrackerResetStats__internal(HSQUIRRELVM v)
     const SQChar* player_oid = nullptr;
     if (SQ_SUCCEEDED(sq_getstring(v, 2, &player_oid)) && player_oid)
     {
-        LOGGER::TaskManager::getInstance().ResetPlayerData(player_oid);
+        TRACKER::TaskManager::getInstance().ResetPlayerData(player_oid);
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }
 
@@ -1274,19 +1285,22 @@ static SQRESULT ServerScript_FetchGlobalTrackerSettings__internal(HSQUIRRELVM v)
         sq_getstackobj(v, 2, &queryObj);
         sq_addref(v, &queryObj);
 
-        LOGGER::TaskManager::getInstance().AddTask([v, queryObj, query]() mutable
-        {
-            std::string settings = LOGGER::FetchGlobalSettings(query);
-
-            g_TaskQueue.Dispatch([query, settings,v, queryObj]() mutable
+        TrackerDispatch
+        (
+            [v, queryObj, query]() mutable
             {
-                bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_TrackerGlobalSettingsReady", settings.c_str(), "void functionref( string )");
-                if (!success)
-                    Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_TrackerGlobalSettingsReady for query '%s'.\n", query);
+                std::string settings = TRACKER::FetchGlobalSettings(query);
 
-                sq_release(v, &queryObj);
-            }, 0 );
-        });
+                g_TaskQueue.Dispatch([query, settings,v, queryObj]() mutable
+                {
+                    bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_TrackerGlobalSettingsReady", settings.c_str(), "void functionref( string )");
+                    if (!success)
+                        Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_TrackerGlobalSettingsReady for query '%s'.\n", query);
+
+                    sq_release(v, &queryObj);
+                }, 0 );
+            }
+        );
 
         SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
     }
@@ -1311,7 +1325,7 @@ static SQRESULT ServerScript_TrackerGetSetting__internal(HSQUIRRELVM v)
          SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
      }
 
-     std::string setting_value = LOGGER::GetSetting(setting_key);
+     std::string setting_value = TRACKER::GetSetting(setting_key);
      sq_pushstring(v, setting_value.c_str(), -1);
      SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
@@ -1319,7 +1333,7 @@ static SQRESULT ServerScript_TrackerGetSetting__internal(HSQUIRRELVM v)
 
 static SQRESULT ServerScript_TrackerReloadConfig__internal(HSQUIRRELVM v)
 {
-    LOGGER::ReloadConfig("r5rdev_config.json");
+    TRACKER::ReloadConfig("r5rdev_config.json");
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -1351,8 +1365,8 @@ static SQRESULT ServerScript_TrackerServerMsg__internal(HSQUIRRELVM v)
 
 static SQRESULT ServerScript_TrackerRestartWebsocket__internal(HSQUIRRELVM v)
 {
-    LOGGER::TrackerSocketSystem()->Shutdown();
-    LOGGER::TrackerSocketSystem()->Reconnect();
+    TrackerSocketSystem()->Shutdown();
+    TrackerSocketSystem()->Reconnect();
 
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
@@ -1464,6 +1478,29 @@ static SQRESULT ServerScript_PrintStack(HSQUIRRELVM v)
     }
 
     return SQ_OK;
+}
+
+static SQRESULT ServerScript_ToggleTextBan(HSQUIRRELVM v)
+{
+    const SQChar* criteria = nullptr;
+    const SQChar* reason = nullptr;
+    const SQChar* expiry = nullptr;
+    const SQChar* mutedBy = nullptr;
+    SQBool toggleParam = SQFalse;
+    SQInteger expiryUnixTimestamp = 0;
+
+    sq_getstring(v, 2, &criteria);
+    sq_getstring(v, 3, &reason);
+    sq_getstring(v, 4, &expiry);
+    sq_getstring(v, 5, &mutedBy);
+    sq_getbool(v, 6, &toggleParam);
+    sq_getinteger(v, 7, &expiryUnixTimestamp);
+
+    if (!VALID_CHARSTAR(criteria))
+        v_SQVM_ScriptError("Cannot toggle player mute, invalid criteria provided.");
+
+    g_BanSystem.TextBanPlayer(criteria, reason, expiry, mutedBy, toggleParam != SQFalse, false, expiryUnixTimestamp);
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
 //-----------------------------------------------------------------------------
@@ -1714,6 +1751,7 @@ void Script_RegisterAdminServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle", false);
 
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BroadcastServerTextMessage, "Broadcasts a chatmessage to all clients", "void", "string prefix, string message, bool adminMsg", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, ToggleTextBan, "Toggles a text mute/unmute for a client.", "void", "string criteria, string reason, string expiry, string mutedBy, bool toggle, int expiryUnixTimestamp", false);
 }
 
 //---------------------------------------------------------------------------------
@@ -1755,6 +1793,15 @@ static void Script_RegisterServerPlayerClassFuncs()
         "string prefix, string message, bool adminMsg",
         false,
         ServerScript_SendServerTextMessage);
+
+    g_serverScriptPlayerStruct->AddFunction("IsMuted",
+        "ScriptIsMuted",
+        "Returns if the user is comms banned",
+        "bool",
+        "",
+        false,
+        ServerScript_IsMuted);
+
 }
 //---------------------------------------------------------------------------------
 static void Script_RegisterServerAIClassFuncs()

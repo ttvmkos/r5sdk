@@ -237,9 +237,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			case HostStates_t::HS_CHANGE_LEVEL_SP:
 			{
 #ifndef CLIENT_DLL
-				if (LOGGER::Logger::getInstance().IsLogging()) {
-					LOGGER::Logger::getInstance().StopLoggingThread();
-				}
+				if (g_pTracker->IsLogging())
+					g_pTracker->StopLoggingThread();
 #endif // !CLIENT_DLL
 
 				g_pHostState->State_ChangeLevelSP();
@@ -248,8 +247,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			case HostStates_t::HS_CHANGE_LEVEL_MP:
 			{
 #ifndef CLIENT_DLL
-				if ( LOGGER::Logger::getInstance().IsLogging() )
-					LOGGER::Logger::getInstance().StopLoggingThread();
+				if (g_pTracker->IsLogging())
+					g_pTracker->StopLoggingThread();
 #endif // !CLIENT_DLL
 
 				g_pHostState->State_ChangeLevelMP();
@@ -277,8 +276,8 @@ void CHostState::FrameUpdate(CHostState* pHostState, double flCurrentTime, float
 			{
 				
 #ifndef CLIENT_DLL
-				if ( LOGGER::Logger::getInstance().IsLogging() )
-					LOGGER::Logger::getInstance().StopLoggingThread();
+				if (g_pTracker->IsLogging())
+					g_pTracker->StopLoggingThread();
 #endif
 				
 
@@ -375,6 +374,7 @@ void CHostState::Setup(void)
 
 #ifndef CLIENT_DLL
 	LiveAPISystem()->Init();
+	TrackerInit();
 #endif // !CLIENT_DLL
 
 	if (CommandLine()->CheckParm("-norandomkey"))

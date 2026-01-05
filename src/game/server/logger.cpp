@@ -18,7 +18,7 @@
 //-----------------------------------------------------------------------------
 // POINTERS
 //-----------------------------------------------------------------------------
-LOGGER::Logger* LOGGER::pMkosLogger = nullptr;
+TRACKER::Logger* g_pTracker = nullptr;
 
 //-----------------------------------------------------------------------------
 // string manipulation sanitize function
@@ -30,9 +30,9 @@ static void Sanitize_AlphaNumHyphenUnderscore(std::string& input)
     (
         std::remove_if
         (
-            input.begin(), input.end(), []( unsigned char c ) 
+            input.begin(), input.end(), [](unsigned char c)
             {
-                return !std::isalnum( static_cast<unsigned char>(c) ) && c != '-' && c != '_';
+                return !std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_';
             }
         ),
 
@@ -64,11 +64,11 @@ static void Script_CodeCallback_BatchStatsLoaded()
     g_TaskQueue.Dispatch
     (
         []
-        { 
-            if(g_pServer->IsActive() )
+        {
+            if (g_pServer->IsActive())
                 g_pServerScript->ExecuteCodeCallback("CodeCallback_BatchStatsLoaded");
         }
-        ,0 
+        , 0
     );
 }
 
@@ -101,7 +101,7 @@ inline static std::string join_fast(const std::vector<std::string>& vec, const s
 
 
 
-namespace LOGGER
+namespace TRACKER
 {
 
     std::unordered_map<std::string, std::string> g_configMap;
@@ -134,7 +134,7 @@ namespace LOGGER
             DEL_ALL = (delete_all == "true");
         }
 
-        if ( subDir.empty() || subDir == "" )
+        if (subDir.empty() || subDir == "")
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Attempted to load an invalid setting value.\n");
             return;
@@ -197,10 +197,10 @@ namespace LOGGER
 
             pFileSystem->RemoveFile(fileInfo.fullPath.c_str(), "PLATFORM");
             dirSize -= fileInfo.fileSize;
-            Msg(eDLL_T::SERVER, "Removing log: %s\n", fileInfo.fullPath.c_str());
+            Msg(eDLL_T::SERVER, "Tracker: Removing log: %s\n", fileInfo.fullPath.c_str());
         }
 
-        Msg(eDLL_T::SERVER, "Final statlog directory size: %zd bytes\n", dirSize);
+        Msg(eDLL_T::SERVER, "Tracker: Final statlog directory size: %zd bytes\n", dirSize);
     }
 
 
@@ -210,7 +210,7 @@ namespace LOGGER
     {
         if (depth > 30)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Object depth exceeded allocated recursion limit.. \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Object depth exceeded allocated recursion limit.. \n");
             return;
         }
 
@@ -262,20 +262,20 @@ namespace LOGGER
     {
         if (!configFileName)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error in [LoadConfig] : configFileName was nullptr \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error in [LoadConfig] : configFileName was nullptr \n");
         }
 
 
         if (!pFileSystem->FileExists(configFileName))
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Missing stats file: %s\n", configFileName);
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Missing stats file: %s\n", configFileName);
             return;
         }
 
         FileHandle_t configFile = pFileSystem->Open(configFileName, "rt");
         if (!configFile)
         {
-            Msg(eDLL_T::SERVER, "Failed to open config file: %s\n", configFileName);
+            Msg(eDLL_T::SERVER, "Tracker: Failed to open config file: %s\n", configFileName);
             return;
         }
 
@@ -289,18 +289,18 @@ namespace LOGGER
         rapidjson::Document document;
         if (document.Parse(buffer.get()).HasParseError())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "JSON parse error: %s\n", rapidjson::GetParseError_En(document.GetParseError()));
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: JSON parse error: %s\n", rapidjson::GetParseError_En(document.GetParseError()));
             return;
         }
 
         if (document.IsObject())
         {
             AddToConfigMap(document);
-            Msg(eDLL_T::SERVER, "Loaded R5R.DEV config file: %s \n", configFileName);
+            Msg(eDLL_T::SERVER, "Tracker: Loaded R5R.DEV config file: %s \n", configFileName);
         }
         else
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to load stats config file: File was not a valid json object. \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to load stats config file: File was not a valid json object. \n");
         }
     }
 
@@ -311,7 +311,7 @@ namespace LOGGER
     {
         if (!key)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error in [GetSetting] : key was nullptr \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error in [GetSetting] : key was nullptr \n");
             return "";
         }
 
@@ -361,7 +361,7 @@ namespace LOGGER
             }
             else
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to initialize CURL handle. \n");
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to initialize CURL handle. \n");
             }
         }
     }
@@ -380,13 +380,13 @@ namespace LOGGER
         {
             if (!poolCond.wait_for(lock, handleWaitTimeout, [this] { return !pool.empty(); }))
             {
-                if ( pool.size() < maxPoolSize )
+                if (pool.size() < maxPoolSize)
                 {
                     return CreateHandle();
                 }
                 else
                 {
-                    Error(eDLL_T::SERVER, NO_ERROR, "Timeout waiting for CURL handle and pool is full. \n");
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Timeout waiting for CURL handle and pool is full. \n");
                     return CreateHandle();
                 }
             }
@@ -412,7 +412,7 @@ namespace LOGGER
         }
         else
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to initialize CURL handle. \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to initialize CURL handle. \n");
         }
 
         return handle;
@@ -427,28 +427,28 @@ namespace LOGGER
         }
         else
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "CURL failed in [%s] : %s\n", func, curl_easy_strerror(res));
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: CURL failed in [%s] : %s\n", func, curl_easy_strerror(res));
 
             switch (res)
             {
-                case CURLE_COULDNT_CONNECT:
-                case CURLE_COULDNT_RESOLVE_HOST:
-                case CURLE_COULDNT_RESOLVE_PROXY:
+            case CURLE_COULDNT_CONNECT:
+            case CURLE_COULDNT_RESOLVE_HOST:
+            case CURLE_COULDNT_RESOLVE_PROXY:
 
-                    ReturnHandle(handle);
-                    return true;
-                    break;
+                ReturnHandle(handle);
+                return true;
+                break;
 
-                case CURLE_SSL_CONNECT_ERROR:
-                case CURLE_SSL_CIPHER:
-                case CURLE_SSL_CACERT:
+            case CURLE_SSL_CONNECT_ERROR:
+            case CURLE_SSL_CIPHER:
+            case CURLE_SSL_CACERT:
 
-                    DiscardHandle(handle);
-                    return false;
+                DiscardHandle(handle);
+                return false;
 
-                default:
-                    Error(eDLL_T::SERVER, NO_ERROR, "Unspecified reason: %s", curl_easy_strerror(res) );
-                    DiscardHandle(handle);
+            default:
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Unspecified reason: %s", curl_easy_strerror(res));
+                DiscardHandle(handle);
             }
         }
 
@@ -460,7 +460,7 @@ namespace LOGGER
         //Msg(eDLL_T::SERVER, ":: Handle return called \n");
 
         std::lock_guard<std::mutex> lock(poolMutex);
-        
+
         if (handle && pool.size() < maxPoolSize)
         {
             //Msg(eDLL_T::SERVER, ":: resetting \n");
@@ -477,7 +477,7 @@ namespace LOGGER
             }
             else
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Attempted to return an invalid CURL handle to the pool. \n");
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Attempted to return an invalid CURL handle to the pool. \n");
             }
         }
     }
@@ -501,9 +501,9 @@ namespace LOGGER
         while (!pool.empty())
         {
             CURL* handle = pool.front();
-            if ( handle )
+            if (handle)
             {
-                curl_easy_cleanup( handle );
+                curl_easy_cleanup(handle);
                 handle = nullptr;
             }
             pool.pop();
@@ -526,7 +526,7 @@ namespace LOGGER
     {
         if (!settingValue || settingValue[0] == '\0')
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Max log file size setting is null or empty.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Max log file size setting is null or empty.\n");
             return -1;
         }
 
@@ -535,7 +535,7 @@ namespace LOGGER
 
         if (*endPtr != '\0' || maxSize64_t <= 0)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Invalid value for max log file size setting: %s\n", settingValue);
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Invalid value for max log file size setting: %s\n", settingValue);
             return -1;
         }
 
@@ -545,7 +545,7 @@ namespace LOGGER
 
 
 
-    std::string LOGGER::GetEndingMatchID()
+    std::string TRACKER::GetEndingMatchID()
     {
         return std::to_string(last_match_id.load());
     }
@@ -553,7 +553,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::SaveEndingMatchID()
+    void TRACKER::SaveEndingMatchID()
     {
         last_match_id.store(getMatchID());
     }
@@ -573,9 +573,9 @@ namespace LOGGER
     }
 
 
-    std::string url_encode(const std::string& value) 
+    std::string url_encode(const std::string& value)
     {
-        return replace_all( value, "\n", "<br/>" );
+        return replace_all(value, "\n", "<br/>");
     }
 
 
@@ -645,17 +645,19 @@ namespace LOGGER
 
 
     //keeps map lean by removing map slot for player after assignment in squirrel
-    void LOGGER::TaskManager::ResetPlayerData(const char* player_oid)
+    void TRACKER::TaskManager::ResetPlayerData(const char* player_oid)
     {
         if (player_oid == nullptr || std::strlen(player_oid) == 0)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "ResetPlayerData called with empty or null player_oid. \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: ResetPlayerData called with empty or null player_oid. \n");
             return;
         }
 
         std::string playerOidStr(player_oid);
 
-        std::function<void()> task = [playerOidStr]()
+        TrackerDispatch
+        (
+            [playerOidStr]()
             {
                 std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
                 if (lock.try_lock_for(std::chrono::milliseconds(10000)))
@@ -668,11 +670,10 @@ namespace LOGGER
                 }
                 else
                 {
-                    Error(eDLL_T::SERVER, NO_ERROR, "Could not aquire lock to remove player slot in map. \n");
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Could not aquire lock to remove player slot in map. \n");
                 }
-            };
-
-        TaskManager::getInstance().AddTask(task);
+            }
+        );
     }
 
 
@@ -708,11 +709,11 @@ namespace LOGGER
                 }
                 catch (const std::exception& e) {
 
-                    Error(eDLL_T::SERVER, NO_ERROR, "Exception in ProcessTasks: %s \n", e.what());
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Exception in ProcessTasks: %s \n", e.what());
                 }
                 catch (...) {
 
-                    Error(eDLL_T::SERVER, NO_ERROR, "Unknown exception in ProcessTasks \n");
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Unknown exception in ProcessTasks \n");
                 }
             }
         }
@@ -730,23 +731,23 @@ namespace LOGGER
     {
         if (!player_oid)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[GetPlayerJsonData] Error: player_oid nullptr \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [GetPlayerJsonData] Error: player_oid nullptr \n");
             return "NA";
         }
 
         std::shared_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
-        std::string safeOid( player_oid );
+        std::string safeOid(player_oid);
 
         if (lock.try_lock_for(std::chrono::milliseconds(500)))
         {
-            std::unordered_map<std::string, std::string>::iterator it = playerStatsMap.find( safeOid );
+            std::unordered_map<std::string, std::string>::iterator it = playerStatsMap.find(safeOid);
 
             if (it != playerStatsMap.end())
                 return it->second;
         }
         else
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Unable to acquire lock while reading stats for player: %s \n", player_oid);
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Unable to acquire lock while reading stats for player: %s \n", player_oid);
         }
 
         return "";
@@ -768,7 +769,7 @@ namespace LOGGER
     {
         if (player_oids.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error: player_oid empty \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error: player_oid empty \n");
             return "NA";
         }
 
@@ -776,7 +777,7 @@ namespace LOGGER
 
         if (!easy_handle)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error: Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error: Failed to acquire curl handle from pool\n");
             return "NA";
         }
 
@@ -787,7 +788,7 @@ namespace LOGGER
         CFmtStrMax urlBase("%s?TYPE=batch&KEY=%s&identifier=%s&requestedStats=%s&requestedSettings=%s&HOST_API_KEY=%s",
             TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), identifier.c_str(), requestedStats.c_str(), requestedSettings.c_str(), GetSetting("apikey").c_str());
         std::string url = urlBase.Get();
-        
+
         for (const std::string& oid : player_oids)
         {
             CFmtStrN<32> extra("&player_oid[]=%s", oid.c_str());
@@ -804,7 +805,7 @@ namespace LOGGER
         const char* info;
         const int max_attempts = 3;
 
-        do 
+        do
         {
             res = curl_easy_perform(easy_handle);
 
@@ -813,8 +814,8 @@ namespace LOGGER
                 break;
             }
 
-            info = (retry >= max_attempts) ? "Connection failed. Stats not loaded." : "- Retrying connection...";
-            Error(eDLL_T::SERVER, NO_ERROR, "Error: Batch stats-fetch: curl_easy_perform() failed: %s %s\n", curl_easy_strerror(res), info);
+            info = (retry >= max_attempts) ? "Tracker: Connection failed. Stats not loaded." : "Tracker: - Retrying connection...";
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error: Batch stats-fetch: curl_easy_perform() failed: %s %s\n", curl_easy_strerror(res), info);
             retry++;
 
         } while (retry < max_attempts);
@@ -826,76 +827,76 @@ namespace LOGGER
 
     //input: stores json struct in the map, later used to build stats table when fetched from scripts. 
     void TaskManager::RequestBatchPlayerPersistenceData(
-        const std::vector<std::string>& player_oids,
-        const std::vector<std::string>& requestedStats,
-        const std::vector<std::string>& requestedSettings)
+        std::vector<std::string>&& player_oids,
+        std::vector<std::string>&& requestedStats,
+        std::vector<std::string>&& requestedSettings)
     {
-        AddTask([player_oids, requestedStats, requestedSettings, this]()
-        {
-            if (player_oids.empty())
+        AddTask([player_oids = std::move(player_oids), requestedStats = std::move(requestedStats), requestedSettings = std::move(requestedSettings), this]()
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestBatchPlayerPersistenceData] : player_oids was empty \n");
-                Script_CodeCallback_BatchStatsLoaded();
-                return;
-            }
-
-            std::string statsJoined = join_fast(requestedStats, ",");
-            std::string settingsJoined = join_fast(requestedSettings, ",");
-            std::string stats_json = FetchBatchPlayerStats(player_oids, statsJoined, settingsJoined);
-
-            rapidjson::Document document;
-            if (document.Parse(stats_json.c_str()).HasParseError())
-            {
-                Error(eDLL_T::SERVER, NO_ERROR, "JSON parsing failed: %s\n", rapidjson::GetParseError_En(document.GetParseError()));
-                Script_CodeCallback_BatchStatsLoaded();
-                return;
-            }
-
-            if (!document.IsObject())
-            {
-                Error(eDLL_T::SERVER, NO_ERROR, "JSON root is not an object\n");
-                Script_CodeCallback_BatchStatsLoaded();
-                return;
-            }
-
-            if (document.HasMember("error"))
-            {
-                const char* errorMsg = "";
-                if (document["error"].IsString())
-                    errorMsg = document["error"].GetString();
-
-                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error fetching stats -- %s", errorMsg ? errorMsg : "");
-                Script_CodeCallback_BatchStatsLoaded();
-                return;
-            }
-
-            for (rapidjson::Value::ConstMemberIterator itr = document.MemberBegin(); itr != document.MemberEnd(); ++itr)
-            {
-                std::string player_oid = itr->name.GetString();
-
-                if (!itr->value.IsObject()) 
-                    continue;
-
-                rapidjson::StringBuffer buffer;
-                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-                itr->value.Accept(writer);
-
-                std::string player_stats_json = buffer.GetString();
-
-                bool has_lock = false;
-                std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
-                if (lock.try_lock_for(std::chrono::milliseconds(3000)))
+                if (player_oids.empty())
                 {
-                    playerStatsMap[player_oid] = player_stats_json;
-                    has_lock = true;
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error in [RequestBatchPlayerPersistenceData] : player_oids was empty \n");
+                    Script_CodeCallback_BatchStatsLoaded();
+                    return;
                 }
 
-                if (!has_lock)
-                    Error(eDLL_T::SERVER, NO_ERROR, "failed to acquire lock to write player stats into map\n");
-            }
+                std::string statsJoined = join_fast(requestedStats, ",");
+                std::string settingsJoined = join_fast(requestedSettings, ",");
+                std::string stats_json = FetchBatchPlayerStats(player_oids, statsJoined, settingsJoined);
 
-            Script_CodeCallback_BatchStatsLoaded();
-        });
+                rapidjson::Document document;
+                if (document.Parse(stats_json.c_str()).HasParseError())
+                {
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: JSON parsing failed: %s\n", rapidjson::GetParseError_En(document.GetParseError()));
+                    Script_CodeCallback_BatchStatsLoaded();
+                    return;
+                }
+
+                if (!document.IsObject())
+                {
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: JSON root is not an object\n");
+                    Script_CodeCallback_BatchStatsLoaded();
+                    return;
+                }
+
+                if (document.HasMember("error"))
+                {
+                    const char* errorMsg = "";
+                    if (document["error"].IsString())
+                        errorMsg = document["error"].GetString();
+
+                    Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error fetching stats -- %s", errorMsg ? errorMsg : "");
+                    Script_CodeCallback_BatchStatsLoaded();
+                    return;
+                }
+
+                for (rapidjson::Value::ConstMemberIterator itr = document.MemberBegin(); itr != document.MemberEnd(); ++itr)
+                {
+                    std::string player_oid = itr->name.GetString();
+
+                    if (!itr->value.IsObject())
+                        continue;
+
+                    rapidjson::StringBuffer buffer;
+                    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                    itr->value.Accept(writer);
+
+                    std::string player_stats_json = buffer.GetString();
+
+                    bool has_lock = false;
+                    std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
+                    if (lock.try_lock_for(std::chrono::milliseconds(3000)))
+                    {
+                        playerStatsMap[player_oid] = player_stats_json;
+                        has_lock = true;
+                    }
+
+                    if (!has_lock)
+                        Error(eDLL_T::SERVER, NO_ERROR, "Tracker: failed to acquire lock to write player stats into map\n");
+                }
+
+                Script_CodeCallback_BatchStatsLoaded();
+            });
     }
 
 
@@ -905,7 +906,7 @@ namespace LOGGER
     {
         if (!player_oid)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error: player_oid nullptr \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error: player_oid nullptr \n");
             return "NA";
         }
 
@@ -913,16 +914,16 @@ namespace LOGGER
 
         if (!easy_handle)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to acquire curl handle from pool\n");
             return "NA";
         }
 
         std::string readBuffer;
         std::string identifier = GetSetting("identifier");
         Sanitize_AlphaNumHyphenUnderscore(identifier);
-        
+
         CFmtStrMax urlStr("%s?KEY=%s&requestedStats=%s&player_oid=%s&identifier=%s&requestedSettings=%s&HOST_API_KEY=%s",
-            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings, GetSetting("apikey").c_str() );
+            TRACKER_STATS_API_ENDPOINT.c_str(), TRACKER_API_KEY.c_str(), requestedStats, player_oid, identifier.c_str(), requestedSettings, GetSetting("apikey").c_str());
 
         curl_easy_setopt(easy_handle, CURLOPT_URL, urlStr.Get());
         curl_easy_setopt(easy_handle, CURLOPT_WRITEFUNCTION, WriteCallback);
@@ -932,7 +933,7 @@ namespace LOGGER
         CURLcode res = curl_easy_perform(easy_handle);
 
         if (res != CURLE_OK) {
-            Error(eDLL_T::SERVER, NO_ERROR, "Stat lookup: curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Stat lookup: curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
         }
 
         bool check = CURLConnectionPool::GetInstance().HandleCurlResult(easy_handle, res, "FetchPlayerStats");
@@ -943,46 +944,48 @@ namespace LOGGER
 
 
     //for individual players, stores data in playerStatsMap
-    void TaskManager::RequestPlayerPersistenceData( const std::string& player_oid, const std::vector<std::string>& requestedStats, const std::vector<std::string>& requestedSettings )
+    void TaskManager::RequestPlayerPersistenceData(std::string&& player_oid, std::vector<std::string>&& requestedStats, std::vector<std::string>&& requestedSettings)
     {
         if (player_oid.empty())
-            Error(eDLL_T::SERVER, NO_ERROR, "Error in [RequestPlayerPersistenceData] : empty player oid\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error in [RequestPlayerPersistenceData] : empty player oid\n");
 
-        std::string playerOidStr(player_oid);
-        std::string statsJoined = join_fast(requestedStats, ",");
-        std::string settingsJoined = join_fast(requestedSettings, ",");
-
-        AddTask([playerOidStr, statsJoined, settingsJoined, this]()
-        {
-            std::string stats = FetchPlayerStats( playerOidStr.c_str(), statsJoined.c_str(), settingsJoined.c_str() );
-            bool has_lock = false;
-
+        AddTask
+        (
+            [player_oid = std::move(player_oid), requestedStats = std::move(requestedStats), requestedSettings = std::move(requestedSettings), this]()
             {
-                std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
-                if (lock.try_lock_for(std::chrono::milliseconds(3000)))
+                std::string playerOidStr(player_oid);
+                std::string statsJoined = join_fast(requestedStats, ",");
+                std::string settingsJoined = join_fast(requestedSettings, ",");
+                std::string stats = FetchPlayerStats(playerOidStr.c_str(), statsJoined.c_str(), settingsJoined.c_str());
+                bool has_lock = false;
+
                 {
-                    playerStatsMap[playerOidStr] = stats;
-                    has_lock = true;
+                    std::unique_lock<std::shared_timed_mutex> lock(statsMutex, std::defer_lock);
+                    if (lock.try_lock_for(std::chrono::milliseconds(3000)))
+                    {
+                        playerStatsMap[playerOidStr] = stats;
+                        has_lock = true;
+                    }
+                    else
+                    {
+                        Error(eDLL_T::SERVER, NO_ERROR, "Tracker: failed to aquire lock to write player stats into map for: %s\n", playerOidStr.c_str());
+                    }
                 }
-                else
-                {
-                    Error(eDLL_T::SERVER, NO_ERROR, "failed to aquire lock to write player stats into map for: %s\n", playerOidStr.c_str());
-                }
+
+                g_TaskQueue.Dispatch
+                (
+                    [playerOid = Sanitize_NumbersOnly(playerOidStr)]
+                    {
+                        const char* const oid = playerOid.c_str();
+                        bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_PlayerStatsReady", MakeNoCopyStr(oid), "void functionref( string )");
+                        if (!success)
+                            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to execute CodeCallback_PlayerStatsReady for '%s'.\n", oid);
+                    },
+                    0
+                );
+
             }
-
-            g_TaskQueue.Dispatch
-            (
-                [ playerOid = Sanitize_NumbersOnly(playerOidStr) ]
-                {
-                    const char* const oid = playerOid.c_str();
-                    bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_PlayerStatsReady", MakeNoCopyStr( oid ), "void functionref( string )");
-                    if (!success)
-                        Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_PlayerStatsReady for '%s'.\n", oid);
-                },
-                0
-            );
-
-        });
+        );
     }
 
 
@@ -993,21 +996,21 @@ namespace LOGGER
     /********************************/
 
     //separate thread
-    void RunUpdateLiveStats( std::string stats_json_copy )
+    void RunUpdateLiveStats(std::string stats_json_copy)
     {
         const char* stats_json = stats_json_copy.c_str();
 
-        if ( !stats_json )
+        if (!stats_json)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[RunUpdateLiveStats] Failed: Nullptr\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [RunUpdateLiveStats] Failed: Nullptr\n");
             return;
         }
 
         CURL* curl = CURLConnectionPool::GetInstance().GetHandle();
 
-        if ( !curl )
+        if (!curl)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[RunUpdateLiveStats] Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [RunUpdateLiveStats] Failed to acquire curl handle from pool\n");
             return;
         }
 
@@ -1020,7 +1023,7 @@ namespace LOGGER
         if (stats.HasParseError())
         {
             size_t offset = stats.GetErrorOffset();
-            Error(eDLL_T::SERVER, NO_ERROR, "[RunUpdateLiveStats] Failed to parse stats JSON at offset %zu: %s\n", offset, rapidjson::GetParseError_En(stats.GetParseError()));
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [RunUpdateLiveStats] Failed to parse stats JSON at offset %zu: %s\n", offset, rapidjson::GetParseError_En(stats.GetParseError()));
             return;
         }
 
@@ -1067,16 +1070,14 @@ namespace LOGGER
     {
         if (stats_json.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[UpdateLiveStats] failed: stats_json empty\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [UpdateLiveStats] failed: stats_json empty\n");
             return;
         }
 
-        std::thread updateLiveStatsThread([stats_json]() {
-            RunUpdateLiveStats(stats_json);
-        });
-
-        updateLiveStatsThread.detach();
+        TrackerDispatch([stats_json]() {RunUpdateLiveStats(stats_json); });
     }
+
+
 
 
 
@@ -1085,24 +1086,24 @@ namespace LOGGER
     /********************************/
 
     // called by UPDATE_PLAYER_COUNT as separate thread
-    void PlayerCountUpdate(std::string action, std::string player, std::string oid, std::string count, std::string DISCORD_HOOK)
+    void PlayerCountUpdate(std::string action, std::string player, std::string oid, std::string count, std::string discordHook)
     {
         CURL* curl = CURLConnectionPool::GetInstance().GetHandle();
 
         if (!curl)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to acquire curl handle from pool\n");
             return;
         }
 
 
         CFmtStr postData("servername=%s&action=%s&player_name=%s&OID=%s&current_count=%s&DISCORD_HOOK=%s&KEY=%s",
-            hostname->GetString(), action.c_str(), player.c_str(), oid.c_str(), count.c_str(), DISCORD_HOOK.c_str(), TRACKER_API_KEY.c_str());
-        
+            hostname->GetString(), action.c_str(), player.c_str(), oid.c_str(), count.c_str(), discordHook.c_str(), TRACKER_API_KEY.c_str());
+
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.Get());
-        curl_easy_setopt( curl, CURLOPT_URL, TRACKER_PLAYER_COUNT_ENDPOINT);
-        curl_easy_setopt( curl, CURLOPT_TIMEOUT, 5L );
-        curl_easy_setopt( curl, CURLOPT_POST, 1L );
+        curl_easy_setopt(curl, CURLOPT_URL, TRACKER_PLAYER_COUNT_ENDPOINT);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
 
         CURLcode res = curl_easy_perform(curl);
 
@@ -1115,9 +1116,7 @@ namespace LOGGER
     {
         std::string webhookUrl = DISCORD_HOOK;
         if (webhookUrl.empty())
-        {
             webhookUrl = GetSetting("webhooks.PLAYERS_WEBHOOK");
-        }
 
         std::string actionStr(action);
         std::string playerStr(player);
@@ -1125,12 +1124,13 @@ namespace LOGGER
         std::string countStr(count);
         std::string DISCORD_HOOKStr(webhookUrl);
 
-        std::function<void()> task = [actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr]()
-        {
-            PlayerCountUpdate(actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr);
-        };
-
-        TaskManager::getInstance().AddTask(task);
+        TrackerDispatch
+        (
+            [actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr]()
+            {
+                PlayerCountUpdate(actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr);
+            }
+        );
     }
 
 
@@ -1143,10 +1143,9 @@ namespace LOGGER
    //by ref
     void EndMatchUpdate(std::string recap, std::string discord_hook)
     {
-
         if (recap.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[EndMatchUpdate] Recap was empty...\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [EndMatchUpdate] Recap was empty...\n");
             return;
         }
 
@@ -1154,7 +1153,7 @@ namespace LOGGER
 
         if (matchID.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "[EndMatchUpdate] matchID was empty...\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [EndMatchUpdate] matchID was empty...\n");
         }
 
         if (discord_hook.empty())
@@ -1162,14 +1161,14 @@ namespace LOGGER
             discord_hook = std::string(GetSetting("webhooks.MATCHES_WEBHOOK"));
         }
 
-        LOGGER::Logger& logger = LOGGER::Logger::getInstance();
+        TRACKER::Logger& logger = TRACKER::Logger::getInstance();
 
         const std::string dir_setting = GetSetting("logfolder");
         const std::string filename = logger.GetLatestFile("platform/" + dir_setting, GetEndingMatchID());
 
         if (filename.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "No log found. Aborting API connection [EndMatchUpdate]...\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: No log found. Aborting API connection [EndMatchUpdate]...\n");
             return;
         }
 
@@ -1178,7 +1177,7 @@ namespace LOGGER
         size_t recap_len = recap.length();
         if (recap_len > static_cast<size_t>(INT_MAX))
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to cast recap string size to int, result would be truncated. \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to cast recap string size to int, result would be truncated. \n");
             return;
         }
 
@@ -1186,7 +1185,7 @@ namespace LOGGER
 
         if (!curl)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to acquire curl handle from pool\n");
             return;
         }
 
@@ -1195,7 +1194,7 @@ namespace LOGGER
 
         if (!escaped_recap)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to encode recap string\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to encode recap string\n");
             CURLConnectionPool::GetInstance().ReturnHandle(curl);
             return;
         }
@@ -1221,7 +1220,7 @@ namespace LOGGER
     {
         if (!recap || !DISCORD_HOOK)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error in [NOTIFY_END_OF_MATCH] : recap or DISCORD_HOOK was nullptr");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error in [NOTIFY_END_OF_MATCH] : recap or DISCORD_HOOK was nullptr");
             return;
         }
 
@@ -1229,10 +1228,10 @@ namespace LOGGER
         std::string recap_string(recap);
         std::string discord_hook(DISCORD_HOOK);
 
-        std::thread endMatchThread([recap_string, discord_hook]() 
-        {
-            EndMatchUpdate(recap_string, discord_hook);
-        });
+        std::thread endMatchThread([recap_string, discord_hook]()
+            {
+                EndMatchUpdate(recap_string, discord_hook);
+            });
 
         endMatchThread.detach();
     }
@@ -1256,13 +1255,11 @@ namespace LOGGER
 
         if (!curl)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to acquire curl handle from pool\n");
             return "8";
         }
 
-        CFmtStr postData("token=%s&ea_acc=%s&OID=%s&KEY=%s",
-            token.c_str(), ea_name.c_str(), OID.c_str(), TRACKER_API_KEY.c_str());
-
+        CFmtStr postData("token=%s&ea_acc=%s&OID=%s&KEY=%s", token.c_str(), ea_name.c_str(), OID.c_str(), TRACKER_API_KEY.c_str());
 
         std::string readBuffer;
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/verify.php");
@@ -1290,9 +1287,9 @@ namespace LOGGER
    // returns response settings based on query
     std::string FetchGlobalSettings(const char* query)
     {
-        if (!query || strcmp( query, "") == 0 )
+        if (!query || strcmp(query, "") == 0)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error: query parameter is null or empty\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error: query parameter is null or empty\n");
             return "";
         }
 
@@ -1300,14 +1297,14 @@ namespace LOGGER
 
         if (!curl)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to acquire curl handle from pool\n");
             return "";
         }
 
         std::string readBuffer;
         CFmtStr postfields("KEY=%s&query=%s&identifier=%s&HOST_API_KEY=%s", TRACKER_API_KEY.c_str(), query, GetSetting("identifier").c_str(), GetSetting("apikey").c_str());
-        
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields.Get());   
+
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields.Get());
         curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/globalsettings.php");
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
@@ -1328,7 +1325,7 @@ namespace LOGGER
     //////////////////////////////
 
 
-    const std::string LOGGER::Encryption::base64_chars =
+    const std::string TRACKER::Encryption::base64_chars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz"
         "0123456789+/";
@@ -1337,9 +1334,9 @@ namespace LOGGER
 
 
     // created with eObj && only encryption bool true
-    std::vector<uint8_t> LOGGER::Encryption::hex2bytes(const std::string& hex) {
+    std::vector<uint8_t> TRACKER::Encryption::hex2bytes(const std::string& hex) {
         if (hex.length() % 2 != 0) {
-            throw std::invalid_argument("Hex string has an odd length");
+            throw std::invalid_argument("Tracker: Hex string has an odd length");
         }
 
         std::vector<uint8_t> bytes;
@@ -1350,7 +1347,7 @@ namespace LOGGER
             long byte = std::strtol(byteString.c_str(), &end, 16);
 
             if (*end != '\0' || byte < 0 || byte > 0xFF) {
-                throw std::invalid_argument("Invalid hex value: " + byteString);
+                throw std::invalid_argument("Tracker: Invalid hex value: " + byteString);
             }
 
             bytes.push_back(static_cast<uint8_t>(byte));
@@ -1363,7 +1360,7 @@ namespace LOGGER
 
 
     // created with eObj && only encryption bool true
-    std::string LOGGER::Encryption::bbase64Encode(std::vector<uint8_t> bytes_to_encode) {
+    std::string TRACKER::Encryption::bbase64Encode(std::vector<uint8_t> bytes_to_encode) {
         std::string ret;
         int i = 0;
         int j = 0;
@@ -1406,7 +1403,7 @@ namespace LOGGER
 
 
     // created with eObj && only encryption bool true
-    std::string LOGGER::Encryption::doEncrypt(const std::string& plainText, const std::vector<uint8_t>& keyBytes, const std::vector<uint8_t>& ivBytes)
+    std::string TRACKER::Encryption::doEncrypt(const std::string& plainText, const std::vector<uint8_t>& keyBytes, const std::vector<uint8_t>& ivBytes)
     {
         std::vector<uint8_t> plainTextBytes(plainText.begin(), plainText.end());
         size_t length = plainTextBytes.size();
@@ -1429,14 +1426,14 @@ namespace LOGGER
         if (ret != 0)
         {
             mbedtls_aes_free(&aes);
-            throw std::runtime_error("Failed to set encryption key, error code: " + std::to_string(ret));
+            throw std::runtime_error("Tracker: Failed to set encryption key, error code: " + std::to_string(ret));
         }
 
         unsigned char iv[16];
         if (ivBytes.size() < 16)
         {
             mbedtls_aes_free(&aes);
-            throw std::runtime_error("IV is too short");
+            throw std::runtime_error("Tracker: IV is too short");
         }
 
         std::copy(ivBytes.begin(), ivBytes.begin() + 16, iv);
@@ -1445,7 +1442,7 @@ namespace LOGGER
         mbedtls_aes_free(&aes);
         if (ret != 0)
         {
-            throw std::runtime_error("AES CBC encryption failed, error code: " + std::to_string(ret));
+            throw std::runtime_error("Tracker: AES CBC encryption failed, error code: " + std::to_string(ret));
         }
 
         std::string cipherTextBase64 = bbase64Encode(cipherTextBytes);
@@ -1456,7 +1453,7 @@ namespace LOGGER
 
 
     //////////////////////////////
-    /// LOGGER OBJECT ///////////////////////////////////////////////////////////
+    /// TRACKER OBJECT ///////////////////////////////////////////////////////////
     //////////////////////////////
 
 
@@ -1466,8 +1463,8 @@ namespace LOGGER
 
     Logger::Logger() : filePath("")
     {
-        if ( FileSystem() != nullptr )
-            LoadConfig( FileSystem(), TRACKER_CONFIG );
+        if (FileSystem() != nullptr)
+            LoadConfig(FileSystem(), TRACKER_CONFIG);
         else
         {
             Error(eDLL_T::SERVER, NOERROR, "Tracker: Filesystem not initialized, aborting.");
@@ -1479,10 +1476,9 @@ namespace LOGGER
         SetLogState(LogState::Busy, false);
         SetLogState(LogState::Ready, true);
 
-        std::string sleeptime = GetSetting("settings.CVAR_LTHREAD_DEBOUNCE"); //disabled
         std::string max_buffer = GetSetting("settings.CVAR_MAX_BUFFER");
 
-        if ( !max_buffer.empty() )
+        if (!max_buffer.empty())
         {
             try
             {
@@ -1490,24 +1486,8 @@ namespace LOGGER
             }
             catch (...)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Invalid data for setting CVAR_MAX_BUFFER\n");
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Invalid data for setting CVAR_MAX_BUFFER\n");
             }
-        }
-
-        if ( !sleeptime.empty() )
-        {
-            try
-            {
-                CVAR_LTHREAD_DEBOUNCE = std::stoi(sleeptime);
-            }
-            catch (...)
-            {
-                CVAR_LTHREAD_DEBOUNCE = 200;
-            }
-        }
-        else
-        {
-            CVAR_LTHREAD_DEBOUNCE = 200;
         }
 
         // Initialize WebSocket connection to tracker server if enabled
@@ -1518,18 +1498,18 @@ namespace LOGGER
 
         bool bReconnectOnNewGame = GetSetting("server.RECONNECT_ON_NEWGAME") == "true";
         tracker_ws_reconnect_on_newgame.SetValue(bReconnectOnNewGame ? "1" : "0");
-        
+
         if (tracker_ws_enable.GetBool())
-        {	
-			std::string trackerHostStr = GetSetting("server.TRACKER_HOST");
+        {
+            std::string trackerHostStr = GetSetting("server.TRACKER_HOST");
             const char* trackerHost = trackerHostStr.empty() ? tracker_ws_hostname.GetString() : trackerHostStr.c_str();
             int trackerPort = tracker_ws_port.GetInt();
 
-            TrackerSocketSystem()->Connect( trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT );
+            TrackerSocketSystem()->Connect(trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT);
         }
         else
         {
-            Msg( eDLL_T::SERVER, "TrackerSocket: WebSocket disabled by config (%s)\n", bConfigSet ? "\"server.USE_WEB_SOCKETS\": \"false\"" : "Convar tracker_ws_enable is false" );
+            Msg(eDLL_T::SERVER, "TrackerSocket: WebSocket disabled by config (%s)\n", bConfigSet ? "\"server.USE_WEB_SOCKETS\": \"false\"" : "Convar tracker_ws_enable is false");
         }
     }
 
@@ -1548,13 +1528,12 @@ namespace LOGGER
             apiThread.join();
 
         CloseLogFile();
-        pMkosLogger = nullptr;
+        g_pTracker = nullptr;
     }
 
     Logger& Logger::getInstance()
     {
         static Logger instance;
-        pMkosLogger = &instance;
         return instance;
     }
 
@@ -1589,17 +1568,17 @@ namespace LOGGER
     {
         switch (flag)
         {
-            case 1: return Logger::LogState::Ready;
-            case 2: return Logger::LogState::Busy;
-            case 3: return Logger::LogState::Safe;
-            default: return Logger::LogState::None;
+        case 1: return Logger::LogState::Ready;
+        case 2: return Logger::LogState::Busy;
+        case 3: return Logger::LogState::Safe;
+        default: return Logger::LogState::None;
         }
     }
 
 
 
     //TODO: add state check 
-    void LOGGER::Logger::StartLogging()
+    void TRACKER::Logger::StartLogging()
     {
         finished = false;
 
@@ -1607,21 +1586,21 @@ namespace LOGGER
             logThread = std::thread(&Logger::LogToFile, this);
         }
         catch (const std::exception& e) {
-            Error(eDLL_T::SERVER, NO_ERROR, "Exception when starting LogToFile thread: %s\n", e.what());
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Exception when starting LogToFile thread: %s\n", e.what());
         }
         catch (...) {
-            Error(eDLL_T::SERVER, NO_ERROR, "Unknown exception when starting LogToFile thread.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Unknown exception when starting LogToFile thread.\n");
         }
     }
 
 
 
 
-    std::string LOGGER::Logger::GetLatestFile(const std::string& directoryPath, std::string matchID = "")
+    std::string TRACKER::Logger::GetLatestFile(const std::string& directoryPath, std::string matchID = "")
     {
         if (directoryPath.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error [INTERNAL] :[GetLatestFile] : empty.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [GetLatestFile] : empty.\n");
             return "";
         }
 
@@ -1636,12 +1615,12 @@ namespace LOGGER
             }
             else
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Specified matchID file %s does not exist.\n", Path.c_str());
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Specified matchID file %s does not exist.\n", Path.c_str());
                 return "";
             }
         }
 
-        Error(eDLL_T::SERVER, NO_ERROR, "MatchID was empty.\n");
+        Error(eDLL_T::SERVER, NO_ERROR, "Tracker: MatchID was empty.\n");
         return "";
     }
 
@@ -1675,13 +1654,13 @@ namespace LOGGER
     /********************************/
 
     // ship to stats server
-    void LOGGER::Logger::SendLogToAPI() //This should be compressed
+    void TRACKER::Logger::SendLogToAPI() //This should be compressed
     {
         std::string matchID = GetEndingMatchID();
 
         if (matchID.empty() || matchID == "0")
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "No log found. Aborting API connection...\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: No log found. Aborting API connection...\n");
             return;
         }
 
@@ -1690,7 +1669,7 @@ namespace LOGGER
 
         if (logFilePath.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "No log found. Aborting API connection...\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: No log found. Aborting API connection...\n");
             return;
         }
 
@@ -1704,11 +1683,11 @@ namespace LOGGER
                 ss << lastlog.rdbuf();
                 logdata = ss.str();
                 lastlog.close();
-                Warning(eDLL_T::SERVER, "Attempting to send...\n");
+                Warning(eDLL_T::SERVER, "Tracker: Attempting to send...\n");
             }
             else
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "!!! Couldn't open logfile for shipping.\n");
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: !!! Couldn't open logfile for shipping.\n");
                 return;
             }
         }
@@ -1717,15 +1696,15 @@ namespace LOGGER
 
         if (!curl)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Failed to acquire curl handle from pool\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to acquire curl handle from pool\n");
             return;
         }
 
         //DevMsg(eDLL_T::SERVER, "Curl initialized...\n");
-        std::string trackerEndpoint = GetSetting( "server.TRACKER_ENDPOINT" );
-        if ( !trackerEndpoint.empty() )
-            curl_easy_setopt( curl, CURLOPT_URL, trackerEndpoint.c_str() );
-		else
+        std::string trackerEndpoint = GetSetting("server.TRACKER_ENDPOINT");
+        if (!trackerEndpoint.empty())
+            curl_easy_setopt(curl, CURLOPT_URL, trackerEndpoint.c_str());
+        else
             curl_easy_setopt(curl, CURLOPT_URL, "https://r5r.dev/api/tracker.php");
 
         std::string serverName = hostname->GetString();
@@ -1738,11 +1717,11 @@ namespace LOGGER
         Sanitize_AlphaNumHyphenUnderscore(identifier);
         Sanitize_AlphaNumHyphenUnderscore(uniquekey);
 
-        if ( identifier.empty() )
-            Error(eDLL_T::SERVER, NO_ERROR, "empty identifier. \n");
+        if (identifier.empty())
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: empty identifier. \n");
 
-        if ( uniquekey.empty() )
-            Error(eDLL_T::SERVER, NO_ERROR, "Invalid characters in uniquekey. \n");
+        if (uniquekey.empty())
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Invalid characters in uniquekey. \n");
 
         //DevMsg(eDLL_T::SERVER, "Server name: %s \n", serverName.c_str());
         //DevMsg(eDLL_T::SERVER, "Server map: %s \n", serverMap.c_str());
@@ -1807,9 +1786,9 @@ namespace LOGGER
         CURLcode res = curl_easy_perform(curl);
 
         if (res != CURLE_OK)
-            Error(eDLL_T::SERVER, NO_ERROR, "curl failed: %s\n", curl_easy_strerror(res));
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: curl failed: %s\n", curl_easy_strerror(res));
         else
-            Warning(eDLL_T::SERVER, "Response: %s\n", readBuffer.c_str());
+            Warning(eDLL_T::SERVER, "Tracker: Response: %s\n", readBuffer.c_str());
 
         curl_slist_free_all(headers);
 
@@ -1818,7 +1797,7 @@ namespace LOGGER
         std::string autoDeleteSetting = GetSetting("server.AUTO_DELETE_STATLOGS");
         if (autoDeleteSetting == "true")
         {
-            LOGGER::CleanupLogs(FileSystem());
+            TRACKER::CleanupLogs(FileSystem());
         }
 
         CallClosure();
@@ -1832,11 +1811,11 @@ namespace LOGGER
     //-----------------------------------------------------------------------------
 
 
-    bool LOGGER::Logger::OpenLogFile(const std::filesystem::path& Path)
+    bool TRACKER::Logger::OpenLogFile(const std::filesystem::path& Path)
     {
         if (Path.empty())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Error [openLogFile] : Path empty\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error [openLogFile] : Path empty\n");
             return false;
         }
 
@@ -1845,7 +1824,7 @@ namespace LOGGER
 
         if (!logFile)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Unable to open log file: '%s'. Check permissions and disk space.\n", Path.string().c_str());
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Unable to open log file: '%s'. Check permissions and disk space.\n", Path.string().c_str());
             return false;
         }
 
@@ -1855,7 +1834,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::CloseLogFile()
+    void TRACKER::Logger::CloseLogFile()
     {
         std::lock_guard<std::mutex> fileLock(fileMutex);
         if (logFile.is_open())
@@ -1867,13 +1846,13 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::WriteBufferToFile(const std::deque<std::string>& q_buffer)
+    void TRACKER::Logger::WriteBufferToFile(const std::deque<std::string>& q_buffer)
     {
         std::lock_guard<std::mutex> guard(fileMutex);
 
         if (!logFile.good())
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "The log file stream is in a bad state before writing.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: The log file stream is in a bad state before writing.\n");
             return;
         }
 
@@ -1887,7 +1866,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::LogToFile()
+    void TRACKER::Logger::LogToFile()
     {
         std::deque<std::string> writeBuffer;
 
@@ -1896,7 +1875,7 @@ namespace LOGGER
 
         try
         {
-            for( ; ; )
+            for (; ; )
             {
                 {
                     std::unique_lock<std::mutex> lock(mtx);
@@ -1928,11 +1907,11 @@ namespace LOGGER
         }
         catch (const std::exception& e)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Exception in LogToFile thread: %s\n", e.what());
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Exception in LogToFile thread: %s\n", e.what());
         }
         catch (...)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Unknown exception in LogToFile thread.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Unknown exception in LogToFile thread.\n");
         }
 
         this->SetLogState(LogState::Safe, false);
@@ -1962,7 +1941,7 @@ namespace LOGGER
                 cvLog.notify_all();
             }
 
-            Warning(eDLL_T::SERVER, "Stopping logging thread...\n\n");
+            Warning(eDLL_T::SERVER, "Tracker: Stopping logging thread...\n\n");
 
             if (logThread.joinable())
             {
@@ -1976,7 +1955,7 @@ namespace LOGGER
             bool wait = WaitForState(LogState::Busy, false, 5000);
             if (!wait)
             {
-                Warning(eDLL_T::SERVER, "BUSY STATE FAILED TO RELEASE IN STOPLOGGING\n\n");
+                Warning(eDLL_T::SERVER, "Tracker: BUSY STATE FAILED TO RELEASE IN STOPLOGGING\n\n");
                 return;
             }
 
@@ -1992,17 +1971,17 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::handleNewMatch(const char* matchID)
+    void TRACKER::Logger::handleNewMatch(const char* matchID)
     {
         if (!matchID)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "matchID was nullptr at handlenewmatch\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: matchID was nullptr at handlenewmatch\n");
             return;
         }
 
         if (IsLogging())
         {
-            Warning(eDLL_T::SERVER, "WARNING: LOG THREAD WAS RUNNING DURING HANDLE NEW MATCH\n");
+            Warning(eDLL_T::SERVER, "Tracker: WARNING: LOG THREAD WAS RUNNING DURING HANDLE NEW MATCH\n");
             StopLoggingThread();
         }
 
@@ -2017,7 +1996,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::CallClosure()
+    void TRACKER::Logger::CallClosure()
     {
         CloseLogFile();
         ResetLogPath();
@@ -2026,9 +2005,9 @@ namespace LOGGER
     }
 
 
-    void LOGGER::Logger::StopLogging(bool sendToAPI)
+    void TRACKER::Logger::StopLogging(bool sendToAPI)
     {
-        std::thread stopThread(&LOGGER::Logger::StopLogging_Async, this, sendToAPI);
+        std::thread stopThread(&TRACKER::Logger::StopLogging_Async, this, sendToAPI);
         if (stopThread.joinable())
         {
             stopThread.join();
@@ -2037,7 +2016,7 @@ namespace LOGGER
 
 
     // SQVM controlled-Stop logging true/false for api stat send
-    void LOGGER::Logger::StopLogging_Async(bool sendToAPI) //
+    void TRACKER::Logger::StopLogging_Async(bool sendToAPI) //
     {
         SaveEndingMatchID();
 
@@ -2047,7 +2026,7 @@ namespace LOGGER
             return;
         }
 
-        Warning(eDLL_T::SERVER, "Logger thread stopping...");
+        Warning(eDLL_T::SERVER, "Tracker: Logger thread stopping...");
 
         {
             std::unique_lock<std::mutex> lock(mtx);
@@ -2060,7 +2039,7 @@ namespace LOGGER
 
         if (!close)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Logger wait time expired during shutdown...\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Logger wait time expired during shutdown...\n");
             return;
         }
         else
@@ -2088,7 +2067,7 @@ namespace LOGGER
         }
         else
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Stats shipping omitted;\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Stats shipping omitted;\n");
             CallClosure();
         }
 
@@ -2097,7 +2076,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::UpdateMatchId(const std::string& matchId)
+    void TRACKER::Logger::UpdateMatchId(const std::string& matchId)
     {
         std::unique_lock<std::shared_mutex> lock(pathMutex);
         currentMatchId = matchId;
@@ -2107,7 +2086,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::ResetLogPath()
+    void TRACKER::Logger::ResetLogPath()
     {
         std::unique_lock<std::shared_mutex> writeLock(pathMutex);
         filePath.clear();
@@ -2116,7 +2095,7 @@ namespace LOGGER
 
 
 
-    std::filesystem::path* LOGGER::Logger::InitializeAndGetLogPath()
+    std::filesystem::path* TRACKER::Logger::InitializeAndGetLogPath()
     {
         std::unique_lock<std::shared_mutex> lock(pathMutex);
 
@@ -2134,13 +2113,13 @@ namespace LOGGER
 
                 if (dir_created)
                 {
-                    Warning(eDLL_T::SERVER, "Created logging directory: '%s'\n", dirPath.string().c_str());
+                    Warning(eDLL_T::SERVER, "Tracker: Created logging directory: '%s'\n", dirPath.string().c_str());
                 }
             }
 
             catch (const std::filesystem::filesystem_error& e)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Failed to create logging directory: '%s'. Error: %s\n", dirPath.string().c_str(), e.what());
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Failed to create logging directory: '%s'. Error: %s\n", dirPath.string().c_str(), e.what());
                 return nullptr;
             }
 
@@ -2180,7 +2159,7 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::ThreadSleep(int ms)
+    void TRACKER::Logger::ThreadSleep(int ms)
     {
         long long duration = static_cast<std::chrono::milliseconds::rep>(ms);
         std::this_thread::sleep_for(std::chrono::milliseconds(duration));
@@ -2189,23 +2168,23 @@ namespace LOGGER
 
 
 
-    void LOGGER::Logger::InitializeLogThread(bool encrypt)
+    void TRACKER::Logger::InitializeLogThread(bool encrypt)
     {
         SetLogState(LogState::Safe, false);
-        std::thread initThread(&LOGGER::Logger::InitializeLogThread_Async, this, encrypt);
+        std::thread initThread(&TRACKER::Logger::InitializeLogThread_Async, this, encrypt);
         initThread.detach();
     }
 
 
 
 
-    void LOGGER::Logger::InitializeLogThread_Async(bool encrypt)
+    void TRACKER::Logger::InitializeLogThread_Async(bool encrypt)
     {
         bool success = WaitForState(LogState::Busy, false, 5000);
 
         if (!success)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Logger exceeded busy state limit. Aborting logthread start...");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Logger exceeded busy state limit. Aborting logthread start...");
             return;
         }
 
@@ -2223,13 +2202,13 @@ namespace LOGGER
 
             if (!pFilePath)
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "Error: [InitializeLogThread_Async] file path nullptr \n");
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [InitializeLogThread_Async] file path nullptr \n");
                 return;
             }
 
             if (matchID.empty())
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "[InitializeLogThread_Async] matchID was empty.. failed to start logging\n");
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [InitializeLogThread_Async] matchID was empty.. failed to start logging\n");
                 return;
             }
 
@@ -2237,24 +2216,24 @@ namespace LOGGER
 
             if (pFilePath && !OpenLogFile(*pFilePath))
             {
-                Error(eDLL_T::SERVER, NO_ERROR, "CRITICAL ERROR: Could not open file to write (nullptr?)\n");
+                Error(eDLL_T::SERVER, NO_ERROR, "Tracker: CRITICAL ERROR: Could not open file to write (nullptr?)\n");
                 StopLoggingThread();
                 return;
             }
         }
         catch (const std::runtime_error& e)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Runtime Error starting logging thread: %s\n", e.what());
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Runtime Error starting logging thread: %s\n", e.what());
             return;
         }
         catch (const std::exception& e)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Exception starting logging thread: %s\n", e.what());
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Exception starting logging thread: %s\n", e.what());
             return;
         }
         catch (...)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Unknown Exception starting logging thread.\n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Unknown Exception starting logging thread.\n");
             return;
         }
 
@@ -2306,17 +2285,17 @@ namespace LOGGER
     //-----------------------------------------------------------------------------
 
 
-    void LOGGER::Logger::LogEvent(const char* logString, bool encrypt)
+    void TRACKER::Logger::LogEvent(const char* logString, bool encrypt)
     {
         if (!GetLogState(LogState::Safe) || finished)
         {
-            Error(eDLL_T::SERVER, NO_ERROR, "Tried to queue to log but logthread is not fully initialized. \n");
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Tried to queue to log but logthread is not fully initialized. \n");
             return;
         }
 
         if (!logString)
         {
-            Warning(eDLL_T::SERVER, "Logstring @ logevent is: NULLPTR \n");
+            Warning(eDLL_T::SERVER, "Tracker: Logstring @ logevent is: NULLPTR \n");
             return;
         }
 
@@ -2347,8 +2326,8 @@ namespace LOGGER
         }
     }
 
-} // namespace LOGGER
+} // namespace TRACKER
 
-ConCommand tracker_reload_config("tracker_reload_config", [](const CCommand& args) {LOGGER::ReloadConfig(TRACKER_CONFIG); }, "Reloads the r5r.dev tracker configuration file.", FCVAR_RELEASE);
+ConCommand tracker_reload_config("tracker_reload_config", [](const CCommand& args) {TRACKER::ReloadConfig(TRACKER_CONFIG); }, "Reloads the r5r.dev tracker configuration file.", FCVAR_RELEASE);
 ConCommand tracker_shutdown("tracker_shutdown", [](const CCommand& args) {Tracker_Shutdown(); }, "Shuts down the r5r.dev tracker systems.", FCVAR_RELEASE);
 #endif

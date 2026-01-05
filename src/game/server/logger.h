@@ -19,7 +19,7 @@
 #include <rapidjson/stringbuffer.h>
 #include <game/server/logger_websocket.h>
 
-namespace LOGGER
+namespace TRACKER
 {
     class Encryption
     {
@@ -75,7 +75,6 @@ namespace LOGGER
         std::mutex fileMutex; // m_this
 
         //vars
-        int CVAR_LTHREAD_DEBOUNCE = 1; //m_this
         size_t CVAR_MAX_BUFFER = 50000; //m_this
 
     private:
@@ -133,12 +132,9 @@ namespace LOGGER
         void Shutdown();
 
         void AddTask(const std::function<void()>& task);
-        void RequestPlayerPersistenceData(const std::string& player_oid, const std::vector<std::string>& requestedStats, const std::vector<std::string>& requestedSettings);
+        void RequestPlayerPersistenceData(std::string&& player_oid, std::vector<std::string>&& requestedStats, std::vector<std::string>&& requestedSettings);
         void ResetPlayerData(const char* player_oid);
-        void RequestBatchPlayerPersistenceData(
-            const std::vector<std::string>& player_oids,
-            const std::vector<std::string>& requestedStats,
-            const std::vector<std::string>& requestedSettings);
+        void RequestBatchPlayerPersistenceData( std::vector<std::string>&& player_oids, std::vector<std::string>&& requestedStats, std::vector<std::string>&& requestedSettings);
 
     private:
         TaskManager();
@@ -188,10 +184,6 @@ namespace LOGGER
         std::atomic<bool> m_bShuttingDown{ false };
     };
 
-    //pointers
-    extern LOGGER::Logger* pMkosLogger;
-
-
     //maintenance
     void CleanupLogs(IFileSystem* pFileSystem);
     void SaveEndingMatchID();
@@ -240,10 +232,10 @@ inline void Tracker_Shutdown()
     if (isShutdown.exchange(true))
         return;
 
-    LOGGER::Logger::getInstance().Shutdown();
-    LOGGER::TaskManager::getInstance().Shutdown();
-    LOGGER::CURLConnectionPool::GetInstance().Shutdown();
-    LOGGER::TrackerSocketSystem()->Shutdown();
+    TRACKER::Logger::getInstance().Shutdown();
+    TRACKER::TaskManager::getInstance().Shutdown();
+    TRACKER::CURLConnectionPool::GetInstance().Shutdown();
+    TrackerSocketSystem()->Shutdown();
 }
 #endif // LOGGER_H
 //-----------------------------------------------------------------------------
@@ -260,5 +252,19 @@ constexpr int TRACKER_WS_PORT = 9705;
 
 extern ConCommand tracker_reload_config;
 extern ConCommand tracker_shutdown;
+extern TRACKER::Logger* g_pTracker;
 
+template< typename Fn >
+inline void TrackerDispatch(Fn&& fn)
+{
+    TRACKER::TaskManager::getInstance().AddTask(std::forward< Fn >(fn));
+}
+
+inline void TrackerInit()
+{
+    TRACKER::Logger::getInstance();
+    TRACKER::TaskManager::getInstance();
+    TRACKER::CURLConnectionPool::GetInstance();
+    g_pTracker = &TRACKER::Logger::getInstance();
+}
 #endif // !CLIENT.DLL

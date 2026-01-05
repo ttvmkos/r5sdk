@@ -14,11 +14,12 @@
 #include <filesystem>
 #include "filesystem/ifilesystem.h"
 #include "tier1/cvar.h"
+#include "networksystem/bansystem.h"
 
 //forward declarations
 class CWebSocket;
 
-namespace LOGGER
+namespace TRACKER
 {
     //===========================================================================
     // WebSocketCommandHandler - Handles WebSocket server control commands
@@ -49,6 +50,7 @@ namespace LOGGER
         // ===== Message Transmission =====
         void SendResponse(const std::string& requestId, const char* status, const rapidjson::Value* data, const std::string& message, const char* type = "");
         void RelayChatMessage(unsigned __int64 senderNucleus, const char* name, const char* message);
+        void RelayChatMute(const char* const pszPlayerName, NucleusID_t nucleusId, const char* const pszReason, const char* const pszExpiry, const char* const mutedBy, bool toggle, int expiryUnixTimestamp);
 
         // ===== Command Handlers =====
         void HandleHandshakeCommand(const rapidjson::Document& doc, const std::string& requestId);
@@ -64,6 +66,7 @@ namespace LOGGER
         void HandleReloadBanlistCommand(const std::string& requestId);
         void HandleAddBanCommand(const rapidjson::Value& params, const std::string& requestId);
         void HandleReloadServerCommand(const std::string& requestId);
+        void HandleToggleMute(const rapidjson::Value& params, const std::string& requestId);
 
 
         // ===== Validation & Utilities =====
@@ -97,7 +100,7 @@ namespace LOGGER
         {
             std::string id;
             std::string type;
-            std::string rawJson;  // Store raw JSON for later parsing
+            rapidjson::Document doc;
             double receivedTime;
             int retryCount;
         };
@@ -118,7 +121,8 @@ namespace LOGGER
             RELOAD_BANLIST = 9,
             ADD_BAN = 10,
             RELOAD_SERVER = 11,
-            HANDSHAKE = 12
+            HANDSHAKE = 12,
+            TOGGLE_PLAYER_MUTE = 13,
         };
 
         // ===== Internal Helpers =====
@@ -157,9 +161,7 @@ namespace LOGGER
         std::atomic<bool> m_loadedCaBundle{ false };
         std::vector<char> m_receiveBuffer;
     };
-
-    WebSocketCommandHandler* TrackerSocketSystem();
-}//namespace LOGGER
+}//namespace TRACKER
 
 extern ConVar tracker_ws_enable;
 extern ConVar tracker_ws_port;
@@ -184,4 +186,7 @@ extern ConCommand tracker_ws_shutdown;
 extern ConCommand tracker_ws_status;
 
 #endif // LOGGER_WEBSOCKET_H
+
+TRACKER::WebSocketCommandHandler* TrackerSocketSystem();
+
 #endif // CLIENT_DLL

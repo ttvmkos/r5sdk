@@ -138,9 +138,6 @@ void CServerGameDLL::OnReceivedSayTextMessage(CServerGameDLL* thisptr, int sende
 	if (!pSenderPlayer || !pSenderClient ||  !pSenderPlayer->IsConnected())
 		return;
 
-	if (tracker_ws_relay_chat.GetBool() && pSenderClient->IsHumanPlayer())
-		LOGGER::TrackerSocketSystem()->RelayChatMessage(pSenderPlayer->GetPlatformUserId(), pSenderPlayer->GetNetName(), text);
-
 	const bool bIsTeamChat = sv_overrideTeamChatRestriction.GetBool() ? sv_forceChatToTeamOnly->GetBool()  : isTeamChat;
 	const int nMaxClients = gpGlobals->maxClients;
 	const bool bShouldApplyGlobalCommsMutes = SV_ShouldApplyTextChatGlobalMutes();
@@ -167,6 +164,9 @@ void CServerGameDLL::OnReceivedSayTextMessage(CServerGameDLL* thisptr, int sende
 		MessageEnd();
 		return;
 	}
+	
+	if (tracker_ws_relay_chat.GetBool() && pSenderClient->IsHumanPlayer())
+		TrackerSocketSystem()->RelayChatMessage(pSenderPlayer->GetPlatformUserId(), pSenderPlayer->GetNetName(), text);
 
 	for (auto& cb : !PluginSystem()->GetChatMessageCallbacks())
 	{
@@ -357,7 +357,7 @@ static void ExecuteFrameServerJob(double flFrameTime, bool bRunOverlays, bool bU
 	v_ExecuteFrameServerJob(flFrameTime, bRunOverlays, bUpdateFrame);
 
 	LiveAPISystem()->RunFrame();
-	LOGGER::TrackerSocketSystem()->RunFrame(); //both of these (liveapi/tracker) should be removed, and this should loop an array of callbacks that get registered if initialized.
+	TrackerSocketSystem()->RunFrame(); //both of these (liveapi/tracker) should be removed, and this should loop an array of callbacks that get registered if initialized.
 
 	DrawAllDebugOverlays();
 }

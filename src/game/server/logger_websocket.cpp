@@ -12,6 +12,7 @@
 #include "tier0/dbg.h"
 #include "tier2/websocket.h"
 #include <game/server/vscript_server.h>
+#include "vscript/vscript.h"
 #include "engine/host.h"
 
 //CONSTS: /thirdparty/dirtysdk/include/DirtySDK/proto/protossl.h
@@ -20,7 +21,7 @@ constexpr int PROTOSSL_VERSION_TLS1_1 = (0x0302);
 constexpr int PROTOSSL_VERSION_TLS1_2 = (0x0303);
 constexpr int PROTOSSL_VERSION_TLS1_3 = (0x0304);
 
-namespace LOGGER
+namespace TRACKER
 {
     //===========================================================================
     // Singleton Instance
@@ -56,7 +57,7 @@ namespace LOGGER
         if (!tracker_ws_use_ssl.GetBool())
             return;
 
-        if( !m_loadedCaBundle.load() )
+        if (!m_loadedCaBundle.load())
             __CheckInstallCA();
     }
 
@@ -105,7 +106,7 @@ namespace LOGGER
         {
             m_webSocket = std::make_unique<CWebSocket>();
 
-            if( m_forceLaxSSL )
+            if (m_forceLaxSSL)
                 tracker_ws_lax_ssl.SetValue("1"); //If the ca bundle is not installed, we have to set lax to 1
 
             bool useSSL = tracker_ws_use_ssl.GetBool();
@@ -276,49 +277,55 @@ namespace LOGGER
             return;
         }
 
-        rapidjson::Document doc;
-        doc.Parse(rawMessage.c_str());
+        TrackerDispatch
+        (
+            [this, rawMessage]
+            {
+                rapidjson::Document doc;
+                doc.Parse(rawMessage.c_str());
 
-        if (doc.HasParseError())
-        {
-            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid JSON received (offset %zu): %s\n", doc.GetErrorOffset(), rapidjson::GetParseError_En(doc.GetParseError()));
-            return;
-        }
+                if (doc.HasParseError())
+                {
+                    Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid JSON received (offset %zu): %s\n", doc.GetErrorOffset(), rapidjson::GetParseError_En(doc.GetParseError()));
+                    return;
+                }
 
-        // validate body
-        std::string validationError;
-        if (!ValidateMessage(doc, validationError))
-        {
-            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Message validation failed: %s\n", validationError.c_str());
-            return;
-        }
+                std::string validationError;
 
-        // auth
-        if (!AuthenticateMessage(doc, validationError))
-        {
-            SendResponse(doc["id"].GetString(), "error", nullptr, "Authentication failed");
+                if (!ValidateMessage(doc, validationError))
+                {
+                    Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Message validation failed: %s\n", validationError.c_str());
+                    return;
+                }
 
-            Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Incoming message authentication failed: %s\n", validationError.c_str());
-            return;
-        }
+                if (!AuthenticateMessage(doc, validationError))
+                {
+                    const char* msgId = doc.HasMember("id") && doc["id"].IsString() ? doc["id"].GetString() : "unknown";
 
-        // queue
-        {
-            std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
+                    SendResponse(msgId, "error", nullptr, "Authentication failed");
 
-            PendingMessage_t msg;
-            msg.id = doc["id"].GetString();
-            msg.type = doc["type"].GetString();
-            msg.rawJson = rawMessage;
-            msg.receivedTime = Plat_FloatTime();
-            msg.retryCount = 0;
+                    Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Incoming message authentication failed: %s\n", validationError.c_str());
+                    return;
+                }
 
-            m_messageQueue.push(msg);
+                PendingMessage_t msg;
+                msg.id = doc["id"].GetString();
+                msg.type = doc["type"].GetString();
+                msg.receivedTime = Plat_FloatTime();
+                msg.retryCount = 0;
+                msg.doc = std::move(doc);
 
-            if (tracker_ws_debug.GetBool())
-                Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Message queued (type=%s, id=%s)\n", msg.type.c_str(), msg.id.c_str());
-        }
+                {
+                    std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
+                    m_messageQueue.push(std::move(msg));
+                }
+
+                if (tracker_ws_debug.GetBool())
+                    Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Message queued (type=%s, id=%s)\n", msg.type.c_str(), msg.id.c_str());
+            }
+        );
     }
+
 
     void WebSocketCommandHandler::ProcessMessageQueue()
     {
@@ -334,25 +341,7 @@ namespace LOGGER
             PendingMessage_t msg = std::move(localQueue.front());
             localQueue.pop();
 
-            std::string msgId = std::move(msg.id);
-            std::string rawJson = std::move(msg.rawJson);
-
-            std::function<void()> task =
-                [this, msgId, rawJson]()
-                {
-                    rapidjson::Document cmdDoc;
-                    cmdDoc.Parse(rawJson.c_str());
-
-                    if (cmdDoc.HasParseError())
-                    {
-                        Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Invalid JSON in queued message ( id=%s )\n", msgId.c_str());
-                        return;
-                    }
-
-                    DispatchCommand(cmdDoc, msgId);
-                };
-
-            TaskManager::getInstance().AddTask(task);
+            DispatchCommand(msg.doc, msg.id);
         }
     }
 
@@ -391,6 +380,8 @@ namespace LOGGER
             return CommandType_e::RELOAD_SERVER;
         else if (typeStr == "handshake")
             return CommandType_e::HANDSHAKE;
+        else if (typeStr == "toggle_mute")
+            return CommandType_e::TOGGLE_PLAYER_MUTE;
         else
 
             return CommandType_e::UNKNOWN;
@@ -457,6 +448,10 @@ namespace LOGGER
             HandleReloadServerCommand(requestId);
             break;
 
+        case CommandType_e::TOGGLE_PLAYER_MUTE:
+            HandleToggleMute(params, requestId);
+            break;
+
         case CommandType_e::UNKNOWN:
         default:
             SendResponse(requestId, "error", nullptr, "Unknown command type");
@@ -471,135 +466,138 @@ namespace LOGGER
 
     void WebSocketCommandHandler::HandleKickCommand(const rapidjson::Value& params, const std::string& requestId)
     {
-        if (!params.HasMember("player_name") || !params["player_name"].IsString())
+        if (!g_pServer->IsActive())
+        {
+            SendResponse(requestId, "error", nullptr, "Game is not running");
+            return;
+        }
+
+        if (!params.HasMember("player_criteria") || !params["player_criteria"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Missing required field: player_criteria");
+            return;
+        }
+
+        std::string playerCriteria = params["player_criteria"].GetString();
+        std::string reason = (params.HasMember("reason") && params["reason"].IsString()) ?
+            params["reason"].GetString() :
+            "";
+
+        if (!g_BanSystem.IsPlayerInServer(playerCriteria.c_str()))
+        {
+            SendResponse(requestId, "error", nullptr, "Player is not in server.");
+            return;
+        }
+
+        const char* reasonPtr = reason.empty() ? nullptr : reason.c_str();
+
+        if (V_IsAllDigit(playerCriteria.c_str()))
+            g_BanSystem.KickPlayerById(playerCriteria.c_str(), reasonPtr);
+        else
+            g_BanSystem.KickPlayerByName(playerCriteria.c_str(), reasonPtr);
+
+        rapidjson::Document response;
+        response.SetObject();
+        auto& alloc = response.GetAllocator();
+
+        rapidjson::Value data(rapidjson::kObjectType);
+        data.AddMember("player_kicked", true, alloc);
+        data.AddMember("criteria", rapidjson::Value(playerCriteria.c_str(), alloc), alloc);
+
+        SendResponse(requestId, "success", &data, "Player kicked successfully");
+
+        if (tracker_ws_debug.GetBool())
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Kick command queued for %s\n", playerCriteria.c_str());
+    }
+
+    void WebSocketCommandHandler::HandleBanCommand(const rapidjson::Value& params, const std::string& requestId)
+    {
+        if (!g_pServer->IsActive())
+        {
+            SendResponse(requestId, "error", nullptr, "Game is not running");
+            return;
+        }
+
+        if (!params.HasMember("player_criteria") || !params["player_criteria"].IsString())
         {
             SendResponse(requestId, "error", nullptr, "Missing required field: player_name");
             return;
         }
 
-        std::string playerName = params["player_name"].GetString();
+        const char* bannedByIdOrName = nullptr;
+        if (params.HasMember("bannedByIdOrName") && params["bannedByIdOrName"].IsString())
+            bannedByIdOrName = params["bannedByIdOrName"].GetString();
+
+        std::string playerNameOrUID = params["player_criteria"].GetString();
         std::string reason = (params.HasMember("reason") && params["reason"].IsString()) ?
             params["reason"].GetString() :
             "";
 
-        std::function<void()> task = [this, playerName, reason, requestId]()
-            {
-                try
-                {
-                    g_BanSystem.KickPlayerByName(playerName.c_str(), reason.empty() ? nullptr : reason.c_str());
 
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
-
-                    rapidjson::Value data(rapidjson::kObjectType);
-                    data.AddMember("player_kicked", true, alloc);
-                    data.AddMember("player_name", rapidjson::Value(playerName.c_str(), alloc), alloc);
-
-                    SendResponse(requestId, "success", &data, "Player kicked successfully");
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr, std::string("Failed to kick player: ") + e.what());
-                }
-            };
-
-        TaskManager::getInstance().AddTask(task);
-
-        if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Kick command queued for %s\n", playerName.c_str());
-    }
-
-    void WebSocketCommandHandler::HandleBanCommand(const rapidjson::Value& params,
-        const std::string& requestId)
-    {
-        if (!params.HasMember("player_name") || !params["player_name"].IsString())
+        if (!g_BanSystem.IsPlayerInServer(playerNameOrUID.c_str()))
         {
-            SendResponse(requestId, "error", nullptr, "Missing required field: player_name");
+            SendResponse(requestId, "error", nullptr, "Player is not in server.");
             return;
         }
 
-        std::string playerName = params["player_name"].GetString();
-        std::string reason = (params.HasMember("reason") && params["reason"].IsString()) ?
-            params["reason"].GetString() :
-            "";
+        if (V_IsAllDigit(playerNameOrUID.c_str()))
+            g_BanSystem.BanPlayerById(playerNameOrUID.c_str(), bannedByIdOrName ? bannedByIdOrName : nullptr, reason.empty() ? nullptr : reason.c_str());
+        else
+            g_BanSystem.BanPlayerByName(playerNameOrUID.c_str(), bannedByIdOrName ? bannedByIdOrName : nullptr, reason.empty() ? nullptr : reason.c_str());
 
-        std::function<void()> task = [this, playerName, reason, requestId]()
-            {
-                try
-                {
-                    g_BanSystem.BanPlayerByName(playerName.c_str(), reason.empty() ? nullptr : reason.c_str());
+        char context[256] = {};
+        bool bStatus = g_BanSystem.IsBannedInMetaData(playerNameOrUID.c_str(), nullptr, context); //check if actually banned successfully
 
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
+        rapidjson::Document response;
+        response.SetObject();
+        auto& alloc = response.GetAllocator();
 
-                    rapidjson::Value data(rapidjson::kObjectType);
-                    data.AddMember("player_banned", true, alloc);
-                    data.AddMember("player_name", rapidjson::Value(playerName.c_str(), alloc), alloc);
+        rapidjson::Value data(rapidjson::kObjectType);
+        data.AddMember("player_banned", bStatus, alloc);
+        data.AddMember("player_criteria", rapidjson::Value(playerNameOrUID.c_str(), alloc), alloc);
+        data.AddMember("context", rapidjson::Value(context, alloc), alloc);
 
-                    SendResponse(requestId, "success", &data, "Player banned successfully");
+        SendResponse(requestId, bStatus ? "success" : "failed", &data, bStatus ? "Player banned successfully" : "Player was unavailable in server to ban. Did you mean to use AddBan instead?");
+        Msg(eDLL_T::SERVER, bStatus ? "TrackerSocket: Player %s banned\n" : "TrackerSocket: Player %s was unavailable to ban\n", playerNameOrUID.c_str());
 
-                    Msg(eDLL_T::SERVER, "TrackerSocket: Player %s banned\n", playerName.c_str());
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr,
-                        std::string("Failed to ban player: ") + e.what());
-                }
-            };
-
-        TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Ban command queued for %s\n", playerName.c_str());
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Ban command queued for %s\n", playerNameOrUID.c_str());
     }
 
-    void WebSocketCommandHandler::HandleUnbanCommand(const rapidjson::Value& params,
-        const std::string& requestId)
+    void WebSocketCommandHandler::HandleUnbanCommand(const rapidjson::Value& params, const std::string& requestId)
     {
-        if (!params.HasMember("player_name") && !params.HasMember("player_id"))
+        if (!params.HasMember("player_criteria") || !params["player_criteria"].IsString())
         {
-            SendResponse(requestId, "error", nullptr, "Missing required field: player_name or player_id");
+            SendResponse(requestId, "error", nullptr, "Missing/invalid required field: player_criteria");
             return;
         }
 
-        std::string criteria = (params.HasMember("player_name") && params["player_name"].IsString()) ?
-            params["player_name"].GetString() :
-            params["player_id"].GetString();
+        std::string criteria = params["player_criteria"].GetString();
 
-        std::function<void()> task = [this, criteria, requestId]()
-            {
-                try
-                {
-                    g_BanSystem.UnbanPlayer(criteria.c_str());
+        bool bWasBanned = g_BanSystem.IsBannedInMetaData(criteria.c_str(), nullptr, nullptr);
+        if (bWasBanned)
+            g_BanSystem.UnbanPlayer(criteria.c_str());
 
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
+        rapidjson::Document response;
+        response.SetObject();
+        auto& alloc = response.GetAllocator();
 
-                    rapidjson::Value data(rapidjson::kObjectType);
-                    data.AddMember("player_unbanned", true, alloc);
-                    data.AddMember("criteria", rapidjson::Value(criteria.c_str(), alloc), alloc);
+        rapidjson::Value data(rapidjson::kObjectType);
+        data.AddMember("player_unbanned", bWasBanned, alloc);
+        data.AddMember("criteria", rapidjson::Value(criteria.c_str(), alloc), alloc);
 
-                    SendResponse(requestId, "success", &data, "Player unbanned successfully");
+        SendResponse(requestId, bWasBanned ? "success" : "failed", &data, bWasBanned ? "Player unbanned successfully" : "Player was not banned to be unbanned.");
+        Msg(eDLL_T::SERVER, bWasBanned ? "TrackerSocket: Player '%s' unbanned\n" : "TrackerSocket: Player '%s' was not unbanned, because they were not banned.", criteria.c_str());
 
-                    Msg(eDLL_T::SERVER, "TrackerSocket: Player %s unbanned\n",
-                        criteria.c_str());
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr, std::string("Failed to unban player: ") + e.what());
-                }
-            };
-
-        TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Unban command queued for %s\n", criteria.c_str());
     }
 
     void WebSocketCommandHandler::HandleGetBanlistCommand(const std::string& requestId)
     {
-        std::function<void()> task = [this, requestId]()
+        TrackerDispatch
+        (
+            [this, requestId]() //don't process heavy operation on server thread
             {
                 try
                 {
@@ -625,7 +623,6 @@ namespace LOGGER
                         return;
                     }
 
-                    // Read file into buffer
                     const u64 nBufSize = FileSystem()->GetOptimalReadSize(pFile, nFileSize + 2);
                     char* const pBuf = (char*)FileSystem()->AllocOptimalReadBuffer(pFile, nBufSize, 0);
 
@@ -644,7 +641,6 @@ namespace LOGGER
 
                     pBuf[nFileSize] = '\0';
 
-                    // Parse JSON
                     rapidjson::Document banlistDoc;
                     banlistDoc.Parse(pBuf, nRead);
                     FileSystem()->FreeOptimalReadBuffer(pBuf);
@@ -656,14 +652,12 @@ namespace LOGGER
                         return;
                     }
 
-                    // Extract entries from the JSON
                     rapidjson::Document response;
                     response.SetObject();
                     auto& alloc = response.GetAllocator();
                     rapidjson::Value entries(rapidjson::kArrayType);
 
-                    if (banlistDoc.IsObject() && banlistDoc.HasMember("entries") &&
-                        banlistDoc["entries"].IsArray())
+                    if (banlistDoc.IsObject() && banlistDoc.HasMember("entries") && banlistDoc["entries"].IsArray())
                     {
                         for (const auto& entry : banlistDoc["entries"].GetArray())
                         {
@@ -710,95 +704,86 @@ namespace LOGGER
                     SendResponse(requestId, "error", nullptr, std::string("Failed to get banlist: ") + e.what());
                     Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Exception in HandleGetBanlistCommand: %s\n", e.what());
                 }
-            };
+            }
+        );
 
-        TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get banlist command queued\n");
     }
 
     void WebSocketCommandHandler::HandleGetPlayersCommand(const std::string& requestId)
     {
-        std::function<void()> task = [this, requestId]()
-            {
-                try
-                {
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
+        if (!g_pServer->IsActive())
+        {
+            SendResponse(requestId, "error", nullptr, "Game is not running");
+            return;
+        }
 
-                    rapidjson::Value players(rapidjson::kArrayType);
+        rapidjson::Document response;
+        response.SetObject();
+        auto& alloc = response.GetAllocator();
 
-                    // Get active player list from server
-                    if (!g_pServer)
-                    {
-                        SendResponse(requestId, "success", &players, "No server running");
-                        return;
-                    }
+        rapidjson::Value players(rapidjson::kArrayType);
 
-                    const int nMaxClients = g_pServer->GetMaxClients();
+        // Get active player list from server
+        if (!g_pServer)
+        {
+            SendResponse(requestId, "success", &players, "No server running");
+            return;
+        }
 
-                    // Iterate through all client slots
-                    for (int i = 0; i < nMaxClients; i++)
-                    {
-                        CClient* const pClient = g_pServer->GetClient(i);
-                        if (!pClient)
-                            continue;
+        const int nMaxClients = g_pServer->GetMaxClients();
 
-                        // Only include connected/spawned players
-                        if (!pClient->IsConnected())
-                            continue;
+        // Iterate through all client slots
+        for (int i = 0; i < nMaxClients; i++)
+        {
+            CClient* const pClient = g_pServer->GetClient(i);
+            if (!pClient)
+                continue;
 
-                        const CNetChan* const pNetChan = pClient->GetNetChan();
-                        if (!pNetChan)
-                            continue;
+            // Only include connected/spawned players
+            if (!pClient->IsConnected())
+                continue;
 
-                        // Create player entry
-                        rapidjson::Value playerEntry(rapidjson::kObjectType);
+            const CNetChan* const pNetChan = pClient->GetNetChan();
+            if (!pNetChan)
+                continue;
 
-                        // Add player information
-                        playerEntry.AddMember("user_id", pClient->GetUserID(), alloc);
-                        playerEntry.AddMember("nucleus_id", pClient->GetNucleusID(), alloc);
-                        playerEntry.AddMember("handle", pClient->GetHandle(), alloc);
-                        playerEntry.AddMember("team", pClient->GetTeamNum(), alloc);
-                        playerEntry.AddMember("player_name", rapidjson::Value(pNetChan->GetName(), alloc), alloc);
-                        playerEntry.AddMember("is_bot", pClient->IsFakeClient(), alloc);
-                        playerEntry.AddMember("is_active", pClient->IsActive(), alloc);
-                        playerEntry.AddMember("is_spawned", pClient->IsSpawned(), alloc);
+            // Create player entry
+            rapidjson::Value playerEntry(rapidjson::kObjectType);
 
-                        // Add network address (if available)
-                        const netadr_t& remoteAddr = pNetChan->GetRemoteAddress();
-                        char adrStr[64];
-                        remoteAddr.ToString(adrStr, sizeof(adrStr));
-                        playerEntry.AddMember("address", rapidjson::Value(adrStr, alloc), alloc);
+            // Add player information
+            playerEntry.AddMember("user_id", pClient->GetUserID(), alloc);
+            playerEntry.AddMember("nucleus_id", pClient->GetNucleusID(), alloc);
+            playerEntry.AddMember("handle", pClient->GetHandle(), alloc);
+            playerEntry.AddMember("team", pClient->GetTeamNum(), alloc);
+            playerEntry.AddMember("player_name", rapidjson::Value(pNetChan->GetName(), alloc), alloc);
+            playerEntry.AddMember("is_bot", pClient->IsFakeClient(), alloc);
+            playerEntry.AddMember("is_active", pClient->IsActive(), alloc);
+            playerEntry.AddMember("is_spawned", pClient->IsSpawned(), alloc);
 
-                        // Add signon state
-                        int nSignonState = static_cast<int>(pClient->GetSignonState());
-                        playerEntry.AddMember("signon_state", nSignonState, alloc);
+            // Add network address (if available)
+            const netadr_t& remoteAddr = pNetChan->GetRemoteAddress();
+            char adrStr[64];
+            remoteAddr.ToString(adrStr, sizeof(adrStr));
+            playerEntry.AddMember("address", rapidjson::Value(adrStr, alloc), alloc);
 
-                        players.PushBack(playerEntry, alloc);
-                    }
+            // Add signon state
+            int nSignonState = static_cast<int>(pClient->GetSignonState());
+            playerEntry.AddMember("signon_state", nSignonState, alloc);
 
-                    SendResponse(requestId, "success", &players, CFmtStr("Player list retrieved (%zu players)", players.Size()).Get());
+            players.PushBack(playerEntry, alloc);
+        }
 
-                    Msg(eDLL_T::SERVER, "TrackerSocket: Player list sent with %zu players\n", players.Size());
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr,
-                        std::string("Failed to get players: ") + e.what());
-                    Error(eDLL_T::SERVER, NO_ERROR,
-                        "TrackerSocket: Exception in HandleGetPlayersCommand: %s\n", e.what());
-                }
-            };
+        SendResponse(requestId, "success", &players, CFmtStr("Player list retrieved (%zu players)", players.Size()).Get());
 
-        TaskManager::getInstance().AddTask(task);
+        Msg(eDLL_T::SERVER, "TrackerSocket: Player list sent with %zu players\n", players.Size());
+
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get players command queued\n");
     }
 
-    void WebSocketCommandHandler::HandleGetConfigCommand(const rapidjson::Value& params,
-        const std::string& requestId)
+    void WebSocketCommandHandler::HandleGetConfigCommand(const rapidjson::Value& params, const std::string& requestId)
     {
         std::vector<std::string> keys;
 
@@ -807,106 +792,85 @@ namespace LOGGER
             for (const auto& key : params["keys"].GetArray())
             {
                 if (key.IsString())
-                {
-                    keys.push_back(key.GetString());
-                }
+                    keys.emplace_back(key.GetString());
             }
         }
 
         Msg(eDLL_T::SERVER, "TrackerSocket: Config request with %zu keys\n", keys.size());
 
-        std::function<void()> task = [this, keys, requestId]()
+        TrackerDispatch
+        (
+            [this, keys = std::move(keys) , requestId]()
             {
-                try
+                rapidjson::Document response;
+                response.SetObject();
+                auto& alloc = response.GetAllocator();
+
+                rapidjson::Value config(rapidjson::kObjectType);
+
+                for (const auto& key : keys)
                 {
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
-
-                    rapidjson::Value config(rapidjson::kObjectType);
-
-                    for (const auto& key : keys)
-                    {
-                        std::string value = GetSetting(key.c_str());
-                        config.AddMember(
-                            rapidjson::Value(key.c_str(), alloc),
-                            rapidjson::Value(value.c_str(), alloc),
-                            alloc);
-                    }
-
-                    SendResponse(requestId, "success", &config, "Config values retrieved");
+                    std::string value = GetSetting(key.c_str());
+                    config.AddMember(rapidjson::Value(key.c_str(), alloc), rapidjson::Value(value.c_str(), alloc), alloc);
                 }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr, std::string("Failed to get config: ") + e.what());
-                }
-            };
 
-        TaskManager::getInstance().AddTask(task);
+                SendResponse(requestId, "success", &config, "Config values retrieved");
+            }
+        );
+
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get config command queued\n");
     }
 
     void WebSocketCommandHandler::HandleGetStatsCommand(const std::string& requestId)
     {
-        std::function<void()> task = [this, requestId]()
+        TrackerDispatch
+        (
+            [this, requestId]()
             {
-                try
-                {
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
+                rapidjson::Document response;
+                response.SetObject();
+                auto& alloc = response.GetAllocator();
 
-                    rapidjson::Value stats(rapidjson::kObjectType);
-                    stats.AddMember("socket_msg_count", m_messageCount.load(), alloc);
-                    stats.AddMember("uptime_seconds", Plat_FloatTime(), alloc);
+                rapidjson::Value stats(rapidjson::kObjectType);
+                stats.AddMember("socket_msg_count", m_messageCount.load(), alloc);
+                stats.AddMember("uptime_seconds", Plat_FloatTime(), alloc);
 
-                    SendResponse(requestId, "success", &stats, "Stats retrieved");
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr, std::string("Failed to get stats: ") + e.what());
-                }
-            };
+                SendResponse(requestId, "success", &stats, "Stats retrieved");
+            }
+        );
 
-        TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Get stats command queued\n");
     }
 
     void WebSocketCommandHandler::HandleReloadConfigCommand(const std::string& requestId)
     {
-        std::function<void()> task = [this, requestId]()
+        TrackerDispatch
+        (
+            [this, requestId]()
             {
-                try
-                {
-                    ReloadConfig("r5rdev_config.json");
+                ReloadConfig("r5rdev_config.json");
 
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
+                rapidjson::Document response;
+                response.SetObject();
+                auto& alloc = response.GetAllocator();
 
-                    rapidjson::Value data(rapidjson::kObjectType);
-                    data.AddMember("config_reloaded", true, alloc);
+                rapidjson::Value data(rapidjson::kObjectType);
+                data.AddMember("config_reloaded", true, alloc);
 
-                    SendResponse(requestId, "success", &data, "Config reloaded successfully");
+                SendResponse(requestId, "success", &data, "Config reloaded successfully");
 
-                    Msg(eDLL_T::SERVER, "TrackerSocket: Config reloaded\n");
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr, std::string("Failed to reload config: ") + e.what());
-                }
-            };
+                Msg(eDLL_T::SERVER, "TrackerSocket: Config reloaded\n");
+            }
+        );
 
-        TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Reload config command queued\n");
     }
 
     void WebSocketCommandHandler::HandleUpdateConfigCommand(const rapidjson::Value& params, const std::string& requestId)
     {
-        // Parse the config updates from params
         std::unordered_map<std::string, std::string> updates;
         std::unordered_set<std::string> deletes;
 
@@ -925,7 +889,6 @@ namespace LOGGER
 
                 std::string value;
 
-                // Convert value to string
                 if (itr->value.IsString())
                 {
                     value = itr->value.GetString();
@@ -959,7 +922,9 @@ namespace LOGGER
             deletes.size()
         );
 
-        std::function<void()> task = [this, updates, deletes, requestId]()
+        TrackerDispatch
+        (
+            [this, updates = std::move(updates), deletes = std::move(deletes), requestId]()
             {
                 try
                 {
@@ -1281,9 +1246,9 @@ namespace LOGGER
                     SendResponse(requestId, "error", nullptr, std::string("Failed to update config: ") + e.what());
                     Error(eDLL_T::SERVER, NO_ERROR, "TrackerSocket: Exception in HandleUpdateConfigCommand: %s\n", e.what());
                 }
-            };
+            }
+        );
 
-        TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Update config command queued\n");
     }
@@ -1292,28 +1257,15 @@ namespace LOGGER
 
     void WebSocketCommandHandler::HandleReloadBanlistCommand(const std::string& requestId)
     {
-        std::function<void()> task = [this, requestId]()
-            {
-                try
-                {
-                    g_BanSystem.Clear();
-                    g_BanSystem.LoadList();
+        g_BanSystem.Clear();
+        g_BanSystem.LoadList();
 
-                    SendResponse(requestId, "success", nullptr, "Banlist reloaded successfully");
+        SendResponse(requestId, "success", nullptr, "Banlist reloaded successfully");
 
-                    Msg(eDLL_T::SERVER, "TrackerSocket: Banlist reloaded\n");
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr, std::string("Failed to reload banlist: ") + e.what());
-                }
-            };
+        Msg(eDLL_T::SERVER, "TrackerSocket: Banlist reloaded\n");
 
-        TaskManager::getInstance().AddTask(task);
         if (tracker_ws_debug.GetBool())
-        {
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Reload banlist command queued\n");
-        }
     }
 
     void WebSocketCommandHandler::HandleAddBanCommand(const rapidjson::Value& params, const std::string& requestId)
@@ -1334,48 +1286,54 @@ namespace LOGGER
             }
         }
 
-        std::string playerId = params["player_id"].GetString();
+        const char* const playerId =
+            params["player_id"].GetString();
 
-        NucleusID_t empty = 0; //just needed to satisfy validation func
-        if (!g_BanSystem.Bansystem_ValidateInputID(playerId.c_str(), empty))
+        NucleusID_t empty = 0;
+        if (!g_BanSystem.Bansystem_ValidateInputID(playerId, empty))
         {
             SendResponse(requestId, "error", nullptr, "player_id was an invalid uid.");
             return;
         }
 
-        std::string bannedById = (params.HasMember("banned_by_id") && params["banned_by_id"].IsString()) ? params["banned_by_id"].GetString() : "";
-        std::string reason = (params.HasMember("reason") && params["reason"].IsString()) ? params["reason"].GetString() : "";
+        const char* const bannedById =
+            (params.HasMember("banned_by_id") && params["banned_by_id"].IsString())
+            ? params["banned_by_id"].GetString()
+            : "";
 
-        std::function<void()> task = [this, playerId, bannedById, reason, address = std::move(address), requestId]()
-            {
-                try
-                {
-                    g_BanSystem.AddIdToBanlist(playerId.c_str(), bannedById.c_str(), reason.c_str(), &address);
+        const char* const reason =
+            (params.HasMember("reason") && params["reason"].IsString())
+            ? params["reason"].GetString()
+            : "";
 
-                    rapidjson::Document response;
-                    response.SetObject();
-                    auto& alloc = response.GetAllocator();
+        if (g_BanSystem.IsPlayerInServer(playerId))
+            g_BanSystem.BanPlayerById(playerId, bannedById, reason);
+        else
+            g_BanSystem.AddIdToBanlist(playerId, bannedById, reason, &address);
 
-                    rapidjson::Value data(rapidjson::kObjectType);
-                    data.AddMember("player_banned", true, alloc);
-                    data.AddMember("player_id", rapidjson::Value(playerId.c_str(), alloc), alloc);
+        rapidjson::Document response;
+        response.SetObject();
+        auto& alloc = response.GetAllocator();
 
-                    SendResponse(requestId, "success", &data, "Player banned successfully");
-                }
-                catch (const std::exception& e)
-                {
-                    SendResponse(requestId, "error", nullptr,
-                        std::string("Failed to ban player: ") + e.what());
-                }
-            };
+        rapidjson::Value data(rapidjson::kObjectType);
+        data.AddMember("player_banned", true, alloc);
+        data.AddMember("player_id", rapidjson::Value(playerId, alloc), alloc);
 
-        TaskManager::getInstance().AddTask(task);
+        SendResponse(requestId, "success", &data, "Player banned successfully");
+
         if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Add Ban command queued for %s\n", playerId.c_str());
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Add Ban command queued for %s\n", playerId);
     }
+
 
     void WebSocketCommandHandler::HandleReloadServerCommand(const std::string& requestId)
     {
+        if (!g_pServer->IsActive())
+        {
+            SendResponse(requestId, "error", nullptr, "Game is not running");
+            return;
+        }
+
         SendResponse(requestId, "success", nullptr, "Reloading server.");
         Msg(eDLL_T::SERVER, "TrackerSocket: Request to reload server dispatched.");
         g_TaskQueue.Dispatch(Host_ReparseAllScripts, 0);
@@ -1392,7 +1350,7 @@ namespace LOGGER
             rapidjson::Document dataDoc;
             dataDoc.SetObject();
             auto& alloc = dataDoc.GetAllocator();
-            dataDoc.AddMember("type", rapidjson::Value( accepted ? "connection.success" : "connection.failed", alloc), alloc);
+            dataDoc.AddMember("type", rapidjson::Value(accepted ? "connection.success" : "connection.failed", alloc), alloc);
             dataDoc.AddMember("identifier", rapidjson::Value(m_cachedIdentifier.c_str(), alloc), alloc);
             if (reason[0])
                 dataDoc.AddMember("reason", rapidjson::Value(reason, alloc), alloc);
@@ -1441,6 +1399,143 @@ namespace LOGGER
 
         if (tracker_ws_debug.GetBool())
             Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Handshake response queued (id=%s)\n", requestId.c_str());
+    }
+
+    void WebSocketCommandHandler::HandleToggleMute(const rapidjson::Value& params, const std::string& requestId)
+    {
+        if (!g_pServer->IsActive())
+        {
+            SendResponse(requestId, "error", nullptr, "Game is not running");
+            return;
+        }
+
+        if (!params.IsObject())
+        {
+            SendResponse(requestId, "error", nullptr, "params must be an object");
+            return;
+        }
+
+        if (!params.HasMember("player_criteria") || !params["player_criteria"].IsString())
+        {
+            SendResponse(requestId, "error", nullptr, "Missing required field: player_criteria");
+            return;
+        }
+
+        std::string criteria = params["player_criteria"].GetString();
+
+        std::string reason =
+            (params.HasMember("reason") && params["reason"].IsString())
+            ? params["reason"].GetString()
+            : "";
+
+        std::string expiry =
+            (params.HasMember("expiry") && params["expiry"].IsString())
+            ? params["expiry"].GetString()
+            : "";
+
+        std::string mutedBy =
+            (params.HasMember("muted_by") && params["muted_by"].IsString())
+            ? params["muted_by"].GetString()
+            : "";
+
+        int timeoutAmount =
+            (params.HasMember("timeout_amount") && params["timeout_amount"].IsInt())
+            ? params["timeout_amount"].GetInt()
+            : 0;
+
+        bool toggle = true;
+
+        if (params.HasMember("toggle"))
+        {
+            if (params["toggle"].IsBool())
+                toggle = params["toggle"].GetBool();
+            else if (params["toggle"].IsInt())
+                toggle = (params["toggle"].GetInt() != 0);
+        }
+
+        if (!g_BanSystem.IsPlayerInServer(criteria.c_str()))
+        {
+            if (V_IsAllDigit(criteria.c_str()))
+                SendResponse(requestId, "success", nullptr, "Player is not in server, scheduled to be unmuted automatically.");
+            else
+            {
+                SendResponse(requestId, "error", nullptr, "Player is not in server, resend with UID to schedule unmute.");
+                return;
+            }
+
+            g_TaskQueue.Dispatch
+            (
+                [criteria, reason, toggle, timeoutAmount, mutedBy, requestId]
+                {
+                    bool success = CALL_SERVER_SCRIPT_FUNC("CodeCallback_MuteFromRemote", MakeNoCopyStr(criteria.c_str()), MakeNoCopyStr(reason.c_str()), toggle, timeoutAmount, MakeNoCopyStr(mutedBy.c_str()), "void functionref( string uid, string reason, bool toggle, int timeoutAmount, string byPlayerUID )");
+                    if (!success)
+                        Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_MuteFromRemote for '%s'.\n", criteria.c_str());
+                   
+                    TrackerSocketSystem()->SendResponse(requestId, success ? "success" : "error", nullptr, success ? "Player mute toggled" : "Failed to toggle player mute");
+                }
+                , 0
+            );
+
+            return;
+        }
+
+        g_TaskQueue.Dispatch
+        (
+            [criteria, reason, expiry, mutedBy, toggle, timeoutAmount, requestId]
+            {
+                bool success = CALL_SERVER_SCRIPT_FUNC
+                (
+                    "CodeCallback_MuteFromRemote",
+                    MakeNoCopyStr(criteria.c_str()),
+                    MakeNoCopyStr(reason.c_str()),
+                    toggle,
+                    timeoutAmount,
+                    MakeNoCopyStr(mutedBy.c_str()),
+                    "void functionref( string uid, string reason, bool toggle, int timeoutAmount, string byPlayerUID )"
+                );
+
+                if (!success)
+                    Error(eDLL_T::SERVER, NO_ERROR, "Failed to execute CodeCallback_MuteFromRemote for '%s'.\n", criteria.c_str());
+
+                // fire response from tracker task queue
+                TRACKER::TaskManager::getInstance().AddTask
+                (
+                    [success, requestId, criteria, reason, expiry, mutedBy, toggle, timeoutAmount]
+                    {
+                        rapidjson::Document response;
+                        response.SetObject();
+                        auto& alloc = response.GetAllocator();
+
+                        rapidjson::Value data(rapidjson::kObjectType);
+                        data.AddMember("criteria", rapidjson::Value(criteria.c_str(), alloc), alloc);
+                        data.AddMember("toggle", toggle, alloc);
+                        data.AddMember("timeout_amount", timeoutAmount, alloc);
+                        data.AddMember("success", success, alloc);
+
+                        if (!reason.empty())
+                            data.AddMember("reason", rapidjson::Value(reason.c_str(), alloc), alloc);
+
+                        if (!expiry.empty())
+                            data.AddMember("expiry", rapidjson::Value(expiry.c_str(), alloc), alloc);
+
+                        if (!mutedBy.empty())
+                            data.AddMember("muted_by", rapidjson::Value(mutedBy.c_str(), alloc), alloc);
+
+                        TrackerSocketSystem()->SendResponse
+                        (
+                            requestId,
+                            success ? "success" : "failed",
+                            &data,
+                            success ? "Mute toggled successfully" : "Failed to toggle mute"
+                        );
+                    }
+                );
+            }
+            , 0
+        );
+
+        if (tracker_ws_debug.GetBool())
+            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Toggle mute command queued for %s\n", criteria.c_str());
     }
 
 
@@ -1620,7 +1715,7 @@ namespace LOGGER
         auto& alloc = response.GetAllocator();
 
         // Build response
-        if( type && strcmp( type, "" ) != 0 )
+        if (type && strcmp(type, "") != 0)
             response.AddMember("type", rapidjson::Value(type, alloc), alloc);
         response.AddMember("id", rapidjson::Value(requestId.c_str(), alloc), alloc);
         response.AddMember("status", rapidjson::Value(status, alloc), alloc);
@@ -1674,6 +1769,7 @@ namespace LOGGER
         doc.AddMember("player", rapidjson::Value(name, alloc), alloc);
         doc.AddMember("nucleus_id", senderNucleus, alloc);
         doc.AddMember("timestamp", Plat_FloatTime(), alloc);
+        doc.AddMember("match_id", getMatchID(), alloc);
 
         rapidjson::StringBuffer buffer;
         rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -1681,6 +1777,65 @@ namespace LOGGER
 
         {
             std::lock_guard<std::shared_timed_mutex> lock(m_queueMutex);
+            m_responseQueue.push(buffer.GetString());
+        }
+    }
+
+    void WebSocketCommandHandler::RelayChatMute(const char* const pszPlayerName, NucleusID_t nucleusId, const char* const pszReason, const char* const pszExpiry, const char* const pszMutedBy, bool toggle, int expiryUnixTimestamp)
+    {
+        if (!tracker_ws_relay_chat.GetBool())
+            return;
+
+        if (!m_initialized.load() || !m_webSocket)
+            return;
+
+        if (!m_authorized.load())
+            return;
+
+        if (!VALID_CHARSTAR(pszPlayerName))
+            return;
+
+        if (nucleusId <= 0)
+            return;
+
+        if (m_cachedApiKey.empty() || m_cachedIdentifier.empty())
+            return;
+
+        const char* reason = VALID_CHARSTAR(pszReason) ? pszReason : "";
+        const char* expiry = VALID_CHARSTAR(pszExpiry) ? pszExpiry : "";
+        const char* mutedBy = VALID_CHARSTAR(pszMutedBy) ? pszMutedBy : "";
+
+        rapidjson::Document doc;
+        doc.SetObject();
+        auto& alloc = doc.GetAllocator();
+
+        CFmtStrN<21> msgIdFmt("%llu", static_cast<unsigned long long>(Plat_FloatTime() * 1000.0));
+
+        doc.AddMember("id", rapidjson::Value(msgIdFmt.Get(), alloc), alloc);
+        doc.AddMember("type", rapidjson::Value("chat.mute", alloc), alloc);
+        doc.AddMember("identifier", rapidjson::Value(m_cachedIdentifier.c_str(), alloc), alloc);
+        doc.AddMember("api_key", rapidjson::Value(m_cachedApiKey.c_str(), alloc), alloc);
+
+        doc.AddMember("player_name", rapidjson::Value(pszPlayerName, alloc), alloc);
+
+        CFmtStrN<32> uidFmt("%llu", static_cast<unsigned long long>(nucleusId));
+        doc.AddMember("player_uid", rapidjson::Value(uidFmt.Get(), alloc), alloc);
+
+        doc.AddMember("reason", rapidjson::Value(reason, alloc), alloc);
+        doc.AddMember("expiry_text", rapidjson::Value(expiry, alloc), alloc);
+        doc.AddMember("muted_by", rapidjson::Value(mutedBy, alloc), alloc);
+
+        doc.AddMember("toggle", toggle, alloc);
+        doc.AddMember("timestamp", Plat_FloatTime(), alloc);
+        doc.AddMember("match_id", getMatchID(), alloc);
+        doc.AddMember("expiry_timestamp", expiryUnixTimestamp, alloc);
+
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer< rapidjson::StringBuffer > writer(buffer);
+        doc.Accept(writer);
+
+        {
+            std::lock_guard< std::shared_timed_mutex > lock(m_queueMutex);
             m_responseQueue.push(buffer.GetString());
         }
     }
@@ -1712,9 +1867,9 @@ namespace LOGGER
 
     void WebSocketCommandHandler::Reconnect()
     {
-        LOGGER::TrackerSocketSystem()->Disconnect();
+        TrackerSocketSystem()->Disconnect();
 
-        std::string trackerHostStr = LOGGER::GetSetting("server.TRACKER_HOST");
+        std::string trackerHostStr = TRACKER::GetSetting("server.TRACKER_HOST");
         const char* trackerHost = trackerHostStr.empty() ? tracker_ws_hostname.GetString() : trackerHostStr.c_str();
         int trackerPort = tracker_ws_port.GetInt();
 
@@ -1727,7 +1882,7 @@ namespace LOGGER
         }
 
         Msg(eDLL_T::SERVER, "TrackerSocket: Reconnection attempt -- TRACKER_HOST=[%s] (len=%zu) \n", trackerHost, hostLen);
-        LOGGER::TrackerSocketSystem()->Connect(trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT);
+        TrackerSocketSystem()->Connect(trackerHost, trackerPort > 0 ? trackerPort : TRACKER_WS_PORT);
     }
 
     void WebSocketCommandHandler::AllocateAddress(const char* address)
@@ -1774,7 +1929,7 @@ namespace LOGGER
             return;
         }
 
-        m_throttleRate = ClampThrottleRate( tracker_ws_throttle_rate.GetFloat() );
+        m_throttleRate = ClampThrottleRate(tracker_ws_throttle_rate.GetFloat());
         m_cachedApiKey = GetSetting("apikey");
         m_cachedIdentifier = GetSetting("identifier");
 
@@ -1892,16 +2047,15 @@ namespace LOGGER
     {
         return m_initialized.load();
     }
+} // namespace TRACKER
 
-    //-----------------------------------------------------------------------------
-    // Singleton accessor
-    //-----------------------------------------------------------------------------
-    WebSocketCommandHandler* TrackerSocketSystem()
-    {
-        return &WebSocketCommandHandler::getInstance();
-    }
-
-} // namespace LOGGER
+//-----------------------------------------------------------------------------
+// Singleton accessor
+//-----------------------------------------------------------------------------
+TRACKER::WebSocketCommandHandler* TrackerSocketSystem()
+{
+    return &TRACKER::WebSocketCommandHandler::getInstance();
+}
 
 //--------------------------------------------------------------------------
 // ConVar callback
@@ -1920,7 +2074,7 @@ static void TrackerWs_OnConVarChanged(IConVar* var, const char* pOldValue, float
     if (tracker_ws_debug.GetBool())
         Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Var changed: '%s'; old:'%s' new:'%s' \n", var->GetName(), pOldValue, newValue);
 
-    bool initialized = LOGGER::TrackerSocketSystem()->IsInitialized();
+    bool initialized = TrackerSocketSystem()->IsInitialized();
 
     if (pConVar == &tracker_ws_ca_bundle_file)
     {
@@ -1930,13 +2084,13 @@ static void TrackerWs_OnConVarChanged(IConVar* var, const char* pOldValue, float
             return;
         }
 
-        LOGGER::TrackerSocketSystem()->__CheckInstallCA();
+        TrackerSocketSystem()->__CheckInstallCA();
     }
 
-    if ( !initialized )
+    if (!initialized)
         return;
 
-    LOGGER::TrackerSocketSystem()->OnWebSocketConVarChanged(var, pOldValue, flOldValue, newValue);
+    TrackerSocketSystem()->OnWebSocketConVarChanged(var, pOldValue, flOldValue, newValue);
 }
 
 //--------------------------------------------------------------------------
@@ -1963,9 +2117,9 @@ ConVar tracker_ws_reconnect_on_newgame("tracker_ws_reconnect_on_newgame", "0", F
 //--------------------------------------------------------------------------
 // ConCommands
 //--------------------------------------------------------------------------
-static void TrackerWs_Reconnect(){ LOGGER::TrackerSocketSystem()->Reconnect(); }
-static void TrackerWs_Shutdown(){ LOGGER::TrackerSocketSystem()->Shutdown(); }
-static void TrackerWs_Status() { LOGGER::TrackerSocketSystem()->Status(); }
+static void TrackerWs_Reconnect() { TrackerSocketSystem()->Reconnect(); }
+static void TrackerWs_Shutdown() { TrackerSocketSystem()->Shutdown(); }
+static void TrackerWs_Status() { TrackerSocketSystem()->Status(); }
 
 ConCommand tracker_ws_reconnect("tracker_ws_reconnect", TrackerWs_Reconnect, "Restart the WebSocket connection to the remote server.", FCVAR_RELEASE);
 ConCommand tracker_ws_shutdown("tracker_ws_shutdown", TrackerWs_Shutdown, "Shutdown the WebSocket connection to the remote server.", FCVAR_RELEASE);
