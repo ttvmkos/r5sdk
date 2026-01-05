@@ -205,11 +205,11 @@ namespace TRACKER
 
     //Api call to player count
     void PlayerCountUpdate(std::string action, std::string player, std::string oid, std::string count, std::string DISCORD_HOOK);
-    void UPDATE_PLAYER_COUNT(const char* action, const char* player, const char* OID, const char* count, const char* DISCORD_HOOK);
+    void UPDATE_PLAYER_COUNT(const char* action, const char* player, const char* OID, const char* count);
 
     //Api call for end game
-    void EndMatchUpdate(std::string recap, std::string DISCORD_HOOK);
-    void NOTIFY_END_OF_MATCH(const char* recap, const char* DISCORD_HOOK);
+    void EndMatchUpdate(std::string recap);
+    void NOTIFY_END_OF_MATCH(const char* recap);
 
     //Api calls for stats
     static std::unordered_map<std::string, std::string> playerStatsMap;

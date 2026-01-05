@@ -1074,7 +1074,7 @@ namespace TRACKER
             return;
         }
 
-        TrackerDispatch([stats_json]() {RunUpdateLiveStats(stats_json); });
+        TrackerDispatch([stats_json = std::move(stats_json)]() {RunUpdateLiveStats(stats_json); });
     }
 
 
@@ -1085,7 +1085,7 @@ namespace TRACKER
     /     API PLAYER COUNT UPDATES
     /********************************/
 
-    // called by UPDATE_PLAYER_COUNT as separate thread
+    // called by UPDATE_PLAYER_COUNT and dispatched to task manager
     void PlayerCountUpdate(std::string action, std::string player, std::string oid, std::string count, std::string discordHook)
     {
         CURL* curl = CURLConnectionPool::GetInstance().GetHandle();
@@ -1112,23 +1112,25 @@ namespace TRACKER
 
     //needs re worked - dont allow setting discord hooks in playlist file
    // Sends join/leave data to api for various use. replace DISCORD_HOOK with internal r5r.dev functions via string starting with __apicall_ 
-    void UPDATE_PLAYER_COUNT(const char* action, const char* player, const char* OID, const char* count, const char* DISCORD_HOOK)
+    void UPDATE_PLAYER_COUNT(const char* action, const char* player, const char* OID, const char* count)
     {
-        std::string webhookUrl = DISCORD_HOOK;
+        std::string webhookUrl = GetSetting("webhooks.PLAYERS_WEBHOOK");
         if (webhookUrl.empty())
-            webhookUrl = GetSetting("webhooks.PLAYERS_WEBHOOK");
+        {
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Tried to send player count update from scripts but setting webhooks.PLAYERS_WEBHOOK is undefined.");
+            return;
+        }
 
         std::string actionStr(action);
         std::string playerStr(player);
         std::string OIDStr(OID);
         std::string countStr(count);
-        std::string DISCORD_HOOKStr(webhookUrl);
 
         TrackerDispatch
         (
-            [actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr]()
+            [actionStr = std::move(actionStr), playerStr = std::move(playerStr), OIDStr = std::move(OIDStr), countStr = std::move(countStr) , webhookUrl = std::move(webhookUrl)]()
             {
-                PlayerCountUpdate(actionStr, playerStr, OIDStr, countStr, DISCORD_HOOKStr);
+                PlayerCountUpdate(actionStr, playerStr, OIDStr, countStr, webhookUrl);
             }
         );
     }
@@ -1141,7 +1143,7 @@ namespace TRACKER
    /********************************/
 
    //by ref
-    void EndMatchUpdate(std::string recap, std::string discord_hook)
+    void EndMatchUpdate(std::string recap)
     {
         if (recap.empty())
         {
@@ -1152,13 +1154,13 @@ namespace TRACKER
         const std::string matchID = GetEndingMatchID();
 
         if (matchID.empty())
-        {
             Error(eDLL_T::SERVER, NO_ERROR, "Tracker: [EndMatchUpdate] matchID was empty...\n");
-        }
 
+        std::string discord_hook = GetSetting("webhooks.MATCHES_WEBHOOK");
         if (discord_hook.empty())
         {
-            discord_hook = std::string(GetSetting("webhooks.MATCHES_WEBHOOK"));
+            Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Tried to send end match recap update to discord from scripts, but webhooks.MATCHES_WEBHOOK was undefined.\n");
+            return;
         }
 
         TRACKER::Logger& logger = TRACKER::Logger::getInstance();
@@ -1216,9 +1218,9 @@ namespace TRACKER
 
 
     //sends recap data to discord channel
-    void NOTIFY_END_OF_MATCH(const char* recap, const char* DISCORD_HOOK)
+    void NOTIFY_END_OF_MATCH(const char* recap)
     {
-        if (!recap || !DISCORD_HOOK)
+        if (!recap)
         {
             Error(eDLL_T::SERVER, NO_ERROR, "Tracker: Error in [NOTIFY_END_OF_MATCH] : recap or DISCORD_HOOK was nullptr");
             return;
@@ -1226,16 +1228,10 @@ namespace TRACKER
 
         //making a copy of recap/discord which can potentially be modified in sqvm
         std::string recap_string(recap);
-        std::string discord_hook(DISCORD_HOOK);
 
-        std::thread endMatchThread([recap_string, discord_hook]()
-            {
-                EndMatchUpdate(recap_string, discord_hook);
-            });
-
+        std::thread endMatchThread([recap_string = std::move(recap_string)](){EndMatchUpdate(recap_string);}); //probably should just TrackerDispatch()
         endMatchThread.detach();
     }
-
 
 
 
@@ -1247,9 +1243,7 @@ namespace TRACKER
     const std::string VerifyEaAccount(const std::string& token, const std::string& OID, const std::string& ea_name)
     {
         if (token.empty() || ea_name.empty())
-        {
             return "0";
-        }
 
         CURL* curl = CURLConnectionPool::GetInstance().GetHandle();
 
@@ -1272,7 +1266,7 @@ namespace TRACKER
 
         bool check = CURLConnectionPool::GetInstance().HandleCurlResult(curl, res, "VERIFY_EA_ACCOUNT");
 
-        Warning(eDLL_T::SERVER, "Response for %s: %s\n", ea_name.c_str(), readBuffer.c_str());
+        Warning(eDLL_T::SERVER, "Tracker: Response for %s: %s\n", ea_name.c_str(), readBuffer.c_str());
 
         return check == true ? readBuffer : "8";
     }

@@ -937,19 +937,18 @@ static SQRESULT ServerScript_TrackerUpdatePlayerCount__internal(HSQUIRRELVM v)
     const SQChar* player = nullptr;
     const SQChar* OID = nullptr;
     const SQChar* count = nullptr;
-    const SQChar* DISCORD_HOOK = nullptr;
 
     if (SQ_FAILED(sq_getstring(v, 2, &action)) || !action ||
         SQ_FAILED(sq_getstring(v, 3, &player)) || !player ||
         SQ_FAILED(sq_getstring(v, 4, &OID)) || !OID ||
-        SQ_FAILED(sq_getstring(v, 5, &count)) || !count ||
-        SQ_FAILED(sq_getstring(v, 6, &DISCORD_HOOK)) || !DISCORD_HOOK)
+        SQ_FAILED(sq_getstring(v, 5, &count)) || !count
+    )
     {
         v_SQVM_ScriptError("Failed to retrieve parameters in %s", __FUNCTION__);
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
 
-    TRACKER::UPDATE_PLAYER_COUNT(action, player, OID, count, DISCORD_HOOK);
+    TRACKER::UPDATE_PLAYER_COUNT(action, player, OID, count);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -957,16 +956,14 @@ static SQRESULT ServerScript_TrackerUpdatePlayerCount__internal(HSQUIRRELVM v)
 static SQRESULT ServerScript_TrackerEndMatchUpdate__internal(HSQUIRRELVM v)
 {
     const SQChar* recap = nullptr;
-    const SQChar* DISCORD_HOOK = nullptr;
 
-    if (SQ_FAILED(sq_getstring(v, 2, &recap)) || !recap ||
-        SQ_FAILED(sq_getstring(v, 3, &DISCORD_HOOK)) || !DISCORD_HOOK)
+    if (SQ_FAILED(sq_getstring(v, 2, &recap)) || !recap )
     {
         v_SQVM_ScriptError("Failed to retrieve parameters in %s", __FUNCTION__);
         SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
     }
 
-    TRACKER::NOTIFY_END_OF_MATCH(recap, DISCORD_HOOK);
+    TRACKER::NOTIFY_END_OF_MATCH(recap);
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -1713,8 +1710,8 @@ void Script_RegisterCoreServerFunctions(CSquirrelVM* s)
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, GetPlayerPersistenceData__internal, "Gets stats table for player from native map", "table", "string", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerResetStats__internal, "Sets map value for player_oid stats to empty string", "void", "string", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdateLiveStats__internal, "Updates live server stats R5R.DEV", "void", "string", false);
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdatePlayerCount__internal, "Updates LIVE player count on R5R.DEV", "void", "string, string, string, string, string", false);
-    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEndMatchUpdate__internal, "Updates match recap on R5R.DEV", "void", "string, string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerUpdatePlayerCount__internal, "Updates LIVE player count on R5R.DEV", "void", "string, string, string, string", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEndMatchUpdate__internal, "Updates match recap on R5R.DEV", "void", "string", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerEAVerify__internal, "Verifys EA Account on R5R.DEV", "void", "string, string, string", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, TrackerRestartWebsocket__internal, "Restarts the websocket from scripts.", "void", "", false);
 
