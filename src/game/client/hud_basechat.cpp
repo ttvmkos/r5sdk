@@ -21,8 +21,12 @@ void CBaseHudChat::PrintSystemMsg(const char* const pszPrefixStr, const char* co
 
 	m_pChatHistory->InsertColorChange(bAdminMsg ? adminColour : m_clrText);
 
+	m_pChatHistory->InsertChar(L'[');
 	m_pChatHistory->InsertText(pszPrefixStr);
+	m_pChatHistory->InsertChar(L']');
 	m_pChatHistory->InsertText(L": ");
+
+	m_pChatHistory->InsertFade(flMessageShowDuration, flMessageFadeDuration);
 
 	m_pChatHistory->InsertColorChange(m_clrText);
 
