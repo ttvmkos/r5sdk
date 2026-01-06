@@ -874,6 +874,19 @@ namespace TRACKER
                 SendResponse(requestId, "success", &data, "Config reloaded successfully");
 
                 Msg(eDLL_T::SERVER, "TrackerSocket: Config reloaded\n");
+
+                g_TaskQueue.Dispatch
+                (
+                    []
+                    {
+                        if (g_pServer->IsActive())
+                        {
+                            if (!g_pServerScript->ExecuteCodeCallback("CodeCallback_SettingsUpdate"))
+                                Error(eDLL_T::SERVER, NO_ERROR, "Failed to call CodeCallback_SettingsUpdate");
+                        }
+                    },
+                    0
+                );
             }
         );
 
