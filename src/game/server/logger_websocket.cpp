@@ -347,13 +347,13 @@ namespace TRACKER
 
 
     //===========================================================================
-    // Command Dispatching (Switch Case - Efficient)
+    // Command Dispatching
     //===========================================================================
 
     WebSocketCommandHandler::CommandType_e WebSocketCommandHandler::GetCommandType(
         const std::string& typeStr)
     {
-        // Use static hash map for O(1) lookup (if needed for many commands)
+        // Todo: Use static hash map for O(1) lookup (if needed for many commands)
         if (typeStr == "kick_player")
             return CommandType_e::KICK_PLAYER;
         else if (typeStr == "ban_player")
@@ -874,19 +874,6 @@ namespace TRACKER
                 SendResponse(requestId, "success", &data, "Config reloaded successfully");
 
                 Msg(eDLL_T::SERVER, "TrackerSocket: Config reloaded\n");
-
-                g_TaskQueue.Dispatch
-                (
-                    []
-                    {
-                        if (g_pServer->IsActive())
-                        {
-                            if (!g_pServerScript->ExecuteCodeCallback("CodeCallback_SettingsUpdate"))
-                                Error(eDLL_T::SERVER, NO_ERROR, "Failed to call CodeCallback_SettingsUpdate");
-                        }
-                    },
-                    0
-                );
             }
         );
 
@@ -1857,17 +1844,17 @@ namespace TRACKER
         ConVar* const cvar = static_cast<ConVar*>(var);
 
         const bool needsReconnect =
-            (
-                cvar == &tracker_ws_hostname ||
-                cvar == &tracker_ws_port ||
-                cvar == &tracker_ws_use_ssl ||
-                cvar == &tracker_ws_lax_ssl ||
-                cvar == &tracker_ws_tls_version ||
-                cvar == &tracker_ws_max_retries ||
-                cvar == &tracker_ws_retry_time ||
-                cvar == &tracker_ws_time_out ||
-                cvar == &tracker_ws_keep_alive
-                );
+        (
+            cvar == &tracker_ws_hostname ||
+            cvar == &tracker_ws_port ||
+            cvar == &tracker_ws_use_ssl ||
+            cvar == &tracker_ws_lax_ssl ||
+            cvar == &tracker_ws_tls_version ||
+            cvar == &tracker_ws_max_retries ||
+            cvar == &tracker_ws_retry_time ||
+            cvar == &tracker_ws_time_out ||
+            cvar == &tracker_ws_keep_alive
+       );
 
         if (needsReconnect && tracker_ws_reconnect_on_change.GetBool())
         {
