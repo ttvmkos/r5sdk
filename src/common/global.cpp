@@ -13,7 +13,7 @@
 
 ConVar curl_debug("curl_debug", "0", FCVAR_DEVELOPMENTONLY, "Determines whether or not to enable curl debug logging.", "1 = curl logs; 0 (zero) = no logs");
 ConVar curl_timeout("curl_timeout", "15", FCVAR_DEVELOPMENTONLY, "Maximum time in seconds a curl transfer operation could take.");
-ConVar ssl_verify_peer("ssl_verify_peer", "1", FCVAR_DEVELOPMENTONLY, "Verify the authenticity of the peer's SSL certificate.", "1 = curl verifies; 0 (zero) = no verification");
+ConVar ssl_verify_peer("ssl_verify_peer", "1", FCVAR_RELEASE, "Verify the authenticity of the peer's SSL certificate.", "1 = curl verifies; 0 (zero) = no verification");
 
 //-----------------------------------------------------------------------------
 // ENGINE                                                                     |
