@@ -280,6 +280,37 @@ static SQRESULT ServerScript_BanPlayerById(HSQUIRRELVM v)
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: bans a player by given handle or id
+//-----------------------------------------------------------------------------
+static SQRESULT ServerScript_BanPlayerByIdOnly(HSQUIRRELVM v)
+{
+    const SQChar* playerHandle = nullptr;
+    const SQChar* reason = nullptr;
+    const SQChar* bannedByID = nullptr;
+
+    sq_getstring(v, 2, &playerHandle);
+    sq_getstring(v, 3, &reason);
+    sq_getstring(v, 4, &bannedByID);
+
+    if (!VALID_CHARSTAR(playerHandle))
+    {
+        v_SQVM_ScriptError("Empty or null player handle");
+        SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
+    }
+
+    // Discard empty strings, this will use the default message instead.
+    if (!VALID_CHARSTAR(reason))
+        reason = nullptr;
+
+    if (!VALID_CHARSTAR(bannedByID))
+        bannedByID = nullptr;
+
+    g_BanSystem.BanPlayerById(playerHandle, bannedByID, reason, true);
+    SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
+}
+
+
+//-----------------------------------------------------------------------------
 // Purpose: unbans a player by given nucleus id or ip address
 //-----------------------------------------------------------------------------
 static SQRESULT ServerScript_UnbanPlayer(HSQUIRRELVM v)
@@ -1322,8 +1353,16 @@ static SQRESULT ServerScript_TrackerGetSetting__internal(HSQUIRRELVM v)
          SCRIPT_CHECK_AND_RETURN(v, SQ_ERROR);
      }
 
-     std::string setting_value = TRACKER::GetSetting(setting_key);
-     sq_pushstring(v, setting_value.c_str(), -1);
+     if (strcmp(setting_key, "apikey") == 0)
+     {
+         sq_pushstring(v, "Cannot return apikey in script vm", -1);
+     }
+     else
+     {
+         std::string setting_value = TRACKER::GetSetting(setting_key);
+         sq_pushstring(v, setting_value.c_str(), -1);
+     }
+
      SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
@@ -1368,7 +1407,7 @@ static SQRESULT ServerScript_TrackerRestartWebsocket__internal(HSQUIRRELVM v)
     SCRIPT_CHECK_AND_RETURN(v, SQ_OK);
 }
 
-static SQRESULT ServerScript_TrackerCreateServerBot__internal(HSQUIRRELVM v)
+static SQRESULT ServerScript_TrackerCreateServerBot__internal(HSQUIRRELVM v) //deprecated
 {
     if (!g_pServer->IsActive())
     {
@@ -1743,6 +1782,7 @@ void Script_RegisterAdminServerFunctions(CSquirrelVM* s)
 
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByName, "Bans a player from the server by name", "void", "string name, string reason, string bannedByID", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerById, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason, string bannedByID", false);
+    DEFINE_SERVER_SCRIPTFUNC_NAMED(s, BanPlayerByIdOnly, "Bans a player from the server by handle or nucleus id", "void", "string id, string reason, string bannedByID", false); //This should be removed and add an optional bool to original
 
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, AddBanByID, "Adds a player to banlist by nucleus id or ip, banning player id, and reason, returns true for success", "bool", "string nucleusId, string reason, string bannedByID", false);
     DEFINE_SERVER_SCRIPTFUNC_NAMED(s, UnbanPlayer, "Unbans a player from the server by nucleus id or ip address", "void", "string handle", false);

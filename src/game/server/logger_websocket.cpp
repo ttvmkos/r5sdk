@@ -847,6 +847,7 @@ namespace TRACKER
                 rapidjson::Value stats(rapidjson::kObjectType);
                 stats.AddMember("socket_msg_count", m_messageCount.load(), alloc);
                 stats.AddMember("uptime_seconds", Plat_FloatTime(), alloc);
+                stats.AddMember("match_id", getMatchID(), alloc);
 
                 SendResponse(requestId, "success", &stats, "Stats retrieved");
             }
@@ -1275,9 +1276,6 @@ namespace TRACKER
         SendResponse(requestId, "success", nullptr, "Banlist reloaded successfully");
 
         Msg(eDLL_T::SERVER, "TrackerSocket: Banlist reloaded\n");
-
-        if (tracker_ws_debug.GetBool())
-            Msg(eDLL_T::SERVER, "TrackerSocket[DEBUG]: Reload banlist command queued\n");
     }
 
     void WebSocketCommandHandler::HandleAddBanCommand(const rapidjson::Value& params, const std::string& requestId)
@@ -1464,15 +1462,23 @@ namespace TRACKER
                 toggle = params["toggle"].GetBool();
             else if (params["toggle"].IsInt())
                 toggle = (params["toggle"].GetInt() != 0);
+            else
+            {
+                SendResponse(requestId, "error", nullptr, "Invalid toggle parameter");
+                return;
+            }
         }
 
         if (!g_BanSystem.IsPlayerInServer(criteria.c_str()))
         {
             if (V_IsAllDigit(criteria.c_str()))
-                SendResponse(requestId, "success", nullptr, "Player is not in server, scheduled to be unmuted automatically.");
+            {
+                const char* responseMsg = CFmtStr("Player is not in server, scheduled to be %s automatically.", toggle ? "muted" : "unmuted");
+                SendResponse(requestId, "success", nullptr, responseMsg );
+            }
             else
             {
-                SendResponse(requestId, "error", nullptr, "Player is not in server, resend with UID to schedule unmute.");
+                SendResponse(requestId, "error", nullptr, "Player is not in server, resend with UID to schedule mute action.");
                 return;
             }
 

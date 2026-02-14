@@ -73,7 +73,7 @@ public:
 	void KickPlayerById(const char* playerHandle, const char* reason = nullptr);
 
 	void BanPlayerByName(const char* playerName, const char* bannedByID, const char* reason = nullptr);
-	void BanPlayerById(const char* playerHandle, const char* bannedByID, const char* reason = nullptr);
+	void BanPlayerById(const char* playerHandle, const char* bannedByID, const char* reason = nullptr, bool bIdOnly = false);
 	void AddIdToBanlist(const char* playerHandle, const char* bannedByID, const char* reason = nullptr, const netadr_t* const adr = nullptr );
 
 	void UnbanPlayer(const char* criteria);
@@ -87,7 +87,7 @@ private:
 	bool IsBanned(const in6_addr* const adr, const NucleusID_t nuc) const;
 
 	void AuthorPlayerByName(const char* playerName, const bool bBan, const char* bannedByID = nullptr, const char* reason = nullptr);
-	void AuthorPlayerById(const char* playerHandle, const bool bBan, const char* bannedByID = nullptr, const char* reason = nullptr, const bool offline = false, const netadr_t* address = nullptr);
+	void AuthorPlayerById(const char* playerHandle, const bool bBan, const char* bannedByID = nullptr, const char* reason = nullptr, const bool offline = false, const netadr_t* address = nullptr, bool bIdOnly = false);
 
 	void NotifyBanAdded(const BanMetadata_t& metadata, const NucleusID_t nuc, const char* ipAddress);
 	std::string ConvertIpToString(const in6_addr* const adr) const;

@@ -636,12 +636,12 @@ void CBanSystem::BanPlayerByName(const char* playerName, const char* bannedByID,
 // Input  : *playerHandle - 
 //			*reason - 
 //-----------------------------------------------------------------------------
-void CBanSystem::BanPlayerById(const char* playerHandle, const char* bannedByID, const char* reason)
+void CBanSystem::BanPlayerById(const char* playerHandle, const char* bannedByID, const char* reason, bool bIdOnly )
 {
 	if (!VALID_CHARSTAR(playerHandle))
 		return;
 
-	AuthorPlayerById(playerHandle, true, bannedByID, reason);
+	AuthorPlayerById(playerHandle, true, bannedByID, reason, bIdOnly );
 }
 
 //-----------------------------------------------------------------------------
@@ -919,7 +919,7 @@ bool CBanSystem::Bansystem_ValidateInputID(const char* str, NucleusID_t& out, in
 //			*reason       - 
 //			bool offline  - Whether this is a add-to-banlist entry rather than a player already in server
 //-----------------------------------------------------------------------------
-void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan, const char* bannedByID, const char* reason, const bool offline, const netadr_t* address )
+void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan, const char* bannedByID, const char* reason, const bool offline, const netadr_t* address, bool bIdOnly )
 {
 	Assert(VALID_CHARSTAR(playerHandle));
 
@@ -938,7 +938,7 @@ void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan
 	if (!reason)
 		reason = shouldBan ? "Banned from server" : "Kicked from server";
 
-	if (!bannedByID)
+	if (!bannedByID) //needs to be sent from panel if remote method
 		bannedByID = "00000000";
 
 	if (!offline)
@@ -971,7 +971,7 @@ void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan
 						continue;
 				}
 
-				if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID(), pNetChan->GetName(), bannedByID, reason) && !bSave)
+				if (shouldBan && AddEntry(bIdOnly ? nullptr : &pNetChan->GetRemoteAddress(), pClient->GetNucleusID(), pNetChan->GetName(), bannedByID, reason) && !bSave)
 					bSave = true;
 
 				pClient->Disconnect(REP_MARK_BAD, reason);
@@ -984,7 +984,7 @@ void CBanSystem::AuthorPlayerById(const char* playerHandle, const bool shouldBan
 				if (!BanSystem_CompareAddress(pNetChan->GetRemoteAddress().GetIP(), &playerAdr))
 					continue;
 
-				if (shouldBan && AddEntry(&pNetChan->GetRemoteAddress(), pClient->GetNucleusID(), pNetChan->GetName(), bannedByID, reason) && !bSave)
+				if (shouldBan && AddEntry(bIdOnly ? nullptr : &pNetChan->GetRemoteAddress(), pClient->GetNucleusID(), pNetChan->GetName(), bannedByID, reason) && !bSave)
 					bSave = true;
 
 				pClient->Disconnect(REP_MARK_BAD, reason);
