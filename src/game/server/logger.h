@@ -242,7 +242,7 @@ inline void Tracker_Shutdown()
 // CONSTANTS
 //-----------------------------------------------------------------------------
 
-const std::string TRACKER_SERVER_V = "rc_2.6.14";
+const std::string TRACKER_SERVER_V = "rc_2.6.31";
 const std::string TRACKER_API_KEY = "tMcLsTYqcraC7K2j"; //public
 constexpr const char* TRACKER_CONFIG = "r5rdev_config.json";
 constexpr const char* TRACKER_PLAYER_COUNT_ENDPOINT = "https://r5r.dev/api/playercount.php";
