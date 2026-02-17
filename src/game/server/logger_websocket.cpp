@@ -1319,7 +1319,7 @@ namespace TRACKER
         if (g_BanSystem.IsPlayerInServer(playerId))
             g_BanSystem.BanPlayerById(playerId, bannedById, reason);
         else
-            g_BanSystem.AddIdToBanlist(playerId, bannedById, reason, &address);
+            g_BanSystem.AddIdToBanlist(playerId, bannedById, reason, address.IsValid() ? &address : nullptr);
 
         rapidjson::Document response;
         response.SetObject();

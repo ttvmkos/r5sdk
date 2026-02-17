@@ -39,6 +39,8 @@ public:
 	void		ToAdrinfo(addrinfo* pHint) const;
 	void		ToSockadr(struct sockaddr_storage* const s) const;
 
+	bool		IsValid() const;
+
 private:
 	netadrtype_t type;
 	in6_addr adr;

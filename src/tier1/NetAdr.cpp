@@ -297,3 +297,28 @@ bool CNetAdr::SetFromString(const char* const pch, const bool bUseDNS)
 
 	return false;
 }
+
+bool CNetAdr::IsValid() const
+{
+	if (type == netadrtype_t::NA_NULL)
+		return false;
+
+	if (type == netadrtype_t::NA_LOOPBACK)
+		return true;
+
+	static const in6_addr zero = IN6ADDR_ANY_INIT;
+	if (memcmp(&adr, &zero, sizeof(in6_addr)) == 0)
+		return false;
+
+	if (IN6_IS_ADDR_V4MAPPED(&adr))
+	{
+		const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&adr);
+		if (bytes[12] == 0 && bytes[13] == 0 && bytes[14] == 0 && bytes[15] == 0)
+			return false;
+	}
+
+	if (port == 0)
+		return false;
+
+	return true;
+}
