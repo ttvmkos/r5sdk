@@ -107,7 +107,7 @@ static void HostState_KeepAlive()
 		{
 			string errorMsg;
 			string hostToken;
-			string hostIp;
+			CNetAdr hostIp;
 
 			const bool result = g_MasterServer.PostServerHost(errorMsg, hostToken, hostIp, gameServer);
 
@@ -133,8 +133,7 @@ static void HostState_KeepAlive()
 						}
 					}
 
-					if (hostIp.length() != 0)
-						g_ServerHostManager.SetHostIP(hostIp);
+					g_ServerHostManager.SetHostIP(hostIp);
 
 				}, 0);
 		}
