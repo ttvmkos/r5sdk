@@ -56,7 +56,6 @@
 #include "game/server/gameinterface.h"
 #endif // !CLIENT_DLL
 #include "game/shared/vscript_shared.h"
-
 #ifndef CLIENT_DLL
 #if !defined(LOGGER_H)
 	#include "game/server/logger.h"
@@ -422,6 +421,7 @@ void CHostState::Think(void) const
 #ifdef DEDICATED
 	static CFastTimer pylonTimer;
 #endif // DEDICATED
+	static CFastTimer authTimer;
 
 	if (!bInitialized) // Initialize clocks.
 	{
@@ -430,6 +430,12 @@ void CHostState::Think(void) const
 #ifdef DEDICATED
 		pylonTimer.Start();
 #endif // DEDICATED
+		authTimer.Start();
+
+		// Quick! Get a key before we get players!
+		if (sv_onlineAuthEnable.GetBool())
+			CClient::CheckMSForNewAuthKey();
+
 		bInitialized = true;
 	}
 
@@ -458,6 +464,16 @@ void CHostState::Think(void) const
 		pylonTimer.Start();
 	}
 #endif // DEDICATED
+
+	if (authTimer.GetDurationInProgress().GetSeconds() > pylon_auth_refresh_interval.GetFloat())
+	{
+		// Don't bother getting keys if we aren't even using online auth
+		if(sv_onlineAuthEnable.GetBool())
+			CClient::CheckMSForNewAuthKey();
+
+		authTimer.Start();
+	}
+
 #endif // !CLIENT_DLL
 }
 
